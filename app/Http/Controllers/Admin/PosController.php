@@ -1473,24 +1473,31 @@ public function placeOrder(Request $request)
         $selectedPaymentMethod = $request->input('payment_method');
         if (in_array($selectedPaymentMethod, ['Card', 'Mobile Banking'], true)
             && trim((string) $request->input('transaction_id')) === '') {
+            $referenceLabel = $selectedPaymentMethod === 'Card'
+                ? 'Card Reference Number'
+                : 'MFS Reference Number';
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Card or Mobile Banking transaction/reference number is required.'
+                'message' => $referenceLabel . ' is required.'
             ], 422);
         }
 
         if ($selectedPaymentMethod === 'Split') {
-            if (trim((string) $request->input('split_card_reference')) === '') {
+            $splitCardAmount = max(0, (float) $request->input('paid_in_card', 0));
+            $splitMfsAmount = max(0, (float) $request->input('paid_in_mfc', 0));
+
+            if ($splitCardAmount > 0 && trim((string) $request->input('split_card_reference')) === '') {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Card reference number is required for Split payment.'
+                    'message' => 'Card Reference Number is required when a Card amount is entered.'
                 ], 422);
             }
 
-            if (trim((string) $request->input('split_mfs_reference')) === '') {
+            if ($splitMfsAmount > 0 && trim((string) $request->input('split_mfs_reference')) === '') {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'MFS transaction/reference number is required for Split payment.'
+                    'message' => 'MFS Reference Number is required when an MFS amount is entered.'
                 ], 422);
             }
         }
@@ -1498,7 +1505,7 @@ public function placeOrder(Request $request)
         if (mb_strlen((string) $request->input('remark', '')) > 1000) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Remark may not be greater than 1000 characters.'
+                'message' => 'Referred by Whom may not be greater than 1000 characters.'
             ], 422);
         }
 
@@ -1593,12 +1600,12 @@ public function placeOrder(Request $request)
                 $order->payment_remark = $remark !== '' ? $remark : null;
             }
             if (Schema::hasColumn('orders', 'split_card_reference')) {
-                $order->split_card_reference = $paymentMethod === 'Split'
+                $order->split_card_reference = $paymentMethod === 'Split' && $card > 0
                     ? trim((string) $request->input('split_card_reference'))
                     : null;
             }
             if (Schema::hasColumn('orders', 'split_mfs_reference')) {
-                $order->split_mfs_reference = $paymentMethod === 'Split'
+                $order->split_mfs_reference = $paymentMethod === 'Split' && $mfc > 0
                     ? trim((string) $request->input('split_mfs_reference'))
                     : null;
             }

@@ -62,8 +62,8 @@
               </div>
 
               <div class="mb-3">
-                <label for="paymentRemark" style="font-size: 12px; font-weight: 700; color: #555; margin-bottom: 5px;">Remark</label>
-                <textarea name="remark" id="paymentRemark" class="form-control" rows="2" maxlength="1000" placeholder="Optional payment remark" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px; resize: vertical;"></textarea>
+                <label for="paymentRemark" style="font-size: 12px; font-weight: 700; color: #555; margin-bottom: 5px;">Referred by Whom</label>
+                <textarea name="remark" id="paymentRemark" class="form-control" rows="2" maxlength="1000" placeholder="Referred by Whom" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px; resize: vertical;"></textarea>
               </div>
 
               <div class="progga-form-label" style="font-weight:700; margin-bottom:10px; font-size: 14px; color: var(--progga-primary);">
@@ -113,19 +113,19 @@
                   </div>
                   <div class="row g-2 mt-1" id="splitReferenceFields">
                       <div class="col-6">
-                          <label style="font-size: 11px; font-weight: 700; color: #555;">Card Reference <span class="text-danger">*</span></label>
-                          <input type="text" name="split_card_reference" id="splitCardReference" class="form-control" maxlength="255" placeholder="Card reference / auth no">
+                          <label style="font-size: 11px; font-weight: 700; color: #555;">Card Reference Number <span id="splitCardReferenceRequired" class="text-danger" style="display:none;">*</span></label>
+                          <input type="text" name="split_card_reference" id="splitCardReference" class="form-control" maxlength="255" placeholder="Card Reference Number">
                       </div>
                       <div class="col-6">
-                          <label style="font-size: 11px; font-weight: 700; color: #555;">MFS Reference <span class="text-danger">*</span></label>
-                          <input type="text" name="split_mfs_reference" id="splitMfsReference" class="form-control" maxlength="255" placeholder="MFS transaction / reference no">
+                          <label style="font-size: 11px; font-weight: 700; color: #555;">MFS Reference Number <span id="splitMfsReferenceRequired" class="text-danger" style="display:none;">*</span></label>
+                          <input type="text" name="split_mfs_reference" id="splitMfsReference" class="form-control" maxlength="255" placeholder="MFS Reference Number">
                       </div>
                   </div>
               </div>
 
               <div class="progga-pm-ref" id="transactionDiv" style="display: none; margin-bottom: 15px;">
-                  <label style="font-size: 12px; font-weight: 700; color: #555;">Transaction / Reference No <span class="text-danger">*</span></label>
-                  <input type="text" name="transaction_id" class="form-control" placeholder="Card auth / TXN / Reference no" style="border: 1.5px solid var(--progga-border); border-radius: 8px;">
+                  <label id="transactionReferenceLabel" style="font-size: 12px; font-weight: 700; color: #555;">Card Reference Number <span class="text-danger">*</span></label>
+                  <input type="text" name="transaction_id" class="form-control" placeholder="Card Reference Number" style="border: 1.5px solid var(--progga-border); border-radius: 8px;">
               </div>
 
               <div class="progga-form-label" style="font-weight:700; margin:16px 0 10px; font-size: 14px; color: var(--progga-primary);">
@@ -206,21 +206,43 @@ window.syncFinalPaymentFields = function() {
     $('#splitPaymentDiv').toggle(isSplit);
     $('#payTotalPaidAmount').prop('disabled', isSplit);
     $('#splitCash, #splitCard, #splitMfc').prop('disabled', !isSplit);
-    $('#splitCardReference, #splitMfsReference')
+    let splitCardAmount = isSplit ? posPaymentNumber($('#splitCard').val()) : 0;
+    let splitMfsAmount = isSplit ? posPaymentNumber($('#splitMfc').val()) : 0;
+    let requireSplitCardReference = isSplit && splitCardAmount > 0;
+    let requireSplitMfsReference = isSplit && splitMfsAmount > 0;
+
+    $('#splitCardReference')
         .prop('disabled', !isSplit)
-        .prop('required', isSplit);
+        .prop('required', requireSplitCardReference);
+    $('#splitMfsReference')
+        .prop('disabled', !isSplit)
+        .prop('required', requireSplitMfsReference);
+    $('#splitCardReferenceRequired').toggle(requireSplitCardReference);
+    $('#splitMfsReferenceRequired').toggle(requireSplitMfsReference);
 
     if (!isSplit) {
         $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
+    } else {
+        if (!requireSplitCardReference) $('#splitCardReference').removeClass('is-invalid');
+        if (!requireSplitMfsReference) $('#splitMfsReference').removeClass('is-invalid');
     }
 
+    let transactionInput = $('#transactionDiv').find('input[name="transaction_id"]');
     $('#transactionDiv').toggle(showReferenceField);
-    $('#transactionDiv').find('input[name="transaction_id"]')
+    transactionInput
         .prop('disabled', !showReferenceField)
         .prop('required', showReferenceField);
 
+    if (method === 'Card') {
+        $('#transactionReferenceLabel').html('Card Reference Number <span class="text-danger">*</span>');
+        transactionInput.attr('placeholder', 'Card Reference Number');
+    } else if (method === 'Mobile Banking') {
+        $('#transactionReferenceLabel').html('MFS Reference Number <span class="text-danger">*</span>');
+        transactionInput.attr('placeholder', 'MFS Reference Number');
+    }
+
     if (!showReferenceField) {
-        $('#transactionDiv').find('input[name="transaction_id"]').val('').removeClass('is-invalid');
+        transactionInput.val('').removeClass('is-invalid');
     }
 };
 
@@ -311,7 +333,10 @@ window.openPaymentModal = function(data) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentModal')).show();
 }
 
-$(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', window.updateDueAmount);
+$(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
+    if ($(this).hasClass('split-input')) window.syncFinalPaymentFields();
+    window.updateDueAmount();
+});
 
 $(document).on('change', 'input[name="payment_method"]', function() {
     let grand = posMoney($('#payTotalAmount').text());

@@ -1121,21 +1121,43 @@
         $('#splitPaymentDiv').toggle(isSplit);
         $('#payTotalPaidAmount').prop('disabled', isSplit);
         $('#splitCash, #splitCard, #splitMfc').prop('disabled', !isSplit);
-        $('#splitCardReference, #splitMfsReference')
+        let splitCardAmount = isSplit ? posPaymentNumber($('#splitCard').val()) : 0;
+        let splitMfsAmount = isSplit ? posPaymentNumber($('#splitMfc').val()) : 0;
+        let requireSplitCardReference = isSplit && splitCardAmount > 0;
+        let requireSplitMfsReference = isSplit && splitMfsAmount > 0;
+
+        $('#splitCardReference')
             .prop('disabled', !isSplit)
-            .prop('required', isSplit);
+            .prop('required', requireSplitCardReference);
+        $('#splitMfsReference')
+            .prop('disabled', !isSplit)
+            .prop('required', requireSplitMfsReference);
+        $('#splitCardReferenceRequired').toggle(requireSplitCardReference);
+        $('#splitMfsReferenceRequired').toggle(requireSplitMfsReference);
 
         if (!isSplit) {
             $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
+        } else {
+            if (!requireSplitCardReference) $('#splitCardReference').removeClass('is-invalid');
+            if (!requireSplitMfsReference) $('#splitMfsReference').removeClass('is-invalid');
         }
 
+        let transactionInput = $('#transactionDiv').find('input[name="transaction_id"]');
         $('#transactionDiv').toggle(showReferenceField);
-        $('#transactionDiv').find('input[name="transaction_id"]')
+        transactionInput
             .prop('disabled', !showReferenceField)
             .prop('required', showReferenceField);
 
+        if (method === 'Card') {
+            $('#transactionReferenceLabel').html('Card Reference Number <span class="text-danger">*</span>');
+            transactionInput.attr('placeholder', 'Card Reference Number');
+        } else if (method === 'Mobile Banking') {
+            $('#transactionReferenceLabel').html('MFS Reference Number <span class="text-danger">*</span>');
+            transactionInput.attr('placeholder', 'MFS Reference Number');
+        }
+
         if (!showReferenceField) {
-            $('#transactionDiv').find('input[name="transaction_id"]').val('').removeClass('is-invalid');
+            transactionInput.val('').removeClass('is-invalid');
         }
     };
 
@@ -1275,7 +1297,10 @@
         }
     }
 
-    $(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', window.updateDueAmount);
+    $(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
+        if ($(this).hasClass('split-input')) window.syncFinalPaymentFields();
+        window.updateDueAmount();
+    });
 
     $(document).on('change', 'input[name="payment_method"]', function() {
         let grand = posMoney($('#payTotalAmount').text());
@@ -1298,9 +1323,10 @@
 
         if (requiresReference && !$.trim(referenceInput.val())) {
             referenceInput.addClass('is-invalid').trigger('focus');
+            let referenceName = paymentMethod === 'Card' ? 'Card Reference Number' : 'MFS Reference Number';
             Swal.fire(
                 'Reference Required',
-                'Please enter the Card or bKash transaction/reference number before completing payment.',
+                'Please enter the ' + referenceName + ' before completing payment.',
                 'warning'
             );
             return;
@@ -1309,20 +1335,22 @@
         referenceInput.removeClass('is-invalid');
 
         if (paymentMethod === 'Split') {
+            let splitCardAmount = posPaymentNumber($('#splitCard').val());
+            let splitMfsAmount = posPaymentNumber($('#splitMfc').val());
             let splitCardReference = $('#splitCardReference');
             let splitMfsReference = $('#splitMfsReference');
 
-            if (!$.trim(splitCardReference.val())) {
+            if (splitCardAmount > 0 && !$.trim(splitCardReference.val())) {
                 splitCardReference.addClass('is-invalid').trigger('focus');
-                Swal.fire('Card Reference Required', 'Please enter the Card reference number for Split payment.', 'warning');
+                Swal.fire('Card Reference Required', 'Please enter the Card Reference Number for the Card amount.', 'warning');
                 return;
             }
 
             splitCardReference.removeClass('is-invalid');
 
-            if (!$.trim(splitMfsReference.val())) {
+            if (splitMfsAmount > 0 && !$.trim(splitMfsReference.val())) {
                 splitMfsReference.addClass('is-invalid').trigger('focus');
-                Swal.fire('MFS Reference Required', 'Please enter the MFS transaction/reference number for Split payment.', 'warning');
+                Swal.fire('MFS Reference Required', 'Please enter the MFS Reference Number for the MFS amount.', 'warning');
                 return;
             }
 
