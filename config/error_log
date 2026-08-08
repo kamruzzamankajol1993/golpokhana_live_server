@@ -1,0 +1,40 @@
+[14-Jun-2026 02:25:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/database.php:20
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/database.php on line 20
+[14-Jun-2026 02:25:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/mail.php:17
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/mail.php on line 17
+[14-Jun-2026 02:25:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/app.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/app.php on line 16
+[14-Jun-2026 02:25:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/services.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/services.php on line 18
+[14-Jun-2026 02:25:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/cache.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/cache.php on line 18
+[14-Jun-2026 21:28:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/database.php:20
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/database.php on line 20
+[14-Jun-2026 21:28:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/services.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/services.php on line 18
+[14-Jun-2026 21:28:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/cache.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/cache.php on line 18
+[14-Jun-2026 21:28:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/mail.php:17
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/mail.php on line 17
+[14-Jun-2026 21:28:29 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/app.php:16
+Stack trace:
+#0 {main}
+  thrown in /home/naksibso/golpokhanarms.nearsolutionsltd.com/config/app.php on line 16
