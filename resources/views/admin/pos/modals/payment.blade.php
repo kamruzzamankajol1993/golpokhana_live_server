@@ -62,7 +62,7 @@
               </div>
 
               <div class="mb-3">
-                <label for="paymentRemark" style="font-size: 12px; font-weight: 700; color: #555; margin-bottom: 5px;">Referred by Whom</label>
+                <label for="paymentRemark" style="font-size: 12px; font-weight: 700; color: #555; margin-bottom: 5px;">Remark <span id="paymentRemarkRequired" class="text-danger" style="display:none;">*</span></label>
                 <textarea name="remark" id="paymentRemark" class="form-control" rows="2" maxlength="1000" placeholder="Referred by Whom" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px; resize: vertical;"></textarea>
               </div>
 
@@ -292,7 +292,8 @@ window.resetFinalPaymentDefaults = function(grand) {
     $('#payChangeAmount').val(0);
     $('#transactionDiv').find('input[name="transaction_id"]').val('');
     $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
-    $('#paymentRemark').val('');
+    $('#paymentRemark').val('').removeClass('is-invalid');
+    if (typeof window.syncPaymentRemarkRequirement === 'function') window.syncPaymentRemarkRequirement();
     window.syncFinalPaymentFields();
     window.updateDueAmount();
 };

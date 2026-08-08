@@ -1111,6 +1111,21 @@
         return Math.round(posPaymentNumber(value));
     }
 
+    window.syncPaymentRemarkRequirement = function() {
+        let discountValue = Math.max(0, posPaymentNumber($('#modal_discount_value').val()));
+        let hasDiscount = discountValue > 0;
+        let remarkInput = $('#paymentRemark');
+
+        remarkInput.prop('required', hasDiscount);
+        $('#paymentRemarkRequired').toggle(hasDiscount);
+
+        if (!hasDiscount) {
+            remarkInput.removeClass('is-invalid');
+        }
+
+        return hasDiscount;
+    };
+
     window.syncFinalPaymentFields = function() {
         let method = $('input[name="payment_method"]:checked').val() || 'Cash';
         let isSplit = method === 'Split';
@@ -1207,7 +1222,8 @@
         $('#payChangeAmount').val(0);
         $('#transactionDiv').find('input[name="transaction_id"]').val('');
         $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
-        $('#paymentRemark').val('');
+        $('#paymentRemark').val('').removeClass('is-invalid');
+        window.syncPaymentRemarkRequirement();
         window.syncFinalPaymentFields();
         window.updateDueAmount();
     };
@@ -1275,6 +1291,7 @@
         $('#payVat').text('৳' + vat);
         $('#payService').text('৳' + service);
         $('#payTotalAmount').text('৳' + grand);
+        window.syncPaymentRemarkRequirement();
 
         if(service === 0) {
             $('#payServiceRow').hide();
@@ -1316,6 +1333,19 @@
 
         window.syncFinalPaymentFields();
         window.updateDueAmount();
+
+        let hasDiscount = window.syncPaymentRemarkRequirement();
+        let remarkInput = $('#paymentRemark');
+        if (hasDiscount && !$.trim(remarkInput.val())) {
+            remarkInput.addClass('is-invalid').trigger('focus');
+            Swal.fire(
+                'Remark Required',
+                'Remark is required when a discount is applied.',
+                'warning'
+            );
+            return;
+        }
+        remarkInput.removeClass('is-invalid');
 
         let paymentMethod = $('input[name="payment_method"]:checked').val() || 'Cash';
         let referenceInput = $('#transactionDiv').find('input[name="transaction_id"]');

@@ -1502,10 +1502,18 @@ public function placeOrder(Request $request)
             }
         }
 
+        $discountValueForRemark = max(0, (float) $request->input('discount_value', 0));
+        if ($discountValueForRemark > 0 && trim((string) $request->input('remark', '')) === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Remark is required when a discount is applied.'
+            ], 422);
+        }
+
         if (mb_strlen((string) $request->input('remark', '')) > 1000) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Referred by Whom may not be greater than 1000 characters.'
+                'message' => 'Remark may not be greater than 1000 characters.'
             ], 422);
         }
 
