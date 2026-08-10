@@ -58,7 +58,7 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'duePayments.user'])->findOrFail($id);
         return view('admin.order.partials._order_details', compact('order'))->render();
     }
 
@@ -221,6 +221,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'subtotal' => 0,
             'revenue' => 0,
             'discount' => 0,
+            'product_discount' => 0,
             'service_charge' => 0,
             'tips' => 0,
             'given' => 0,
@@ -237,6 +238,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                 ->chunk(60, function ($orders) use ($mpdf, &$totals) {
                     foreach ($orders as $order) {
                         $discountAmount = max(0, (float) ($order->discount_amount ?? 0));
+                        $productDiscountAmount = max(0, (float) ($order->product_discount_amount ?? 0));
                         $serviceCharge = max(0, (float) ($order->service_charge ?? 0));
                         $tipsAmount = max(0, (float) ($order->tips_amount ?? ((float) ($order->total_paid_amount ?? 0) - (float) ($order->grand_total ?? 0))));
                         $givenMoney = max(0, (float) ($order->given_money ?? 0));
@@ -248,6 +250,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                         }
 
                         $totals['discount'] += $discountAmount;
+                        $totals['product_discount'] += $productDiscountAmount;
                         $totals['service_charge'] += $serviceCharge;
                         $totals['tips'] += $tipsAmount;
                         $totals['given'] += $givenMoney;
@@ -460,6 +463,8 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
         $request->validate([
             'items' => ['required', 'array'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'items.*.product_discount_type' => ['nullable', Rule::in(['fixed', 'percentage'])],
+            'items.*.product_discount_value' => ['nullable', 'numeric', 'min:0'],
             'discount_type' => ['required', Rule::in(['fixed', 'percentage'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['required', Rule::in(['Cash', 'Card', 'Mobile Banking', 'Split'])],
@@ -480,15 +485,18 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             $inputItems = $request->input('items', []);
 
             $newSubtotal = 0;
+            $productDiscountTotal = 0;
 
             foreach ($order->orderDetails as $detail) {
                 // শুধু existing detail id গুলোই update হবে, নতুন কোনো item create হবে না।
                 if (!isset($inputItems[$detail->id])) {
                     $newSubtotal += (float) ($detail->subtotal ?? 0);
+                    $productDiscountTotal += max(0, (float) ($detail->product_discount_amount ?? 0));
                     continue;
                 }
 
-                $newQty = max(1, (int) ($inputItems[$detail->id]['quantity'] ?? $detail->quantity));
+                $itemInput = $inputItems[$detail->id];
+                $newQty = max(1, (int) ($itemInput['quantity'] ?? $detail->quantity));
                 $oldQty = max(1, (int) ($detail->quantity ?? 1));
                 $oldLineSubtotal = (float) ($detail->subtotal ?? 0);
 
@@ -508,11 +516,29 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
                 $newLineSubtotal = round($unitTotal * $newQty, 2);
 
+                $productDiscountType = (($itemInput['product_discount_type'] ?? $detail->product_discount_type ?? 'fixed') === 'percentage')
+                    ? 'percentage'
+                    : 'fixed';
+                $productDiscountValue = max(0, (float) ($itemInput['product_discount_value'] ?? $detail->product_discount_value ?? 0));
+
+                if ($productDiscountType === 'percentage') {
+                    $productDiscountValue = min($productDiscountValue, 100);
+                    $productDiscountAmount = round(($newLineSubtotal * $productDiscountValue) / 100);
+                } else {
+                    $productDiscountAmount = min($productDiscountValue, $newLineSubtotal);
+                }
+
+                $productDiscountAmount = max(0, round($productDiscountAmount));
+
                 $detail->quantity = $newQty;
                 $detail->subtotal = $newLineSubtotal;
+                $detail->product_discount_type = $productDiscountAmount > 0 ? $productDiscountType : null;
+                $detail->product_discount_value = $productDiscountAmount > 0 ? $productDiscountValue : 0;
+                $detail->product_discount_amount = $productDiscountAmount;
                 $detail->save();
 
                 $newSubtotal += $newLineSubtotal;
+                $productDiscountTotal += $productDiscountAmount;
             }
 
             $taxSetting = DB::table('tax_settings')->first();
@@ -532,9 +558,10 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                 ? round(($newSubtotal * $discountValue) / 100)
                 : round($discountValue);
 
-            // Discount যেন bill amount-এর বেশি না হয়।
+            // Other discount এবং product-wise discount আলাদা থাকবে।
             $discountAmount = min(max(0, $discountAmount), round($newSubtotal + $serviceCharge + $vatTax));
-            $grandTotal = max(0, round(($newSubtotal + $serviceCharge + $vatTax) - $discountAmount));
+            $productDiscountTotal = min(max(0, round($productDiscountTotal)), round($newSubtotal));
+            $grandTotal = max(0, round(($newSubtotal + $serviceCharge + $vatTax) - $discountAmount - $productDiscountTotal));
 
             $paymentMethod = $request->payment_method;
             if ($paymentMethod === 'Split') {
@@ -557,6 +584,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             $order->subtotal = $newSubtotal;
             $order->discount_type = $discountType;
             $order->discount_amount = $discountAmount;
+            $order->product_discount_amount = $productDiscountTotal;
             $order->vat_tax = $vatTax;
             $order->service_charge = $serviceCharge;
             $order->grand_total = $grandTotal;
@@ -597,12 +625,101 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
     }
 
 
+    /**
+     * Collect a later payment against an existing due balance and keep an auditable history.
+     */
+    public function payDue(Request $request, $id)
+    {
+        abort_unless(auth()->user()?->can('order-edit'), 403);
+
+        $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'payment_type' => ['required', Rule::in(['Cash', 'Card', 'Mobile Banking'])],
+            'transaction_reference' => ['nullable', 'string', 'max:255'],
+            'remark' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if (in_array($request->payment_type, ['Card', 'Mobile Banking'], true)
+            && trim((string) $request->transaction_reference) === '') {
+            return back()->withErrors([
+                'transaction_reference' => 'Reference number is required for Card or Mobile Banking due payment.',
+            ])->withInput();
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $order = Order::lockForUpdate()->findOrFail($id);
+            $dueBefore = max(0, round((float) ($order->due ?? 0), 2));
+            $amount = max(0, round((float) $request->amount, 2));
+
+            if ($dueBefore <= 0) {
+                DB::rollBack();
+                return back()->with('error', 'This order has no due amount remaining.');
+            }
+
+            if ($amount > $dueBefore) {
+                DB::rollBack();
+                return back()->withErrors([
+                    'amount' => 'Due payment cannot exceed the remaining due amount of ৳' . number_format($dueBefore, 2) . '.',
+                ])->withInput();
+            }
+
+            $dueAfter = max(0, round($dueBefore - $amount, 2));
+            $paymentType = $request->payment_type;
+
+            \App\Models\OrderDuePayment::create([
+                'order_id' => $order->id,
+                'amount' => $amount,
+                'due_before' => $dueBefore,
+                'due_after' => $dueAfter,
+                'payment_type' => $paymentType,
+                'transaction_reference' => in_array($paymentType, ['Card', 'Mobile Banking'], true)
+                    ? trim((string) $request->transaction_reference)
+                    : null,
+                'remark' => trim((string) $request->remark) !== '' ? trim((string) $request->remark) : null,
+                'received_by' => auth()->id(),
+                'paid_at' => now(),
+            ]);
+
+            $order->total_paid_amount = round((float) ($order->total_paid_amount ?? 0) + $amount, 2);
+
+            if ($paymentType === 'Cash') {
+                $order->paid_in_cash = round((float) ($order->paid_in_cash ?? 0) + $amount, 2);
+            } elseif ($paymentType === 'Card') {
+                $order->paid_in_card = round((float) ($order->paid_in_card ?? 0) + $amount, 2);
+            } else {
+                $order->paid_in_mfc = round((float) ($order->paid_in_mfc ?? 0) + $amount, 2);
+            }
+
+            $activeMethods = collect([
+                'Cash' => (float) ($order->paid_in_cash ?? 0),
+                'Card' => (float) ($order->paid_in_card ?? 0),
+                'Mobile Banking' => (float) ($order->paid_in_mfc ?? 0),
+            ])->filter(fn ($value) => $value > 0);
+
+            $order->payment_type = $activeMethods->count() > 1
+                ? 'Split'
+                : ($activeMethods->keys()->first() ?: $paymentType);
+            $order->due = $dueAfter;
+            $order->save();
+
+            DB::commit();
+
+            return redirect()
+                ->route('order.details', $order->id)
+                ->with('success', 'Due payment of ৳' . number_format($amount, 2) . ' received successfully.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return back()->with('error', 'Due payment failed! ' . $e->getMessage())->withInput();
+        }
+    }
+
     public function details($id)
     {
-        // 'review' রিলেশনটি যুক্ত করা হয়েছে
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'review'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'review', 'duePayments.user'])->findOrFail($id);
 
-        // ফুল-পেজ ব্লেড ফাইল রিটার্ন করা হচ্ছে
         return view('admin.order.show', compact('order'));
     }
 

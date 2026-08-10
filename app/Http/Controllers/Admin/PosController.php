@@ -1461,6 +1461,74 @@ public function placeOrder(Request $request)
         }
     }
 
+    /**
+     * Calculate product-wise discounts for the current order lines.
+     * The existing whole-order discount remains independent and unchanged.
+     */
+    private function calculateProductWiseDiscounts(Order $order, array $requestedDiscounts, bool $persist = false): array
+    {
+        $details = $order->relationLoaded('orderDetails')
+            ? $order->orderDetails
+            : $order->orderDetails()->get();
+
+        $total = 0.0;
+        $breakdown = [];
+
+        foreach ($details as $detail) {
+            if (!empty($detail->is_unavailable)) {
+                continue;
+            }
+
+            $config = $requestedDiscounts[(string) $detail->id]
+                ?? $requestedDiscounts[$detail->id]
+                ?? [];
+
+            $type = ($config['type'] ?? 'fixed') === 'percentage' ? 'percentage' : 'fixed';
+            $value = max(0, (float) ($config['value'] ?? 0));
+            $lineSubtotal = max(0, (float) ($detail->subtotal ?? 0));
+
+            if ($type === 'percentage') {
+                $value = min($value, 100);
+                $amount = round(($lineSubtotal * $value) / 100);
+            } else {
+                $amount = min($value, $lineSubtotal);
+            }
+
+            $amount = max(0, round($amount));
+            $total += $amount;
+
+            $detail->product_discount_type = $amount > 0 ? $type : null;
+            $detail->product_discount_value = $amount > 0 ? $value : 0;
+            $detail->product_discount_amount = $amount;
+
+            if ($persist) {
+                $detail->save();
+            }
+
+            $breakdown[$detail->id] = [
+                'type' => $detail->product_discount_type,
+                'value' => (float) $detail->product_discount_value,
+                'amount' => (float) $detail->product_discount_amount,
+            ];
+        }
+
+        return [
+            'total' => round($total),
+            'items' => $breakdown,
+        ];
+    }
+
+    private function requestHasProductWiseDiscount(array $requestedDiscounts): bool
+    {
+        foreach ($requestedDiscounts as $config) {
+            if (is_array($config) && max(0, (float) ($config['value'] ?? 0)) > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function completePayment(Request $request)
     {
         if (!$request->filled('order_id')) {
@@ -1502,8 +1570,14 @@ public function placeOrder(Request $request)
             }
         }
 
+        $requestedProductDiscounts = $request->input('product_discounts', []);
+        if (!is_array($requestedProductDiscounts)) {
+            $requestedProductDiscounts = [];
+        }
+
         $discountValueForRemark = max(0, (float) $request->input('discount_value', 0));
-        if ($discountValueForRemark > 0 && trim((string) $request->input('remark', '')) === '') {
+        $hasProductWiseDiscount = $this->requestHasProductWiseDiscount($requestedProductDiscounts);
+        if (($discountValueForRemark > 0 || $hasProductWiseDiscount) && trim((string) $request->input('remark', '')) === '') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Remark is required when a discount is applied.'
@@ -1542,6 +1616,8 @@ public function placeOrder(Request $request)
             }
 
             $subtotal = $order->subtotal;
+            $productDiscountResult = $this->calculateProductWiseDiscounts($order, $requestedProductDiscounts, true);
+            $product_discount_amount = (float) $productDiscountResult['total'];
 
             // বিল ক্যালকুলেশনে সার্ভিস চার্জ চেক (শুধু Dine-In হলে সার্ভিস চার্জ কাটবে)
             $service_charge_rate = (strtolower($order->order_type) == 'dine-in' || strtolower($order->order_type) == 'dine_in') ? ($taxSetting->service_charge ?? 0) : 0;
@@ -1552,8 +1628,9 @@ public function placeOrder(Request $request)
             // ভ্যাট, সার্ভিস চার্জ এবং ডিসকাউন্ট ক্যালকুলেশন (রাউন্ড ফিগার সহ)
             $service_charge = round(($subtotal * $service_charge_rate) / 100);
             $tax = round((($subtotal + $service_charge) * $vat_rate) / 100);
+            // Whole-order discount calculation is intentionally unchanged.
             $discount_amount = round(($discount_type == 'percentage') ? ($subtotal * $discount_value) / 100 : $discount_value);
-            $grand_total = round(($subtotal + $tax + $service_charge) - $discount_amount);
+            $grand_total = max(0, round(($subtotal + $tax + $service_charge) - $discount_amount - $product_discount_amount));
 
             // ===============================================
             // পেমেন্ট স্প্লিট এবং Due ক্যালকুলেশন
@@ -1576,21 +1653,59 @@ public function placeOrder(Request $request)
 
             $tipsAmount = max(0, round((float) ($request->tips_amount ?? 0), 2));
             $givenMoney = max(0, round((float) ($request->given_money ?? 0), 2));
-            $maxAllowedTips = max(0, round($givenMoney - $totalPaid, 2));
+            $requiredGivenMoney = round($totalPaid + $tipsAmount, 2);
+            $saveAsDueOrder = (int) $request->input('save_as_due_order', 0) === 1;
 
-            // Given Money দিয়ে bill payment + tips—দুটিই cover করতে হবে।
-            if ($tipsAmount > $maxAllowedTips) {
-                DB::rollBack();
+            // A short Given Money entry normally remains a validation error. If the operator
+            // explicitly chooses "Save as Due Order", convert only the actually received amount
+            // into bill payment and carry the shortage to Due. Negative Change is never persisted.
+            if ($givenMoney + 0.001 < $requiredGivenMoney) {
+                if (!$saveAsDueOrder) {
+                    DB::rollBack();
 
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Given Money is insufficient. Total Paid + Tips cannot exceed Given Money. Maximum allowed Tips: ৳' . number_format($maxAllowedTips, 2, '.', '') . '.'
-                ]);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'You entered less money than the payment amount. Please correct the Given Money amount or save it as a Due Order.'
+                    ], 422);
+                }
+
+                // Given Money includes tips. Do not save tips greater than the money actually received.
+                $tipsAmount = min($tipsAmount, $givenMoney);
+                $receivedForBill = max(0, round($givenMoney - $tipsAmount, 2));
+                $totalPaid = min($totalPaid, $receivedForBill, (float) $grand_total);
+
+                // Keep method-wise paid amounts consistent with the adjusted Total Paid.
+                if ($paymentMethod === 'Cash') {
+                    $cash = $totalPaid;
+                    $card = 0;
+                    $mfc = 0;
+                } elseif ($paymentMethod === 'Card') {
+                    $cash = 0;
+                    $card = $totalPaid;
+                    $mfc = 0;
+                } elseif ($paymentMethod === 'Mobile Banking') {
+                    $cash = 0;
+                    $card = 0;
+                    $mfc = $totalPaid;
+                } elseif ($paymentMethod === 'Split') {
+                    $originalSplitTotal = max(0, round($cash + $card + $mfc, 2));
+
+                    if ($originalSplitTotal > 0 && $totalPaid > 0) {
+                        $cash = round($totalPaid * ($cash / $originalSplitTotal), 2);
+                        $card = round($totalPaid * ($card / $originalSplitTotal), 2);
+                        $mfc = max(0, round($totalPaid - $cash - $card, 2));
+                    } else {
+                        $cash = 0;
+                        $card = 0;
+                        $mfc = 0;
+                    }
+                }
             }
 
+            // UI may display a negative shortage while typing, but database Change is always >= 0.
             $changeAmount = max(0, round($givenMoney - $totalPaid - $tipsAmount, 2));
 
-            // Due হিসাব করা হচ্ছে — tips/given money due কমাবে না, শুধু bill paid amount কমাবে।
+            // Due = Grand Total - the bill amount actually paid.
             $due = max(0, round($grand_total - $totalPaid, 2));
 
             // ===============================================
@@ -1598,6 +1713,7 @@ public function placeOrder(Request $request)
             // ===============================================
             $order->discount_type     = $discount_type;
             $order->discount_amount   = $discount_amount;
+            $order->product_discount_amount = $product_discount_amount;
             $order->vat_tax           = $tax;
             $order->service_charge    = $service_charge;
             $order->grand_total       = $grand_total;
@@ -1940,14 +2056,42 @@ public function placeOrder(Request $request)
 
             $serviceCharge = round(($newSubtotal * $serviceRate) / 100);
             $vatTax = round((($newSubtotal + $serviceCharge) * $vatRate) / 100);
-            // orders.discount_amount-এ calculated discount amount থাকে, তাই item delete হলেও একই amount cap করে রাখা হলো
+            // Existing product-wise discount settings are recalculated against the changed line subtotals.
+            $productDiscountTotal = 0;
+            $remainingDetails = OrderDetail::where('order_id', $order->id)
+                ->where('is_unavailable', 0)
+                ->get();
+
+            foreach ($remainingDetails as $remainingDetail) {
+                $lineSubtotal = max(0, (float) ($remainingDetail->subtotal ?? 0));
+                $type = ($remainingDetail->product_discount_type ?? 'fixed') === 'percentage' ? 'percentage' : 'fixed';
+                $value = max(0, (float) ($remainingDetail->product_discount_value ?? 0));
+
+                if ($type === 'percentage') {
+                    $value = min($value, 100);
+                    $lineProductDiscount = round(($lineSubtotal * $value) / 100);
+                } else {
+                    $lineProductDiscount = min($value, $lineSubtotal);
+                }
+
+                $lineProductDiscount = max(0, round($lineProductDiscount));
+                $remainingDetail->product_discount_type = $lineProductDiscount > 0 ? $type : null;
+                $remainingDetail->product_discount_value = $lineProductDiscount > 0 ? $value : 0;
+                $remainingDetail->product_discount_amount = $lineProductDiscount;
+                $remainingDetail->save();
+                $productDiscountTotal += $lineProductDiscount;
+            }
+
+            // orders.discount_amount-এ calculated other discount amount থাকে, তাই item delete হলেও একই amount cap করে রাখা হলো
             $discountAmount = min(round((float) ($order->discount_amount ?? 0)), round($newSubtotal + $serviceCharge + $vatTax));
-            $grandTotal = max(0, round(($newSubtotal + $serviceCharge + $vatTax) - $discountAmount));
+            $productDiscountTotal = min(max(0, round($productDiscountTotal)), round($newSubtotal));
+            $grandTotal = max(0, round(($newSubtotal + $serviceCharge + $vatTax) - $discountAmount - $productDiscountTotal));
             $totalPaid = (float) ($order->total_paid_amount ?? 0);
 
             $order->subtotal = $newSubtotal;
             $order->service_charge = $serviceCharge;
             $order->vat_tax = $vatTax;
+            $order->product_discount_amount = $productDiscountTotal;
             $order->grand_total = $grandTotal;
             $order->due = max(0, $grandTotal - $totalPaid);
             $order->save();
@@ -2013,19 +2157,28 @@ public function placeOrder(Request $request)
         $subtotal = $order->subtotal;
         $disc_type = $request->disc_type ?? 'fixed';
         $disc_val = $request->disc_val ?? 0;
+        $requestedProductDiscounts = $request->input('product_discounts', []);
+        if (!is_array($requestedProductDiscounts)) {
+            $requestedProductDiscounts = [];
+        }
+        $productDiscountResult = $this->calculateProductWiseDiscounts($order, $requestedProductDiscounts, false);
+        $product_discount_amount = (float) $productDiscountResult['total'];
 
         $discount_amount = ($disc_type == 'percentage') ? ($subtotal * $disc_val) / 100 : $disc_val;
         $vat_rate = $taxSetting->vat_rate ?? 0;
-        $service_rate = $taxSetting->service_charge ?? 0;
+        $service_rate = (strtolower((string) $order->order_type) === 'dine-in' || strtolower((string) $order->order_type) === 'dine_in')
+            ? ($taxSetting->service_charge ?? 0)
+            : 0;
 
         $service = round(($subtotal * $service_rate) / 100);
 $tax = round((($subtotal + $service) * $vat_rate) / 100);
 $discount_amount = round(($disc_type == 'percentage') ? ($subtotal * $disc_val) / 100 : $disc_val);
-$grand_total = round(($subtotal + $tax + $service) - $discount_amount);
+$grand_total = max(0, round(($subtotal + $tax + $service) - $discount_amount - $product_discount_amount));
 
         // শুধু ভিউয়ের জন্য সাময়িকভাবে ডাটাগুলো ওভাররাইড করা হলো (ডাটাবেজে সেভ হবে না)
         $order->discount_type = $disc_type;
         $order->discount_amount = $discount_amount;
+        $order->product_discount_amount = $product_discount_amount;
         $order->vat_tax = $tax;
         $order->service_charge = $service;
         $order->grand_total = $grand_total;

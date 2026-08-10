@@ -138,6 +138,17 @@
         color: var(--progga-text-muted);
         margin-top: 6px;
     }
+    .order-product-discount-control {
+        display: grid;
+        grid-template-columns: minmax(105px, .8fr) minmax(85px, 1fr);
+        gap: 6px;
+        min-width: 205px;
+    }
+    .order-product-discount-control .form-control {
+        min-height: 34px;
+        padding: 5px 8px;
+        font-size: 12px;
+    }
     @media (max-width: 991.98px) {
         .order-edit-grid {
             grid-template-columns: 1fr;
@@ -222,6 +233,8 @@
                                     <th class="text-end">Unit Total</th>
                                     <th class="text-center">Qty</th>
                                     <th class="text-end">Line Total</th>
+                                    <th>Product Discount</th>
+                                    <th class="text-end">Product Discount Amount</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -266,7 +279,14 @@
                                             ৳<span class="unit-total">{{ number_format($unitTotal, 0) }}</span>
                                         </td>
                                         <td class="text-center">
-                                            @php $currentQty = max(1, (int) old('items.'.$detail->id.'.quantity', $oldQty)); @endphp
+                                            @php
+                                                $currentQty = max(1, (int) old('items.'.$detail->id.'.quantity', $oldQty));
+                                                $productDiscountType = old('items.'.$detail->id.'.product_discount_type', $detail->product_discount_type ?: 'fixed');
+                                                $productDiscountValue = old('items.'.$detail->id.'.product_discount_value', $detail->product_discount_value ?? 0);
+                                                if (is_numeric($productDiscountValue)) {
+                                                    $productDiscountValue = rtrim(rtrim(number_format((float) $productDiscountValue, 2, '.', ''), '0'), '.');
+                                                }
+                                            @endphp
                                             <div class="order-edit-qty-control">
                                                 <button type="button" class="order-edit-qty-btn minus js-qty-minus" aria-label="Decrease quantity">−</button>
                                                 <span class="order-edit-qty-value js-qty-value">{{ $currentQty }}</span>
@@ -278,7 +298,25 @@
                                                    value="{{ $currentQty }}">
                                         </td>
                                         <td class="text-end fw-bold">
-                                            ৳<span class="line-total">{{ number_format($unitTotal * $oldQty, 0) }}</span>
+                                            ৳<span class="line-total">{{ number_format($unitTotal * $currentQty, 0) }}</span>
+                                        </td>
+                                        <td>
+                                            <div class="order-product-discount-control">
+                                                <select name="items[{{ $detail->id }}][product_discount_type]" class="form-control js-product-discount-type">
+                                                    <option value="fixed" {{ $productDiscountType === 'fixed' ? 'selected' : '' }}>Fixed (৳)</option>
+                                                    <option value="percentage" {{ $productDiscountType === 'percentage' ? 'selected' : '' }}>Percentage (%)</option>
+                                                </select>
+                                                <input type="number"
+                                                       name="items[{{ $detail->id }}][product_discount_value]"
+                                                       class="form-control js-product-discount-value"
+                                                       value="{{ $productDiscountValue }}"
+                                                       min="0"
+                                                       step="0.01"
+                                                       placeholder="Value">
+                                            </div>
+                                        </td>
+                                        <td class="text-end fw-bold text-danger">
+                                            − ৳<span class="js-product-discount-amount">{{ number_format($detail->product_discount_amount ?? 0, 0) }}</span>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -318,7 +356,7 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label fw-bold" style="font-size:12px;">Discount Value</label>
+                            <label class="form-label fw-bold" style="font-size:12px;">Honored</label>
                             <input type="number"
                                    name="discount_value"
                                    id="discountValue"
@@ -330,8 +368,12 @@
                     </div>
 
                     <div class="summary-row mt-3">
-                        <span>Discount Amount</span>
+                        <span>Honored</span>
                         <strong class="text-danger">− ৳<span id="summaryDiscount">0</span></strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>Product Discount</span>
+                        <strong class="text-danger">− ৳<span id="summaryProductDiscount">0</span></strong>
                     </div>
                     <div class="summary-row grand">
                         <span>Grand Total</span>
@@ -544,6 +586,7 @@
 
     function calculateTotals() {
         let subtotal = 0;
+        let productDiscount = 0;
 
         document.querySelectorAll('.order-item-row').forEach(function (row) {
             const unit = Number(row.dataset.unit || 0);
@@ -561,6 +604,24 @@
             const lineTotal = unit * qty;
             row.querySelector('.line-total').textContent = money(lineTotal);
             subtotal += lineTotal;
+
+            const productType = row.querySelector('.js-product-discount-type');
+            const productValue = row.querySelector('.js-product-discount-value');
+            let discountValue = Math.max(0, numberValue(productValue));
+            let lineDiscount = 0;
+
+            if (productType && productType.value === 'percentage') {
+                discountValue = Math.min(discountValue, 100);
+                lineDiscount = Math.round((lineTotal * discountValue) / 100);
+            } else {
+                lineDiscount = Math.min(discountValue, lineTotal);
+            }
+
+            lineDiscount = Math.max(0, Math.round(lineDiscount));
+            productDiscount += lineDiscount;
+
+            const amountBox = row.querySelector('.js-product-discount-amount');
+            if (amountBox) amountBox.textContent = money(lineDiscount);
         });
 
         const service = Math.round((subtotal * serviceRate) / 100);
@@ -577,7 +638,8 @@
         const maxDiscount = Math.round(subtotal + service + vat);
         discount = Math.max(0, Math.min(discount, maxDiscount));
 
-        const grand = Math.max(0, Math.round((subtotal + service + vat) - discount));
+        productDiscount = Math.max(0, Math.min(Math.round(productDiscount), Math.round(subtotal)));
+        const grand = Math.max(0, Math.round((subtotal + service + vat) - discount - productDiscount));
         const paid = getCurrentPaidAmount();
         const tips = numberValue(tipsAmount);
         const given = numberValue(givenMoney);
@@ -592,6 +654,7 @@
         document.getElementById('summaryService').textContent = money(service);
         document.getElementById('summaryVat').textContent = money(vat);
         document.getElementById('summaryDiscount').textContent = money(discount);
+        document.getElementById('summaryProductDiscount').textContent = money(productDiscount);
         document.getElementById('summaryGrand').textContent = money(grand);
         document.getElementById('summaryPaid').textContent = money(paid);
         document.getElementById('summaryTips').textContent = money(tips);
@@ -627,6 +690,11 @@
 
     [discountType, discountValue, totalPaidAmount, tipsAmount, givenMoney].forEach(function (el) {
         if (!el) return;
+        el.addEventListener('input', calculateTotals);
+        el.addEventListener('change', calculateTotals);
+    });
+
+    document.querySelectorAll('.js-product-discount-type, .js-product-discount-value').forEach(function (el) {
         el.addEventListener('input', calculateTotals);
         el.addEventListener('change', calculateTotals);
     });

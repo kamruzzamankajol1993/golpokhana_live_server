@@ -1,0 +1,52 @@
+@extends('admin.master.master')
+@section('title', 'Leave Management — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('css')
+@include('admin.hr.shared.styles')
+<style>.leave-balance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.leave-balance-item{padding:10px;border:1px solid var(--progga-border-light);border-radius:10px;background:#fafbfa}.leave-balance-name{font-size:11px;color:var(--progga-text-muted)}.leave-balance-value{font-size:17px;font-weight:900;color:var(--progga-primary)}@media(max-width:767px){.leave-balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>
+@endsection
+@section('body')
+<main class="progga-content"><div class="hr-shell">
+<div class="progga-page-header"><div><h1 class="progga-page-title">Leave Management</h1><div class="progga-breadcrumb"><a href="{{ route('home') }}" class="progga-breadcrumb-item">Dashboard</a><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item">Human Resources</span><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item active">Leave Management</span></div></div>@can('leave-management-create')<button class="progga-btn progga-btn-primary" id="addLeaveBtn"><i class="bi bi-calendar-plus"></i> New Leave Request</button>@endcan</div>
+<div class="hr-stat-grid">
+<div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-hourglass-split"></i></div><div><div class="hr-stat-value">{{ $pendingCount }}</div><div class="hr-stat-label">Pending Requests</div></div></div>
+<div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-calendar-check"></i></div><div><div class="hr-stat-value">{{ $approvedThisMonth }}</div><div class="hr-stat-label">Approved This Month</div></div></div>
+<div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-person-dash"></i></div><div><div class="hr-stat-value">{{ $onLeaveToday }}</div><div class="hr-stat-label">On Leave Today</div></div></div>
+<div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-calendar-x"></i></div><div><div class="hr-stat-value">{{ $rejectedThisMonth }}</div><div class="hr-stat-label">Rejected This Month</div></div></div>
+</div>
+<div class="hr-card mb-3"><div class="hr-card-body"><div class="hr-filter-grid five">
+<div class="hr-search"><i class="bi bi-search"></i><input id="leaveSearch" class="progga-form-control" placeholder="Search employee name, ID or phone"></div>
+<select id="leaveEmployeeFilter" class="leave-filter-select2"><option value="">All Employees</option>@foreach($employees as $item)<option value="{{ $item->id }}">{{ $item->employee_code }} — {{ $item->name }}</option>@endforeach</select>
+<select id="leaveTypeFilter" class="leave-filter-select2"><option value="">All Leave Types</option>@foreach($leaveTypes as $item)<option value="{{ $item->id }}">{{ $item->name }}</option>@endforeach</select>
+<select id="leaveStatusFilter" class="leave-filter-select2"><option value="">All Status</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option></select>
+<input id="leaveFromFilter" class="progga-form-control leave-filter-date" placeholder="From date"><input id="leaveToFilter" class="progga-form-control leave-filter-date" placeholder="To date">
+<button id="leaveReset" class="progga-btn progga-btn-outline"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+</div></div></div>
+<div class="hr-card" id="leaveTableContainer"><div class="hr-empty"><div class="spinner-border spinner-border-sm"></div><div class="mt-2">Loading leave requests...</div></div></div>
+</div></main>
+@include('admin.hr.leaves.modals.form')
+@endsection
+@section('script')
+@include('admin.hr.shared.plugins')
+<script>
+$(function(){
+ let page=1,timer=null,editId=null;const modal=bootstrap.Modal.getOrCreateInstance(document.getElementById('leaveModal'));
+ HrUi.initSelect2('.leave-filter-select2');
+ $('#leaveModal').on('shown.bs.modal', function(){ HrUi.initSelect2('.leave-form-select2'); });
+ const filterDates=flatpickr('.leave-filter-date',{dateFormat:'Y-m-d',altInput:true,altFormat:'d-m-Y',allowInput:true,onChange:()=>loadLeaves(1)});
+ const formDates=flatpickr('.leave-form-date',{dateFormat:'Y-m-d',altInput:true,altFormat:'d-m-Y',allowInput:true,onChange:calculatePreview});
+ function cv(id){return HrUi.selectValue(id)} function setSelect(id,v){HrUi.setSelectValue(id,v);}
+ function loadLeaves(p=1){page=p;$('#leaveTableContainer').addClass('hr-table-loading');$.get("{{ route('hr.leaves.index') }}",{page:p,search:$('#leaveSearch').val(),employee_id:cv('leaveEmployeeFilter'),leave_type_id:cv('leaveTypeFilter'),status:cv('leaveStatusFilter'),from_date:$('#leaveFromFilter').val(),to_date:$('#leaveToFilter').val()}).done(html=>$('#leaveTableContainer').html(html)).fail(()=>Swal.fire('Error','Failed to load leave requests.','error')).always(()=>$('#leaveTableContainer').removeClass('hr-table-loading'));}
+ $('#leaveSearch').on('input',()=>{clearTimeout(timer);timer=setTimeout(()=>loadLeaves(1),350)});$('.leave-filter-select2').on('change',()=>loadLeaves(1));$('#leaveReset').on('click',function(){$('#leaveSearch').val('');['leaveEmployeeFilter','leaveTypeFilter','leaveStatusFilter'].forEach(function(id){HrUi.resetSelect(id);});filterDates.forEach(fp=>fp.clear());loadLeaves(1)});$(document).on('click','#leaveTableContainer .report-page-link:not(.disabled)',function(e){e.preventDefault();const u=new URL(this.href);loadLeaves(u.searchParams.get('page')||1)});
+ function resetForm(){editId=null;$('#leaveForm')[0].reset();$('#leaveModalTitle').text('New Leave Request');$('#leaveSaveText').text('Submit Request');['formLeaveEmployee','formLeaveType'].forEach(id=>setSelect(id,''));formDates.forEach(fp=>fp.clear());$('#leaveBalancePanel').html('<div class="hr-muted">Select an employee to view current leave balances.</div>');$('#leaveDayPreview').text('0 working day');$('.leave-error').text('');}
+ $('#addLeaveBtn').on('click',()=>{resetForm();modal.show()});
+ $('#formLeaveEmployee').on('change',function(){const id=cv('formLeaveEmployee');if(!id){$('#leaveBalancePanel').html('<div class="hr-muted">Select an employee to view current leave balances.</div>');return;}$('#leaveBalancePanel').html('<div class="spinner-border spinner-border-sm"></div>');$.get("{{ url('/hr/leave-management/employee') }}/"+id+'/balances').done(res=>{let h='<div class="leave-balance-grid">';res.balances.forEach(b=>h+=`<div class="leave-balance-item"><div class="leave-balance-name">${b.name}</div><div class="leave-balance-value">${b.available}</div><div class="hr-muted">Used ${b.used} / ${b.entitled}</div></div>`);h+='</div>';$('#leaveBalancePanel').html(h)}).fail(()=>$('#leaveBalancePanel').html('<div class="text-danger">Could not load balances.</div>'));});
+ function calculatePreview(){const f=$('#leaveFromDate').val(),t=$('#leaveToDate').val();if(!f||!t)return $('#leaveDayPreview').text('0 working day');const a=new Date(f+'T00:00:00'),b=new Date(t+'T00:00:00');const d=Math.max(0,Math.floor((b-a)/86400000)+1);$('#leaveDayPreview').text(d+' calendar day'+(d===1?'':'s')+' (server will exclude weekly off/holidays)');}
+ $(document).on('click','.leave-edit-btn',function(){resetForm();editId=$(this).data('id');const p=JSON.parse(atob($(this).data('payload')));$('#leaveModalTitle').text('Edit Leave Request');$('#leaveSaveText').text('Update Request');setSelect('formLeaveEmployee',p.employee_id);setSelect('formLeaveType',p.leave_type_id);formDates.find(fp=>fp.element.id==='leaveFromDate')?.setDate(p.from_date,true);formDates.find(fp=>fp.element.id==='leaveToDate')?.setDate(p.to_date,true);$('#leaveReason').val(p.reason);$('#formLeaveEmployee').trigger('change');calculatePreview();modal.show();});
+ $('#leaveForm').on('submit',function(e){e.preventDefault();const fd=new FormData(this);fd.set('employee_id',cv('formLeaveEmployee'));fd.set('leave_type_id',cv('formLeaveType'));const url=editId?"{{ url('/hr/leave-management') }}/"+editId:"{{ route('hr.leaves.store') }}";const btn=$('#leaveSaveBtn').prop('disabled',true);$('.leave-error').text('');$.ajax({url,type:'POST',data:fd,processData:false,contentType:false}).done(res=>{modal.hide();Swal.fire({icon:'success',title:'Saved',text:res.message,timer:1800,showConfirmButton:false});loadLeaves(page)}).fail(xhr=>{const errors=xhr.responseJSON?.errors||{};Object.keys(errors).forEach(k=>$('[data-error="'+k+'"]').text(errors[k][0]));Swal.fire('Could not save',xhr.responseJSON?.message||'Please check the form.','error')}).always(()=>btn.prop('disabled',false));});
+ $(document).on('click','.leave-decision-btn',function(){const id=$(this).data('id'),decision=$(this).data('decision');Swal.fire({title:decision==='approved'?'Approve leave?':'Reject leave?',input:'textarea',inputLabel:'Approval note (optional)',icon:decision==='approved'?'question':'warning',showCancelButton:true,confirmButtonText:decision==='approved'?'Approve':'Reject',confirmButtonColor:decision==='approved'?'#21352a':'#c63d3d'}).then(r=>{if(!r.isConfirmed)return;$.ajax({url:"{{ url('/hr/leave-management') }}/"+id+'/decision',type:'PATCH',data:{_token:"{{ csrf_token() }}",decision,approval_note:r.value||''}}).done(res=>{showToast('Updated',res.message);loadLeaves(page)}).fail(xhr=>Swal.fire('Could not process',xhr.responseJSON?.message||'Failed.','error'))})});
+ $(document).on('click','.leave-cancel-btn',function(){const id=$(this).data('id');Swal.fire({title:'Cancel leave request?',icon:'warning',showCancelButton:true,confirmButtonText:'Cancel Leave'}).then(r=>{if(!r.isConfirmed)return;$.ajax({url:"{{ url('/hr/leave-management') }}/"+id+'/cancel',type:'PATCH',data:{_token:"{{ csrf_token() }}"}}).done(res=>{showToast('Cancelled',res.message);loadLeaves(page)}).fail(xhr=>Swal.fire('Could not cancel',xhr.responseJSON?.message||'Failed.','error'))})});
+ $(document).on('click','.leave-delete-btn',function(){const id=$(this).data('id');Swal.fire({title:'Delete leave request?',icon:'warning',showCancelButton:true,confirmButtonText:'Delete',confirmButtonColor:'#c63d3d'}).then(r=>{if(!r.isConfirmed)return;$.ajax({url:"{{ url('/hr/leave-management') }}/"+id,type:'DELETE',data:{_token:"{{ csrf_token() }}"}}).done(res=>{showToast('Deleted',res.message);loadLeaves(page)}).fail(xhr=>Swal.fire('Cannot delete',xhr.responseJSON?.message||'Failed.','error'))})});
+ loadLeaves();
+});
+</script>
+@endsection

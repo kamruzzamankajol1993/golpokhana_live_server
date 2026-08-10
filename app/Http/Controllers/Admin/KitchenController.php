@@ -143,6 +143,9 @@ class KitchenController extends Controller
     {
         $detail = \App\Models\OrderDetail::findOrFail($request->detail_id);
         $detail->is_unavailable = 1;
+        $detail->product_discount_type = null;
+        $detail->product_discount_value = 0;
+        $detail->product_discount_amount = 0;
         $detail->save();
 
         $order = \App\Models\Order::findOrFail($detail->order_id);
@@ -160,19 +163,23 @@ class KitchenController extends Controller
             : 0;
 
         $discount_amount = $order->discount_amount;
+        $product_discount_amount = \App\Models\OrderDetail::where('order_id', $order->id)
+            ->where('is_unavailable', 0)
+            ->sum('product_discount_amount');
 
         // Recalculate rounded bill values.
         $service_charge = round(($newSubtotal * $service_charge_rate) / 100);
         $tax = round((($newSubtotal + $service_charge) * $vat_rate) / 100);
-        $grand_total = round(($newSubtotal + $tax + $service_charge) - $discount_amount);
+        $grand_total = max(0, round(($newSubtotal + $tax + $service_charge) - $discount_amount - $product_discount_amount));
 
         // Update order bill.
         $order->update([
             'subtotal' => $newSubtotal,
             'service_charge' => $service_charge,
             'vat_tax' => $tax,
+            'product_discount_amount' => $product_discount_amount,
             'grand_total' => $grand_total,
-            'due' => $grand_total - $order->total_paid_amount,
+            'due' => max(0, $grand_total - $order->total_paid_amount),
         ]);
 
         return response()->json([

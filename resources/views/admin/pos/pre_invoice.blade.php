@@ -67,10 +67,13 @@
       font-size: 11px; color: #000;
       line-height: 1.6; margin-bottom: 2px; font-family: var(--mono);
     }
-    .bill-restaurant-phone {
+    .bill-restaurant-phone,
+    .bill-registration-line {
       font-size: 11.5px; color: #000; font-weight: 900;
-      margin-top: 4px; font-family: var(--mono);
+      font-family: var(--mono);
     }
+    .bill-restaurant-phone { margin-top: 4px; }
+    .bill-registration-line { margin-top: 2px; }
 
     .bill-title-bar {
       background: #fff; padding: 7px 20px;
@@ -215,6 +218,9 @@
       <div class="bill-restaurant-addr">
         {!! nl2br(e($restaurantSettingAddress ?? 'Banani, Dhaka')) !!}
       </div>
+      <div class="bill-restaurant-phone">📞 {{ $restaurantSettingPhone ?? '01755 898 542' }}</div>
+      <div class="bill-registration-line">BIN: {{ $taxSettingTaxRegistrationNo ?? '006334813-0101' }}</div>
+      <div class="bill-registration-line">Mushak No: 6.3</div>
     </div>
 
     <div class="bill-title-bar">
@@ -258,6 +264,9 @@
                     <td>{{ $item->quantity }}</td>
                     <td>
                       <div class="bill-item-name">{{ $item->product_name }}</div>
+                      @if(($item->product_discount_amount ?? 0) > 0)
+                        <div class="bill-item-note">Product Discount</div>
+                      @endif
                       @if($item->food_note)
                         <div class="bill-item-note">{{ $item->food_note }}</div>
                       @endif
@@ -267,7 +276,12 @@
                         </div>
                       @endif
                     </td>
-                    <td>{{ round($item->subtotal) }}</td>
+                    <td>
+                      <div>{{ round($item->subtotal) }}</div>
+                      @if(($item->product_discount_amount ?? 0) > 0)
+                        <div class="bill-item-note">−{{ number_format($item->product_discount_amount, 0) }}</div>
+                      @endif
+                    </td>
                   </tr>
               @endif
 
@@ -299,7 +313,13 @@
           <span>+ {{ number_format($order->vat_tax, 0) }}</span>
         </div>
         @endif
-@if($order->discount_amount > 0)
+@if(($order->product_discount_amount ?? 0) > 0)
+        <div class="bill-total-row discount">
+          <span>Product Discount</span>
+          <span>− {{ number_format($order->product_discount_amount, 0) }}</span>
+        </div>
+        @endif
+        @if($order->discount_amount > 0)
         <div class="bill-total-row discount">
           <span>Honored</span>
           <span>− {{ number_format($order->discount_amount, 0) }}</span>

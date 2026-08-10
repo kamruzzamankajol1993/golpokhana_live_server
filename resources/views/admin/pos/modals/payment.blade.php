@@ -1,5 +1,5 @@
 <div class="modal fade progga-modal" id="paymentModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
 
       <div class="modal-header" style="background: var(--progga-primary); padding: 16px 20px;">
@@ -12,26 +12,30 @@
       <div class="modal-body" style="padding: 20px; background: var(--progga-bg);">
         <div class="row g-4">
 
-          <div class="col-md-5">
+          <div class="col-lg-6">
             <div class="progga-form-label" style="font-weight:700; margin-bottom:12px; font-size: 14px; color: var(--progga-primary);">
               Order Summary
             </div>
 
-            <div id="payModalItemsArea" style="max-height: 200px; overflow-y: auto;"></div>
+            <div style="font-size:11px; color:#777; margin-top:-7px; margin-bottom:9px;">Optional product-wise discount can be applied to selected items only.</div>
+            <div id="payModalItemsArea" style="max-height: 300px; overflow-y: auto; padding-right: 3px;"></div>
 
             <div style="margin-top:14px; padding-top:10px; border-top:2px solid var(--progga-border-light);">
               <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
                 <span>Subtotal</span><span id="paySubtotal">৳0</span>
               </div>
-              <div class="progga-pos-total-row" id="payServiceRow" style="display: flex; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
-    <span>Service Charge ({{ $taxSettingServiceCharge }}%)</span><span id="payService">৳0</span>
-</div>
-              <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
+              <div class="progga-pos-total-row" id="payServiceRow" style="display: {{ ((float) ($taxSettingServiceCharge ?? 0) > 0) ? 'flex' : 'none' }}; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
+                <span>Service Charge ({{ $taxSettingServiceCharge }}%)</span><span id="payService">৳0</span>
+              </div>
+              <div class="progga-pos-total-row" id="payVatRow" style="display: {{ ((float) ($taxSettingVatRate ?? 0) > 0) ? 'flex' : 'none' }}; justify-content: space-between; font-size: 13px; color: #666; margin-bottom: 4px;">
                 <span>{{ $taxSettingTaxLabel }} ({{ $taxSettingVatRate }}%)</span><span id="payVat">৳0</span>
               </div>
 
-               <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 13px; color: #d33; margin-bottom: 4px;">
-                <span>Discount</span><span id="payDiscount">−৳0</span>
+              <div class="progga-pos-total-row" id="payProductDiscountRow" style="display: flex; justify-content: space-between; font-size: 13px; color: #d33; margin-bottom: 4px;">
+                <span>Product Discount</span><span id="payProductDiscount">−৳0</span>
+              </div>
+              <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 13px; color: #d33; margin-bottom: 4px;">
+                <span>Honored</span><span id="payDiscount">−৳0</span>
               </div>
               <div class="progga-pos-total-row grand" style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; color: var(--progga-primary); margin-top: 8px; border-top: 2px solid #f1f1f1; padding-top: 8px;">
                 <span>GRAND TOTAL</span><span id="payTotalAmount">৳0</span>
@@ -41,7 +45,7 @@
             </div>
           </div>
 
-          <div class="col-md-7">
+          <div class="col-lg-6">
             <form class="progga-pay-form" id="payForm">
               <input type="hidden" id="payOrderId" name="order_id">
               <input type="hidden" id="payOrderType" name="order_type">
@@ -56,7 +60,7 @@
                 </div>
                 <div class="col-6">
 
-                    <label style="font-size: 11px; font-weight: 700; color: #777; margin-bottom: 4px;">Discount Amount</label>
+                    <label style="font-size: 11px; font-weight: 700; color: #777; margin-bottom: 4px;">Honored</label>
                     <input type="number" name="discount_value" id="modal_discount_value" class="form-control" placeholder="0" min="0" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px;" onkeyup="calculateModalTotal()">
                 </div>
               </div>
@@ -185,6 +189,44 @@ input[type="radio"]:checked + .progga-pay-method-btn {
     background: rgba(33, 53, 42, 0.05) !important;
     box-shadow: 0 4px 10px rgba(0,0,0,0.05);
 }
+
+.progga-product-discount-item {
+    background: #fff;
+    border: 1px solid var(--progga-border-light);
+    border-radius: 9px;
+    padding: 9px 10px;
+    margin-bottom: 8px;
+}
+.progga-product-discount-controls {
+    display: grid;
+    grid-template-columns: minmax(108px, 0.9fr) minmax(90px, 0.8fr) auto;
+    gap: 6px;
+    align-items: center;
+    margin-top: 7px;
+}
+.progga-product-discount-controls .form-select,
+.progga-product-discount-controls .form-control {
+    min-height: 31px;
+    padding: 4px 7px;
+    font-size: 11px;
+    border-radius: 7px;
+}
+.progga-product-discount-amount {
+    min-width: 62px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 800;
+    color: #d33;
+}
+@media (max-width: 767.98px) {
+    .progga-product-discount-controls {
+        grid-template-columns: 1fr 1fr;
+    }
+    .progga-product-discount-amount {
+        grid-column: 1 / -1;
+        text-align: left;
+    }
+}
 </style>
 
 <script>
@@ -268,8 +310,8 @@ window.updateDueAmount = function() {
     let tips = posPaymentNumber($('#payTipsAmount').val());
     let givenMoney = posPaymentNumber($('#payGivenMoney').val());
 
+    // Keep shortage visible as a negative Change; Due is based only on Total Paid.
     let due = Math.max(0, grand - paid);
-    // Minus value-ও দেখানো হবে, যাতে cash shortage / excess tips সঙ্গে সঙ্গে বোঝা যায়।
     let changeAmount = givenMoney - paid - tips;
     let isNegativeChange = changeAmount < 0;
 
@@ -357,8 +399,22 @@ $(document).on('click', '#btnPreInvoice', function() {
 
     let discType = $('#modal_discount_type').val();
     let discVal = $('#modal_discount_value').val() || 0;
+    let params = new URLSearchParams();
+    params.set('disc_type', discType);
+    params.set('disc_val', discVal);
 
-    let url = "{{ url('/pos/pre-invoice') }}/" + orderId + "?disc_type=" + discType + "&disc_val=" + discVal;
+    $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
+        let row = $(this);
+        let detailId = parseInt(row.data('detail-id') || 0, 10);
+        let value = Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()));
+
+        if (detailId > 0 && value > 0) {
+            params.set('product_discounts[' + detailId + '][type]', row.find('.product-discount-type').val() || 'fixed');
+            params.set('product_discounts[' + detailId + '][value]', value);
+        }
+    });
+
+    let url = "{{ url('/pos/pre-invoice') }}/" + orderId + "?" + params.toString();
     window.open(url, '_blank');
 });
 

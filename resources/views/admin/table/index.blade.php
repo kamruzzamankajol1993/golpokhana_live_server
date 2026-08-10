@@ -94,6 +94,7 @@
                         'tax' => $activeOrder->vat_tax,
                         'service_charge' => $activeOrder->service_charge,
                         'discount' => $activeOrder->discount_amount,
+                        'product_discount' => $activeOrder->product_discount_amount ?? 0,
                         'grand_total' => $activeOrder->grand_total,
                         'kots' => $kotsData
                     ];
@@ -264,8 +265,11 @@ $(document).on('click', '.progga-table-card', function(e) {
     var taxAndService = parseFloat(order.tax) + parseFloat(order.service_charge);
     var totalsHtml = `<div class="progga-oc-total-row" style="display: flex; justify-content: space-between; font-size: 14px; color: #666; margin-bottom: 4px;"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>`;
 
+    if(order.product_discount > 0) {
+        totalsHtml += `<div class="progga-oc-total-row" style="display: flex; justify-content: space-between; font-size: 14px; color: #d33; margin-bottom: 4px;"><span>Product Discount</span><span>−${fmt(order.product_discount)}</span></div>`;
+    }
     if(order.discount > 0) {
-        totalsHtml += `<div class="progga-oc-total-row" style="display: flex; justify-content: space-between; font-size: 14px; color: #d33; margin-bottom: 4px;"><span>Discount</span><span>−${fmt(order.discount)}</span></div>`;
+        totalsHtml += `<div class="progga-oc-total-row" style="display: flex; justify-content: space-between; font-size: 14px; color: #d33; margin-bottom: 4px;"><span>Honored</span><span>−${fmt(order.discount)}</span></div>`;
     }
 
     totalsHtml += `

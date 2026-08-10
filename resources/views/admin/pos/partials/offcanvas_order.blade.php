@@ -122,9 +122,16 @@
             <span>{{ $taxSettingTaxLabel }} ({{ $taxSettingVatRate }}%)</span><span>৳{{ number_format($order->vat_tax, 0) }}</span>
         </div>
 
+        @if(($order->product_discount_amount ?? 0) > 0)
+        <div class="progga-oc-total-row" style="color: #d33;">
+            <span>Product Discount</span>
+            <span>−৳{{ number_format($order->product_discount_amount, 0) }}</span>
+        </div>
+        @endif
+
         @if($order->discount_amount > 0)
         <div class="progga-oc-total-row" style="color: #d33;">
-            <span>Discount ({{ ucfirst($order->discount_type) }})</span>
+            <span>Honored ({{ ucfirst($order->discount_type) }})</span>
             <span>−৳{{ number_format($order->discount_amount, 0) }}</span>
         </div>
         @endif
@@ -212,9 +219,13 @@
                             // POS workflow note.
                             if(!$item->is_unavailable) {
                                 $payItems[] = [
+                                    'id' => $item->id,
                                     'name' => $item->product_name,
                                     'qty' => $item->quantity,
-                                    'total' => $item->subtotal
+                                    'total' => $item->subtotal,
+                                    'product_discount_type' => $item->product_discount_type ?? 'fixed',
+                                    'product_discount_value' => $item->product_discount_value ?? 0,
+                                    'product_discount_amount' => $item->product_discount_amount ?? 0,
                                 ];
                             }
                         }

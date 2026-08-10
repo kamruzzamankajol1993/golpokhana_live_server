@@ -41,7 +41,8 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                 <th style="width:7%;">Order #</th>
                 <th style="width:13%;">Customer</th>
                 <th style="width:7%;" class="text-right">Subtotal</th>
-                <th style="width:7%;" class="text-right">Discount</th>
+                <th style="width:6%;" class="text-right">Honored</th>
+                <th style="width:6%;" class="text-right">Product Discount</th>
                 <th style="width:7%;" class="text-right">Service</th>
                 <th style="width:6%;" class="text-right">Tips</th>
                 <th style="width:6%;" class="text-right">Given</th>
@@ -58,6 +59,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
             @foreach(($orders ?? []) as $order)
                 @php
                     $discountAmount = max(0, (float)($order->discount_amount ?? 0));
+                    $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
                     $serviceCharge = max(0, (float)($order->service_charge ?? 0));
                     $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
                     $givenMoney = max(0, (float)($order->given_money ?? 0));
@@ -92,6 +94,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                     </td>
                     <td class="text-right"><span class="strong">{{ number_format((float)($order->subtotal ?? 0), 0) }}</span></td>
                     <td class="text-right text-danger">{{ number_format($discountAmount, 0) }}</td>
+                    <td class="text-right text-danger">{{ number_format($productDiscountAmount, 0) }}</td>
                     <td class="text-right">{{ number_format($serviceCharge, 0) }}</td>
                     <td class="text-right text-success">{{ number_format($tipsAmount, 0) }}</td>
                     <td class="text-right">{{ number_format($givenMoney, 0) }}</td>
@@ -134,8 +137,12 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                 <td class="text-right">{{ number_format((float)($totals['subtotal'] ?? 0), 0) }}</td>
             </tr>
             <tr>
-                <td>Total Discount</td>
+                <td>Total Honored</td>
                 <td class="text-right">{{ number_format((float)($totals['discount'] ?? 0), 0) }}</td>
+            </tr>
+            <tr>
+                <td>Total Product Discount</td>
+                <td class="text-right">{{ number_format((float)($totals['product_discount'] ?? 0), 0) }}</td>
             </tr>
             <tr>
                 <td>Total Service Charge</td>
@@ -172,6 +179,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
             'subtotal' => 0,
             'revenue' => 0,
             'discount' => 0,
+            'product_discount' => 0,
             'service_charge' => 0,
             'tips' => 0,
             'given' => 0,
@@ -180,6 +188,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
 
         foreach(($orders ?? []) as $order) {
             $discountAmount = max(0, (float)($order->discount_amount ?? 0));
+            $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
             $serviceCharge = max(0, (float)($order->service_charge ?? 0));
             $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
             $givenMoney = max(0, (float)($order->given_money ?? 0));
@@ -191,6 +200,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
             }
 
             $totals['discount'] += $discountAmount;
+            $totals['product_discount'] += $productDiscountAmount;
             $totals['service_charge'] += $serviceCharge;
             $totals['tips'] += $tipsAmount;
             $totals['given'] += $givenMoney;

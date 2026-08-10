@@ -1,84 +1,123 @@
 <style>
   .progga-pos-cats {
-    overflow: visible !important;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(213, 170, 101, .75) rgba(255, 255, 255, .08);
   }
-  .progga-pos-cat-item {
-    position: relative;
-    overflow: visible !important;
+
+  .progga-pos-cats::-webkit-scrollbar {
+    width: 7px;
   }
+
+  .progga-pos-cats::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, .08);
+  }
+
+  .progga-pos-cats::-webkit-scrollbar-thumb {
+    background: rgba(213, 170, 101, .75);
+    border-radius: 10px;
+  }
+
   .progga-pos-cat-name {
     font-size: 14px !important;
     font-weight: 900 !important;
     line-height: 1.18 !important;
   }
-  .progga-pos-cat-item::after {
-    content: attr(data-category-name);
-    position: absolute;
-    left: calc(100% + 12px);
-    top: 50%;
-    transform: translateY(-50%) translateX(-6px);
-    min-width: 120px;
-    max-width: 280px;
-    padding: 9px 12px;
-    border-radius: 12px;
-    background: var(--progga-primary, #21352a);
+
+  /* POS category custom tooltip */
+  .progga-pos-category-tooltip {
+    --tooltip-bg-start: #253d31;
+    --tooltip-bg-end: #15251d;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 999999;
+    display: block;
+    min-width: 110px;
+    max-width: min(280px, calc(100vw - 30px));
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--tooltip-bg-start), var(--tooltip-bg-end));
+    box-shadow: 0 12px 30px rgba(5, 15, 10, .30),
+                0 2px 8px rgba(5, 15, 10, .18);
     color: #fff;
-    box-shadow: 0 12px 26px rgba(15, 23, 42, .22);
-    font-size: 12px;
-    font-weight: 900;
-    line-height: 1.25;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: .1px;
+    text-align: left;
     white-space: normal;
+    overflow-wrap: anywhere;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    z-index: 99999;
-    transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+    transform: translate(-7px, -50%) scale(.96);
+    transform-origin: left center;
+    transition: opacity .16s ease,
+                transform .16s ease,
+                visibility .16s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
-  .progga-pos-cat-item::before {
+
+  .progga-pos-category-tooltip::before {
     content: '';
     position: absolute;
-    left: calc(100% + 5px);
     top: 50%;
-    transform: translateY(-50%) translateX(-6px);
-    border-top: 7px solid transparent;
-    border-bottom: 7px solid transparent;
-    border-right: 7px solid var(--progga-primary, #21352a);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    z-index: 99999;
-    transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+    left: -7px;
+    width: 13px;
+    height: 13px;
+    border-left: 1px solid rgba(255, 255, 255, .10);
+    border-bottom: 1px solid rgba(255, 255, 255, .10);
+    background: var(--tooltip-bg-start);
+    transform: translateY(-50%) rotate(45deg);
   }
-  .progga-pos-cat-item:hover::after,
-  .progga-pos-cat-item:hover::before,
-  .progga-pos-cat-item:focus-within::after,
-  .progga-pos-cat-item:focus-within::before {
+
+  .progga-pos-category-tooltip.is-visible {
     opacity: 1;
     visibility: visible;
-    transform: translateY(-50%) translateX(0);
+    transform: translate(0, -50%) scale(1);
   }
-  @media (max-width: 991.98px) {
-    .progga-pos-cat-item::after {
-      left: 50%;
-      top: calc(100% + 10px);
-      transform: translateX(-50%) translateY(-6px);
-      max-width: 220px;
-      text-align: center;
+
+  .progga-pos-category-tooltip.is-left {
+    transform: translate(7px, -50%) scale(.96);
+    transform-origin: right center;
+  }
+
+  .progga-pos-category-tooltip.is-left::before {
+    right: -7px;
+    left: auto;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, .10);
+    border-right: 1px solid rgba(255, 255, 255, .10);
+    background: var(--tooltip-bg-end);
+  }
+
+  .progga-pos-category-tooltip.is-left.is-visible {
+    transform: translate(0, -50%) scale(1);
+  }
+
+  @media (max-width: 991.98px), (hover: none) {
+    .progga-pos-category-tooltip {
+      display: none !important;
     }
-    .progga-pos-cat-item::before {
-      left: 50%;
-      top: calc(100% + 3px);
-      transform: translateX(-50%) translateY(-6px) rotate(90deg);
+  }
+
+  @media (max-width: 768px) {
+    .progga-pos-cats {
+      height: auto !important;
+      min-height: auto;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
     }
-    .progga-pos-cat-item:hover::after,
-    .progga-pos-cat-item:hover::before,
-    .progga-pos-cat-item:focus-within::after,
-    .progga-pos-cat-item:focus-within::before {
-      transform: translateX(-50%) translateY(0);
-    }
-    .progga-pos-cat-item:hover::before,
-    .progga-pos-cat-item:focus-within::before {
-      transform: translateX(-50%) translateY(0) rotate(90deg);
+
+    .progga-pos-cats::-webkit-scrollbar {
+      display: none;
     }
   }
 </style>
@@ -141,3 +180,100 @@
 </div>
 
 <div class="pos-mobile-backdrop" id="posMobileBackdrop" style="display: none;"></div>
+
+<div class="progga-pos-category-tooltip" id="proggaPosCategoryTooltip" role="tooltip" aria-hidden="true"></div>
+
+<script>
+(function () {
+  function initPosCategoryTooltip() {
+    const tooltip = document.getElementById('proggaPosCategoryTooltip');
+    const categoryList = document.getElementById('posCatList');
+
+    if (!tooltip || !categoryList || categoryList.dataset.tooltipReady === '1') {
+      return;
+    }
+
+    categoryList.dataset.tooltipReady = '1';
+    let activeItem = null;
+
+    function positionTooltip(item) {
+      const itemRect = item.getBoundingClientRect();
+      const gap = 13;
+      const viewportPadding = 12;
+
+      tooltip.classList.remove('is-left');
+      tooltip.style.left = (itemRect.right + gap) + 'px';
+      tooltip.style.top = (itemRect.top + (itemRect.height / 2)) + 'px';
+
+      const tooltipRect = tooltip.getBoundingClientRect();
+      let left = itemRect.right + gap;
+
+      if (left + tooltipRect.width + viewportPadding > window.innerWidth) {
+        left = itemRect.left - tooltipRect.width - gap;
+        tooltip.classList.add('is-left');
+      }
+
+      left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+
+      let top = itemRect.top + (itemRect.height / 2);
+      const halfHeight = tooltipRect.height / 2;
+      top = Math.max(viewportPadding + halfHeight, Math.min(top, window.innerHeight - viewportPadding - halfHeight));
+
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+    }
+
+    function showTooltip(item) {
+      if (window.matchMedia('(max-width: 991.98px), (hover: none)').matches) {
+        return;
+      }
+
+      const categoryName = (item.dataset.categoryName || '').trim();
+      if (!categoryName) {
+        return;
+      }
+
+      activeItem = item;
+      tooltip.textContent = categoryName;
+      tooltip.setAttribute('aria-hidden', 'false');
+      tooltip.classList.add('is-visible');
+      positionTooltip(item);
+    }
+
+    function hideTooltip() {
+      activeItem = null;
+      tooltip.classList.remove('is-visible', 'is-left');
+      tooltip.setAttribute('aria-hidden', 'true');
+    }
+
+    categoryList.querySelectorAll('.progga-pos-cat-item').forEach(function (item) {
+      item.addEventListener('mouseenter', function () {
+        showTooltip(item);
+      });
+
+      item.addEventListener('mouseleave', hideTooltip);
+
+      item.addEventListener('focusin', function () {
+        showTooltip(item);
+      });
+
+      item.addEventListener('focusout', hideTooltip);
+    });
+
+    categoryList.addEventListener('scroll', function () {
+      if (activeItem) {
+        positionTooltip(activeItem);
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', hideTooltip, { passive: true });
+    window.addEventListener('scroll', hideTooltip, { passive: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPosCategoryTooltip);
+  } else {
+    initPosCategoryTooltip();
+  }
+})();
+</script>

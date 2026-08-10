@@ -147,6 +147,7 @@ class ReportController extends Controller
         // Summary cards.
         $totalRevenue = (clone $baseQuery)->sum('grand_total');
         $totalDiscount = (clone $baseQuery)->sum('discount_amount');
+        $totalProductDiscount = (clone $baseQuery)->sum('product_discount_amount');
         $totalOrders = (clone $baseQuery)->count();
         $avgOrderValue = $totalOrders > 0 ? ($totalRevenue / $totalOrders) : 0;
         $uniqueCustomers = (clone $baseQuery)
@@ -166,7 +167,8 @@ class ReportController extends Controller
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
                     'revenue' => '৳' . number_format($totalRevenue, 0),
-                    'discount' => '৳' . number_format($totalDiscount, 0),
+                    'other_discount' => '৳' . number_format($totalDiscount, 0),
+                    'product_discount' => '৳' . number_format($totalProductDiscount, 0),
                     'orders' => $totalOrders,
                     'avg' => '৳' . number_format($avgOrderValue, 0),
                     'customers' => $uniqueCustomers,
@@ -176,7 +178,7 @@ class ReportController extends Controller
 
         return view('admin.reports.sales_order', compact(
             'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
-            'totalRevenue', 'totalDiscount', 'totalOrders', 'avgOrderValue', 'uniqueCustomers', 'orders'
+            'totalRevenue', 'totalDiscount', 'totalProductDiscount', 'totalOrders', 'avgOrderValue', 'uniqueCustomers', 'orders'
         ));
     }
 
@@ -378,6 +380,8 @@ class ReportController extends Controller
             ->selectRaw("SUM(CASE WHEN LOWER(status) = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders")
             ->selectRaw("SUM(CASE WHEN LOWER(status) NOT IN ('completed', 'cancelled') THEN 1 ELSE 0 END) AS active_orders")
             ->selectRaw("COALESCE(SUM(CASE WHEN LOWER(status) = 'completed' THEN grand_total ELSE 0 END), 0) AS completed_sales")
+            ->selectRaw("COALESCE(SUM(CASE WHEN LOWER(status) = 'completed' THEN discount_amount ELSE 0 END), 0) AS completed_other_discount")
+            ->selectRaw("COALESCE(SUM(CASE WHEN LOWER(status) = 'completed' THEN product_discount_amount ELSE 0 END), 0) AS completed_product_discount")
             ->groupBy('user_id')
             ->get()
             ->keyBy(fn ($row) => (int) $row->user_id);
@@ -396,6 +400,8 @@ class ReportController extends Controller
                 'active_orders' => (int) ($aggregate->active_orders ?? 0),
                 'cancelled_orders' => (int) ($aggregate->cancelled_orders ?? 0),
                 'completed_sales' => (float) ($aggregate->completed_sales ?? 0),
+                'completed_other_discount' => (float) ($aggregate->completed_other_discount ?? 0),
+                'completed_product_discount' => (float) ($aggregate->completed_product_discount ?? 0),
             ];
         });
 
@@ -413,6 +419,8 @@ class ReportController extends Controller
         $activeOrders = $reportRows->sum('active_orders');
         $cancelledOrders = $reportRows->sum('cancelled_orders');
         $completedSales = $reportRows->sum('completed_sales');
+        $completedOtherDiscount = $reportRows->sum('completed_other_discount');
+        $completedProductDiscount = $reportRows->sum('completed_product_discount');
         $waitersWithOrders = $reportRows->where('total_orders', '>', 0)->count();
 
         return view('admin.reports.waiter_daily_orders', compact(
@@ -429,6 +437,8 @@ class ReportController extends Controller
             'activeOrders',
             'cancelledOrders',
             'completedSales',
+            'completedOtherDiscount',
+            'completedProductDiscount',
             'waitersWithOrders'
         ));
     }
@@ -523,27 +533,44 @@ class ReportController extends Controller
             ->join('orders', 'order_details.order_id', '=', 'orders.id')
             ->where('orders.status', 'Completed')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
-            ->select('order_details.product_id', 'order_details.product_name', DB::raw('SUM(order_details.quantity) as total_qty'), DB::raw('COUNT(DISTINCT order_details.order_id) as orders_count'), DB::raw('SUM(order_details.subtotal) as total_sales'))
+            ->select(
+                'order_details.product_id',
+                'order_details.product_name',
+                DB::raw('SUM(order_details.quantity) as total_qty'),
+                DB::raw('COUNT(DISTINCT order_details.order_id) as orders_count'),
+                DB::raw('SUM(order_details.subtotal) as total_sales'),
+                DB::raw('SUM(order_details.product_discount_amount) as product_discount'),
+                DB::raw('SUM(order_details.subtotal - order_details.product_discount_amount) as net_sales')
+            )
             ->groupBy('order_details.product_id', 'order_details.product_name')
             ->orderByDesc('total_qty')
             ->paginate(20)
             ->appends($request->query());
 
-        $totalFoodQty = OrderDetail::query()->join('orders', 'order_details.order_id', '=', 'orders.id')->where('orders.status', 'Completed')->whereBetween('orders.created_at', [$startDate, $endDate])->sum('order_details.quantity');
-        $totalFoodSales = OrderDetail::query()->join('orders', 'order_details.order_id', '=', 'orders.id')->where('orders.status', 'Completed')->whereBetween('orders.created_at', [$startDate, $endDate])->sum('order_details.subtotal');
+        $baseFoodQuery = OrderDetail::query()
+            ->join('orders', 'order_details.order_id', '=', 'orders.id')
+            ->where('orders.status', 'Completed')
+            ->whereBetween('orders.created_at', [$startDate, $endDate]);
+
+        $totalFoodQty = (clone $baseFoodQuery)->sum('order_details.quantity');
+        $totalFoodSales = (float) (clone $baseFoodQuery)->sum('order_details.subtotal');
+        $totalProductDiscount = (float) (clone $baseFoodQuery)->sum('order_details.product_discount_amount');
+        $totalNetFoodSales = max(0, $totalFoodSales - $totalProductDiscount);
 
         if ($request->ajax()) {
             return response()->json([
                 'html' => view('admin.reports.partials.food_table_rows', compact('foodRows'))->render(),
                 'qty' => number_format($totalFoodQty),
                 'sales' => '৳' . number_format($totalFoodSales, 2),
+                'product_discount' => '৳' . number_format($totalProductDiscount, 2),
+                'net_sales' => '৳' . number_format($totalNetFoodSales, 2),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $foodRows])->render()
             ]);
         }
 
         return view('admin.reports.food_sales', compact(
             'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
-            'foodRows', 'totalFoodQty', 'totalFoodSales'
+            'foodRows', 'totalFoodQty', 'totalFoodSales', 'totalProductDiscount', 'totalNetFoodSales'
         ));
     }
 
@@ -554,7 +581,7 @@ class ReportController extends Controller
 
         if ($filterType === 'year') {
             $sales = (clone $query)
-                ->select(DB::raw('MONTH(created_at) as m'), DB::raw('YEAR(created_at) as y'), DB::raw('SUM(grand_total) as total_sale'), DB::raw('SUM(discount_amount) as total_discount'), DB::raw('COUNT(id) as total_order'))
+                ->select(DB::raw('MONTH(created_at) as m'), DB::raw('YEAR(created_at) as y'), DB::raw('SUM(grand_total) as total_sale'), DB::raw('SUM(discount_amount) as total_discount'), DB::raw('SUM(product_discount_amount) as total_product_discount'), DB::raw('COUNT(id) as total_order'))
                 ->groupBy('y', 'm')
                 ->get();
 
@@ -565,12 +592,13 @@ class ReportController extends Controller
                     'period' => $carbonObj->format('M Y'),
                     'total_sale' => $row ? (float) $row->total_sale : 0,
                     'total_discount' => $row ? (float) $row->total_discount : 0,
+                    'total_product_discount' => $row ? (float) $row->total_product_discount : 0,
                     'total_order' => $row ? (int) $row->total_order : 0,
                 ];
             }
         } else {
             $sales = (clone $query)
-                ->select(DB::raw('DATE(created_at) as d'), DB::raw('SUM(grand_total) as total_sale'), DB::raw('SUM(discount_amount) as total_discount'), DB::raw('COUNT(id) as total_order'))
+                ->select(DB::raw('DATE(created_at) as d'), DB::raw('SUM(grand_total) as total_sale'), DB::raw('SUM(discount_amount) as total_discount'), DB::raw('SUM(product_discount_amount) as total_product_discount'), DB::raw('COUNT(id) as total_order'))
                 ->groupBy('d')
                 ->get();
 
@@ -581,6 +609,7 @@ class ReportController extends Controller
                     'period' => $date->format('d/m/Y'),
                     'total_sale' => $row ? (float) $row->total_sale : 0,
                     'total_discount' => $row ? (float) $row->total_discount : 0,
+                    'total_product_discount' => $row ? (float) $row->total_product_discount : 0,
                     'total_order' => $row ? (int) $row->total_order : 0,
                 ];
             }
@@ -642,6 +671,8 @@ class ReportController extends Controller
                 'date' => optional($order->created_at)->format('d M, h:i A'),
                 'customer' => optional($order->customer)->name ?? 'Walk-in',
                 'table' => optional($order->table)->table_number ?? 'Takeaway',
+                'other_discount' => (float) ($order->discount_amount ?? 0),
+                'product_discount' => (float) ($order->product_discount_amount ?? 0),
                 'payment_type' => $paymentText,
                 'cash' => $cashAmount,
                 'card' => $cardAmount,
@@ -657,7 +688,15 @@ class ReportController extends Controller
             ->join('orders', 'order_details.order_id', '=', 'orders.id')
             ->where('orders.status', 'Completed')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
-            ->select('order_details.product_id', 'order_details.product_name', DB::raw('SUM(order_details.quantity) as total_qty'), DB::raw('COUNT(DISTINCT order_details.order_id) as orders_count'), DB::raw('SUM(order_details.subtotal) as total_sales'))
+            ->select(
+                'order_details.product_id',
+                'order_details.product_name',
+                DB::raw('SUM(order_details.quantity) as total_qty'),
+                DB::raw('COUNT(DISTINCT order_details.order_id) as orders_count'),
+                DB::raw('SUM(order_details.subtotal) as total_sales'),
+                DB::raw('SUM(order_details.product_discount_amount) as product_discount'),
+                DB::raw('SUM(order_details.subtotal - order_details.product_discount_amount) as net_sales')
+            )
             ->groupBy('order_details.product_id', 'order_details.product_name')
             ->orderByDesc('total_qty')
             ->get();
@@ -687,6 +726,7 @@ class ReportController extends Controller
 
         $periodTotalSale = 0;
         $periodTotalDiscount = 0;
+        $periodTotalProductDiscount = 0;
         $periodTotalOrder = 0;
 
         if ($report === 'payment_type_sales') {
@@ -711,10 +751,11 @@ class ReportController extends Controller
 
             $periodTotalSale = $dataRows->sum('grand_total');
             $periodTotalDiscount = $dataRows->sum('discount_amount');
+            $periodTotalProductDiscount = $dataRows->sum('product_discount_amount');
             $periodTotalOrder = $dataRows->count();
         }
 
-        return compact('report', 'dataRows', 'startDate', 'endDate', 'periodTotalSale', 'periodTotalDiscount', 'periodTotalOrder') + [
+        return compact('report', 'dataRows', 'startDate', 'endDate', 'periodTotalSale', 'periodTotalDiscount', 'periodTotalProductDiscount', 'periodTotalOrder') + [
             'restaurant' => RestaurantSetting::first(),
         ];
     }

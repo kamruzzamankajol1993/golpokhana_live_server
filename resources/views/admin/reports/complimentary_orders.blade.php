@@ -95,6 +95,8 @@
                         <th>Complimentary Food</th>
                         <th>Complimentary Qty</th>
                         <th>Order Total</th>
+                        <th>Honored</th>
+                        <th>Product Discount</th>
                         <th>Payment</th>
                         <th>Status</th>
                         <th>Date</th>

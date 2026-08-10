@@ -211,6 +211,8 @@
                         <th>Completed</th>
                         <th>Active / Pending</th>
                         <th>Cancelled</th>
+                        <th>Honored</th>
+                        <th>Product Discount</th>
                         <th>Completed Sales</th>
                     </tr>
                 </thead>
@@ -231,11 +233,13 @@
                             <td>{{ number_format($row['completed_orders']) }}</td>
                             <td>{{ number_format($row['active_orders']) }}</td>
                             <td>{{ number_format($row['cancelled_orders']) }}</td>
+                            <td class="text-danger">৳{{ number_format($row['completed_other_discount'], 0) }}</td>
+                            <td class="text-danger">৳{{ number_format($row['completed_product_discount'], 0) }}</td>
                             <td><strong>৳{{ number_format($row['completed_sales'], 0) }}</strong></td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">No user with the waiter role was found.</td>
+                            <td colspan="9" class="text-center py-4 text-muted">No user with the waiter role was found.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -246,6 +250,8 @@
                         <th>{{ number_format($completedOrders) }}</th>
                         <th>{{ number_format($activeOrders) }}</th>
                         <th>{{ number_format($cancelledOrders) }}</th>
+                        <th>৳{{ number_format($completedOtherDiscount, 0) }}</th>
+                        <th>৳{{ number_format($completedProductDiscount, 0) }}</th>
                         <th>৳{{ number_format($completedSales, 0) }}</th>
                     </tr>
                 </tfoot>
@@ -270,6 +276,8 @@
                         <th>Table</th>
                         <th>Order Type</th>
                         <th>Status</th>
+                        <th>Honored</th>
+                        <th>Product Discount</th>
                         <th>Grand Total</th>
                     </tr>
                 </thead>
@@ -289,11 +297,13 @@
                             <td>{{ optional($order->table)->table_number ?: 'N/A' }}</td>
                             <td>{{ $order->order_type ?: 'N/A' }}</td>
                             <td><span class="order-status-pill {{ $statusClass }}">{{ $order->status ?: 'N/A' }}</span></td>
+                            <td class="text-danger">৳{{ number_format((float) ($order->discount_amount ?? 0), 0) }}</td>
+                            <td class="text-danger">৳{{ number_format((float) ($order->product_discount_amount ?? 0), 0) }}</td>
                             <td><strong>৳{{ number_format((float) $order->grand_total, 0) }}</strong></td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">No waiter orders found for this business window.</td>
+                            <td colspan="9" class="text-center py-4 text-muted">No waiter orders found for this business window.</td>
                         </tr>
                     @endforelse
                 </tbody>

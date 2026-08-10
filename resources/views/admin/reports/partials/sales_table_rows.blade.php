@@ -1,6 +1,7 @@
 @forelse($orders as $order)
     @php
         $discountAmount = max(0, (float)($order->discount_amount ?? 0));
+        $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
         $serviceCharge = max(0, (float)($order->service_charge ?? 0));
         $tipsAmount = max(0, (float)($order->tips_amount ?? 0));
         $givenMoney = max(0, (float)($order->given_money ?? 0));
@@ -25,6 +26,7 @@
         </td>
         <td><strong>৳{{ number_format($order->subtotal, 0) }}</strong></td>
         <td><strong class="text-danger">৳{{ number_format($discountAmount, 0) }}</strong></td>
+        <td><strong class="text-danger">৳{{ number_format($productDiscountAmount, 0) }}</strong></td>
         <td>৳{{ number_format($serviceCharge, 0) }}</td>
         <td><strong class="text-success">৳{{ number_format($tipsAmount, 0) }}</strong></td>
         <td>৳{{ number_format($givenMoney, 0) }}</td>
@@ -38,6 +40,6 @@
     </tr>
 @empty
     <tr>
-        <td colspan="14" class="text-center py-4">No completed orders found for the selected filter.</td>
+        <td colspan="15" class="text-center py-4">No completed orders found for the selected filter.</td>
     </tr>
 @endforelse

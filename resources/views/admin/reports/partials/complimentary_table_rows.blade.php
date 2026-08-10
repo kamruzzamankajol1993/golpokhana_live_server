@@ -42,6 +42,8 @@
         </td>
         <td><strong>{{ $complimentaryQty }}</strong></td>
         <td><strong style="color:var(--progga-primary);">৳{{ number_format($order->grand_total, 0) }}</strong></td>
+        <td class="text-danger">৳{{ number_format($order->discount_amount ?? 0, 0) }}</td>
+        <td class="text-danger">৳{{ number_format($order->product_discount_amount ?? 0, 0) }}</td>
         <td>{!! $paymentText !!}</td>
         <td><span class="progga-badge progga-badge-primary">{{ $order->status }}</span></td>
         <td>{{ optional($order->created_at)->format('d M Y') }}</td>
@@ -49,6 +51,6 @@
     </tr>
 @empty
     <tr>
-        <td colspan="10" class="text-center py-4">No complimentary food orders found for the selected filter.</td>
+        <td colspan="12" class="text-center py-4">No complimentary food orders found for the selected filter.</td>
     </tr>
 @endforelse

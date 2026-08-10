@@ -11,7 +11,11 @@ class Waiter extends Model
 
     protected $guarded = [];
 
-    // রিলেশনশিপ: ওয়েটারের সাথে জোন, শিফট এবং ইউজারের কানেকশন
+    public function employee()
+    {
+        return $this->belongsTo(Employee::class, 'hr_employee_id');
+    }
+
     public function zone()
     {
         return $this->belongsTo(Zone::class);

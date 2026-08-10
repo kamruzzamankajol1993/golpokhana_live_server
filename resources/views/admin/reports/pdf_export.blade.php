@@ -48,6 +48,8 @@
                     <th>Time</th>
                     <th>Customer</th>
                     <th>Table</th>
+                    <th class="text-right">Honored</th>
+                    <th class="text-right">Product Discount</th>
                     <th>Payment Type</th>
                     <th class="text-right">Cash</th>
                     <th class="text-right">Card</th>
@@ -63,6 +65,8 @@
                     <td>{{ $row['time'] ?? '—' }}</td>
                     <td>{{ $row['customer'] }}</td>
                     <td>{{ $row['table'] }}</td>
+                    <td class="text-right">৳{{ number_format($row['other_discount'] ?? 0, 2) }}</td>
+                    <td class="text-right">৳{{ number_format($row['product_discount'] ?? 0, 2) }}</td>
                     <td>{{ $row['payment_type'] }}</td>
                     <td class="text-right">৳{{ number_format($row['cash'], 2) }}</td>
                     <td class="text-right">৳{{ number_format($row['card'], 2) }}</td>
@@ -70,12 +74,15 @@
                     <td class="text-right"><strong>৳{{ number_format($row['total_paid'], 2) }}</strong></td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="text-center">No payment data found.</td></tr>
+                <tr><td colspan="12" class="text-center">No payment data found.</td></tr>
             @endforelse
             </tbody>
             <tfoot>
                 <tr>
-                    <th colspan="6" class="text-right">Total</th>
+                    <th colspan="5" class="text-right">Total</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('other_discount'), 2) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
+                    <th></th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('cash'), 2) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('card'), 2) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('mfc'), 2) }}</th>
@@ -85,14 +92,34 @@
         </table>
     @elseif($report === 'food_sales')
         <table class="table">
-            <thead><tr><th>SL</th><th>Food Item</th><th class="text-center">Qty Sold</th><th class="text-center">Order Count</th><th class="text-right">Total Sales</th></tr></thead>
+            <thead><tr><th>SL</th><th>Food Item</th><th class="text-center">Qty Sold</th><th class="text-center">Order Count</th><th class="text-right">Gross Sales</th><th class="text-right">Product Discount</th><th class="text-right">Net Sales</th></tr></thead>
             <tbody>
             @forelse($dataRows as $key => $row)
-                <tr><td>{{ $key + 1 }}</td><td>{{ $row->product_name }}</td><td class="text-center">{{ number_format($row->total_qty) }}</td><td class="text-center">{{ number_format($row->orders_count) }}</td><td class="text-right">৳{{ number_format($row->total_sales, 2) }}</td></tr>
+                <tr>
+                    <td>{{ $key + 1 }}</td>
+                    <td>{{ $row->product_name }}</td>
+                    <td class="text-center">{{ number_format($row->total_qty) }}</td>
+                    <td class="text-center">{{ number_format($row->orders_count) }}</td>
+                    <td class="text-right">৳{{ number_format($row->total_sales, 2) }}</td>
+                    <td class="text-right">৳{{ number_format($row->product_discount ?? 0, 2) }}</td>
+                    <td class="text-right"><strong>৳{{ number_format($row->net_sales ?? (($row->total_sales ?? 0) - ($row->product_discount ?? 0)), 2) }}</strong></td>
+                </tr>
             @empty
-                <tr><td colspan="5" class="text-center">No food sales found.</td></tr>
+                <tr><td colspan="7" class="text-center">No food sales found.</td></tr>
             @endforelse
             </tbody>
+            @if($dataRows->count())
+            <tfoot>
+                <tr>
+                    <th colspan="2" class="text-right">Total</th>
+                    <th class="text-center">{{ number_format($dataRows->sum('total_qty')) }}</th>
+                    <th></th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('total_sales'), 2) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('net_sales'), 2) }}</th>
+                </tr>
+            </tfoot>
+            @endif
         </table>
     @elseif($report === 'complimentary_orders')
         @php
@@ -117,6 +144,8 @@
                     <th>Complimentary Food</th>
                     <th class="text-center">Qty</th>
                     <th class="text-right">Order Total</th>
+                    <th class="text-right">Honored</th>
+                    <th class="text-right">Product Discount</th>
                     <th>Payment</th>
                     <th>Status</th>
                     <th>Date</th>
@@ -153,13 +182,15 @@
                     </td>
                     <td class="text-center">{{ $complimentaryQty }}</td>
                     <td class="text-right">৳{{ number_format($order->grand_total, 0) }}</td>
+                    <td class="text-right">৳{{ number_format($order->discount_amount ?? 0, 0) }}</td>
+                    <td class="text-right">৳{{ number_format($order->product_discount_amount ?? 0, 0) }}</td>
                     <td>{{ $paymentText }}</td>
                     <td>{{ $order->status }}</td>
                     <td>{{ optional($order->created_at)->format('d M Y') }}</td>
                     <td>{{ optional($order->created_at)->format('h:i A') }}</td>
                 </tr>
             @empty
-                <tr><td colspan="11" class="text-center">No complimentary food orders found.</td></tr>
+                <tr><td colspan="13" class="text-center">No complimentary food orders found.</td></tr>
             @endforelse
             </tbody>
             <tfoot>
@@ -167,6 +198,8 @@
                     <th colspan="5" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
                     <th class="text-center">{{ number_format($totalComplimentaryQty) }}</th>
                     <th class="text-right">৳{{ number_format($periodTotalSale, 0) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
                     <th colspan="4"></th>
                 </tr>
             </tfoot>
@@ -178,7 +211,8 @@
                     <th>Order #</th>
                     <th>Customer</th>
                     <th class="text-right">Subtotal</th>
-                    <th class="text-right">Discount</th>
+                    <th class="text-right">Honored</th>
+                    <th class="text-right">Product Discount</th>
                     <th class="text-right">Service</th>
                     <th class="text-right">Tips</th>
                     <th class="text-right">Given</th>
@@ -195,6 +229,7 @@
             @forelse($dataRows as $order)
                 @php
                     $discountAmount = max(0, (float)($order->discount_amount ?? 0));
+                    $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
                     $serviceCharge = max(0, (float)($order->service_charge ?? 0));
                     $tipsAmount = max(0, (float)($order->tips_amount ?? 0));
                     $givenMoney = max(0, (float)($order->given_money ?? 0));
@@ -219,6 +254,7 @@
                     </td>
                     <td class="text-right">৳{{ number_format($order->subtotal, 0) }}</td>
                     <td class="text-right" style="color: red;">৳{{ number_format($discountAmount, 0) }}</td>
+                    <td class="text-right" style="color: red;">৳{{ number_format($productDiscountAmount, 0) }}</td>
                     <td class="text-right">৳{{ number_format($serviceCharge, 0) }}</td>
                     <td class="text-right" style="color: green;">৳{{ number_format($tipsAmount, 0) }}</td>
                     <td class="text-right">৳{{ number_format($givenMoney, 0) }}</td>
@@ -232,7 +268,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="14" class="text-center py-4">No completed orders found for the selected filter.</td>
+                    <td colspan="15" class="text-center py-4">No completed orders found for the selected filter.</td>
                 </tr>
             @endforelse
             </tbody>
@@ -241,6 +277,7 @@
                     <th colspan="2" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('subtotal'), 0) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
+                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('service_charge'), 0) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('tips_amount'), 0) }}</th>
                     <th colspan="2"></th>

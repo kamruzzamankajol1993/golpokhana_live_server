@@ -1020,80 +1020,54 @@
             return;
         }
 
-        // POS workflow note.
-        let alertTitle = isWaiter ? 'Send to Front Desk?' : 'Send to Kitchen?';
-        let confirmBtnText = isWaiter ? 'Yes, Send to Front Desk!' : 'Yes, Send!';
+        // Send immediately without a confirmation popup.
+        // For front-desk users the successful response redirects straight to the
+        // KOT print view, which automatically opens the browser print dialog.
+        var discType = $('#cart_discount_type').val() || 'fixed';
+        var discVal = parseFloat($('#cart_discount_value').val()) || 0;
 
-        window.Swal.fire({
-            title: alertTitle,
-            text: "Are you sure you want to place this order?",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#21352a',
-            cancelButtonColor: '#d33',
-            confirmButtonText: confirmBtnText,
-            allowOutsideClick: false
-        }).then(function(result) {
-            if (result.isConfirmed) {
-                var discType = $('#cart_discount_type').val() || 'fixed';
-                var discVal = parseFloat($('#cart_discount_value').val()) || 0;
+        var payload = {
+            order_id: currentOrder.order_id || null,
+            order_type: currentOrder.order_type,
+            table_id: currentOrder.table_id,
+            waiter_id: currentOrder.waiter_id,
+            is_walk_in: currentOrder.is_walk_in,
+            customer_id: currentOrder.customer_id,
+            customer_name: currentOrder.customer_name,
+            customer_phone: currentOrder.customer_phone,
+            order_notes: currentOrder.order_notes,
+            is_complimentary_order: currentOrder.is_complimentary_order || 0,
+            discount_type: discType,
+            discount_value: discVal,
+            preparation_time: $('#cart_prep_time').val() || 20,
+            _token: $('meta[name="csrf-token"]').attr('content')
+        };
 
-                var payload = {
-                    order_id: currentOrder.order_id || null,
-                    order_type: currentOrder.order_type,
-                    table_id: currentOrder.table_id,
-                    waiter_id: currentOrder.waiter_id,
-                    is_walk_in: currentOrder.is_walk_in,
-                    customer_id: currentOrder.customer_id,
-                    customer_name: currentOrder.customer_name,
-                    customer_phone: currentOrder.customer_phone,
-                    order_notes: currentOrder.order_notes,
-                    is_complimentary_order: currentOrder.is_complimentary_order || 0,
-                    discount_type: discType,
-                    discount_value: discVal,
-                    preparation_time: $('#cart_prep_time').val() || 20,
-                    _token: $('meta[name="csrf-token"]').attr('content')
-                };
+        var btn = $('#btnSendToKitchen');
+        var originalHtml = btn.html();
 
-                var btn = $('#btnSendToKitchen');
-                var originalHtml = btn.html();
-
-                $.ajax({
-                    url: "{{ route('pos.place_order') }}",
-                    type: "POST",
-                    data: payload,
-                    beforeSend: function() {
-                        btn.html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
-                    },
-                    success: function(res) {
-                        if(res.status === 'success') {
-                            window.Swal.fire({
-                                icon: 'success',
-                                title: 'Success!',
-                                text: res.message,
-                                confirmButtonText: 'OK',
-                                allowOutsideClick: false
-                            }).then(function() {
-                                if (res.redirect_url) {
-                                    window.location.href = res.redirect_url;
-                                } else {
-                                    window.location.href = "{{ route('pos.index') }}";
-                                }
-                            });
-                        } else {
-                            window.Swal.fire('Error', res.message, 'error');
-                            btn.html(originalHtml).prop('disabled', false);
-                        }
-                    },
-                    error: function(xhr) {
-                        console.error("Error Response:", xhr.responseText);
-                        const message = xhr.responseJSON && xhr.responseJSON.message
-                            ? xhr.responseJSON.message
-                            : 'Server failed to process order.';
-                        window.Swal.fire('Error', message, 'error');
-                        btn.html(originalHtml).prop('disabled', false);
-                    }
-                });
+        $.ajax({
+            url: "{{ route('pos.place_order') }}",
+            type: "POST",
+            data: payload,
+            beforeSend: function() {
+                btn.html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
+            },
+            success: function(res) {
+                if(res.status === 'success') {
+                    window.location.href = res.redirect_url || "{{ route('pos.index') }}";
+                } else {
+                    window.Swal.fire('Error', res.message, 'error');
+                    btn.html(originalHtml).prop('disabled', false);
+                }
+            },
+            error: function(xhr) {
+                console.error("Error Response:", xhr.responseText);
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Server failed to process order.';
+                window.Swal.fire('Error', message, 'error');
+                btn.html(originalHtml).prop('disabled', false);
             }
         });
     });
@@ -1111,9 +1085,42 @@
         return Math.round(posPaymentNumber(value));
     }
 
+    window.getProductDiscountTotal = function() {
+        let total = 0;
+
+        $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
+            let row = $(this);
+            let lineTotal = Math.max(0, posPaymentNumber(row.data('line-total')));
+            let type = row.find('.product-discount-type').val() || 'fixed';
+            let value = Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()));
+            let amount = 0;
+
+            if (type === 'percentage') {
+                amount = lineTotal * Math.min(value, 100) / 100;
+            } else {
+                amount = Math.min(value, lineTotal);
+            }
+
+            amount = Math.max(0, Math.round(amount));
+            row.find('.progga-product-discount-amount').text('−৳' + posMoney(amount));
+            total += amount;
+        });
+
+        return Math.max(0, Math.round(total));
+    };
+
     window.syncPaymentRemarkRequirement = function() {
-        let discountValue = Math.max(0, posPaymentNumber($('#modal_discount_value').val()));
-        let hasDiscount = discountValue > 0;
+        let orderDiscountValue = Math.max(0, posPaymentNumber($('#modal_discount_value').val()));
+        let hasProductDiscount = false;
+
+        $('#payModalItemsArea .product-discount-value').each(function() {
+            if (Math.max(0, posPaymentNumber($(this).val())) > 0) {
+                hasProductDiscount = true;
+                return false;
+            }
+        });
+
+        let hasDiscount = orderDiscountValue > 0 || hasProductDiscount;
         let remarkInput = $('#paymentRemark');
 
         remarkInput.prop('required', hasDiscount);
@@ -1198,8 +1205,9 @@
         let tips = posPaymentNumber($('#payTipsAmount').val());
         let givenMoney = posPaymentNumber($('#payGivenMoney').val());
 
+        // Due is controlled by Total Paid. Given Money is only used to show cash change/shortage.
+        // Therefore a shortage remains visible as a negative Change until the user corrects it.
         let due = Math.max(0, grand - paid);
-        // Minus value-ও দেখানো হবে, যাতে cash shortage / excess tips সঙ্গে সঙ্গে বোঝা যায়।
         let changeAmount = givenMoney - paid - tips;
         let isNegativeChange = changeAmount < 0;
 
@@ -1245,13 +1253,49 @@
         $('#modal_discount_type').val('fixed');
         $('#modal_discount_value').val('');
 
+        let escapeHtml = function(value) {
+            return $('<div>').text(value == null ? '' : String(value)).html();
+        };
+
         let itemsHtml = '';
         if(data.items && data.items.length > 0) {
-            data.items.forEach(item => {
+            data.items.forEach((item, index) => {
+                let itemId = parseInt(item.id || 0, 10);
+                let lineTotal = Math.max(0, posPaymentNumber(item.total));
+                let savedType = item.product_discount_type === 'percentage' ? 'percentage' : 'fixed';
+                let savedValue = Math.max(0, posPaymentNumber(item.product_discount_value));
+                let safeName = escapeHtml(item.name);
+                let controlHtml = '';
+
+                if (itemId > 0) {
+                    controlHtml = `
+                    <div class="progga-product-discount-controls">
+                        <select class="form-select product-discount-type"
+                                name="product_discounts[${itemId}][type]"
+                                form="payForm"
+                                aria-label="Discount type for ${safeName}">
+                            <option value="fixed" ${savedType === 'fixed' ? 'selected' : ''}>Fixed (৳)</option>
+                            <option value="percentage" ${savedType === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
+                        </select>
+                        <input type="number"
+                               class="form-control product-discount-value"
+                               name="product_discounts[${itemId}][value]"
+                               form="payForm"
+                               min="0"
+                               step="0.01"
+                               value="${savedValue > 0 ? savedValue : ''}"
+                               placeholder="Discount">
+                        <span class="progga-product-discount-amount">−৳0</span>
+                    </div>`;
+                }
+
                 itemsHtml += `
-                <div class="progga-pay-summary-item" style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;">
-                    <span class="text-muted">${item.name} ×${item.qty}</span>
-                    <span style="font-weight: 600;">৳${Math.round(item.total)}</span>
+                <div class="progga-product-discount-item" data-detail-id="${itemId || ''}" data-line-total="${lineTotal}">
+                    <div class="progga-pay-summary-item" style="display:flex; justify-content:space-between; gap:10px; font-size:13px;">
+                        <span class="text-muted">${safeName} ×${parseInt(item.qty || 0, 10)}</span>
+                        <span style="font-weight:700; white-space:nowrap;">৳${Math.round(lineTotal)}</span>
+                    </div>
+                    ${controlHtml}
                 </div>`;
             });
         } else {
@@ -1272,6 +1316,11 @@
     }
 
     window.calculateModalTotal = function() {
+        // Keep track of the previous auto-filled payable amount. If Given Money
+        // is still following that default value, discounts should reduce it too.
+        let previousGrand = posPaymentNumber($('#payTotalAmount').text());
+        let previousGivenMoney = posPaymentNumber($('#payGivenMoney').val());
+
         let subtotal = parseFloat($('#paymentModal').data('subtotal')) || 0;
         let vat_rate = parseFloat("{{ $taxSettingVatRate ?? 0 }}");
 
@@ -1283,25 +1332,34 @@
 
         let service = Math.round((subtotal * service_rate) / 100);
         let vat = Math.round(((subtotal + service) * vat_rate) / 100);
+        // Existing whole-order discount formula stays exactly on the original subtotal.
         let discount_amount = Math.round((disc_type === 'percentage') ? (subtotal * disc_val / 100) : disc_val);
+        let product_discount_amount = typeof window.getProductDiscountTotal === 'function'
+            ? window.getProductDiscountTotal()
+            : 0;
 
-        let grand = Math.max(0, Math.round((subtotal + vat + service) - discount_amount));
+        let grand = Math.max(0, Math.round((subtotal + vat + service) - discount_amount - product_discount_amount));
 
+        $('#payProductDiscount').text('−৳' + product_discount_amount);
         $('#payDiscount').text('−৳' + discount_amount);
         $('#payVat').text('৳' + vat);
         $('#payService').text('৳' + service);
         $('#payTotalAmount').text('৳' + grand);
         window.syncPaymentRemarkRequirement();
 
-        if(service === 0) {
-            $('#payServiceRow').hide();
-        } else {
-            $('#payServiceRow').show();
-        }
+        // Only show tax rows when the corresponding setting has a positive rate.
+        // A database value of 0 or NULL is shared to the view as 0.
+        $('#payServiceRow').css('display', service_rate > 0 ? 'flex' : 'none');
+        $('#payVatRow').css('display', vat_rate > 0 ? 'flex' : 'none');
 
         if ($('input[name="payment_method"]:checked').val() !== 'Split') {
             $('#payTotalPaidAmount').val(grand);
-            if (posPaymentNumber($('#payGivenMoney').val()) === 0) {
+
+            // When Given Money is still auto-filled from the previous grand total,
+            // reduce it together with product-wise/order discounts so Change stays 0.
+            // A manually entered cash amount remains untouched.
+            let givenWasAutoFilled = previousGivenMoney === 0 || Math.abs(previousGivenMoney - previousGrand) < 0.01;
+            if (givenWasAutoFilled) {
                 $('#payGivenMoney').val(grand);
             }
         }
@@ -1313,6 +1371,10 @@
             window.updateDueAmount();
         }
     }
+
+    $(document).on('input change', '.product-discount-type, .product-discount-value', function() {
+        window.calculateModalTotal();
+    });
 
     $(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
         if ($(this).hasClass('split-input')) window.syncFinalPaymentFields();
@@ -1390,24 +1452,42 @@
         let totalPaid = window.getFinalPaymentBillPaid();
         let tipsAmount = posPaymentNumber($('#payTipsAmount').val());
         let givenMoney = posPaymentNumber($('#payGivenMoney').val());
-        let maxAllowedTips = Math.max(0, givenMoney - totalPaid);
+        let requiredGivenMoney = totalPaid + tipsAmount;
+        let saveAsDueOrder = $(this).data('saveAsDueOrder') === true;
+        $(this).removeData('saveAsDueOrder');
 
-        // Given Money must cover both the bill payment and tips.
-        if (tipsAmount > maxAllowedTips + 0.001) {
-            let moneyLabel = value => {
-                let rounded = Math.round(value * 100) / 100;
-                return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2);
-            };
+        // Keep the negative Change visible while the operator is entering a short amount.
+        // On submit, offer either correcting the amount or intentionally saving the shortage as Due.
+        if (givenMoney + 0.001 < requiredGivenMoney && !saveAsDueOrder) {
+            let paymentForm = $(this);
+            $('#payGivenMoney').addClass('is-invalid');
 
-            $('#payTipsAmount').addClass('is-invalid').trigger('focus');
-            Swal.fire(
-                'Invalid Tips',
-                'Given Money is insufficient. Total Paid + Tips cannot exceed Given Money. Maximum allowed Tips: ৳' + moneyLabel(maxAllowedTips) + '.',
-                'warning'
-            );
+            Swal.fire({
+                icon: 'warning',
+                title: 'Insufficient Given Money',
+                text: 'You entered less money than the payment amount. Correct the amount or save the shortage as a Due Order.',
+                showDenyButton: true,
+                showCancelButton: false,
+                confirmButtonText: 'Correct Amount',
+                denyButtonText: 'Save as Due Order',
+                reverseButtons: true
+            }).then((result) => {
+                if (result.isDenied) {
+                    $('#payGivenMoney').removeClass('is-invalid');
+                    paymentForm.data('saveAsDueOrder', true);
+                    paymentForm.trigger('submit');
+                    return;
+                }
+
+                if (result.isConfirmed) {
+                    $('#payGivenMoney').trigger('focus').select();
+                }
+            });
+
             return;
         }
 
+        $('#payGivenMoney').removeClass('is-invalid');
         $('#payTipsAmount').removeClass('is-invalid');
 
         let btn = $(this).find('button[type="submit"]');
@@ -1415,6 +1495,9 @@
         btn.html('<i class="spinner-border spinner-border-sm"></i> Processing...').prop('disabled', true);
 
         let formData = $(this).serialize();
+        if (saveAsDueOrder) {
+            formData += '&save_as_due_order=1';
+        }
 
         $.ajax({
             url: "{{ route('pos.complete_payment') }}",

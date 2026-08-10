@@ -28,7 +28,8 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
             'Customer',
             'Items',
             'Subtotal',
-            'Discount Amount',
+            'Honered',
+            'Product Discount',
             'Service Charge',
             'Tips',
             'Given Money',
@@ -58,6 +59,7 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
                 : 'Table T-' . ($order->table->table_number ?? 'N/A');
 
             $discountAmount = max(0, (float)($order->discount_amount ?? 0));
+            $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
             $serviceCharge = max(0, (float)($order->service_charge ?? 0));
             $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
             $givenMoney = max(0, (float)($order->given_money ?? 0));
@@ -82,6 +84,7 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
                 $itemsText,
                 (float) ($order->subtotal ?? 0),
                 $discountAmount,
+                $productDiscountAmount,
                 $serviceCharge,
                 $tipsAmount,
                 $givenMoney,
@@ -108,11 +111,11 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getAlignment()->setWrapText(true);
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getAlignment()->setVertical(Alignment::VERTICAL_TOP);
 
-        // Money columns right aligned (D to J)
-        $sheet->getStyle('D2:J' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        // Money columns right aligned (D to K)
+        $sheet->getStyle('D2:K' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-        // Center alignment for Payment, Status, Time, etc. (K to N)
-        $sheet->getStyle('K2:N' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        // Center alignment for Payment, Status, Time, etc. (L to O)
+        $sheet->getStyle('L2:O' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         // Border for table readability
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);

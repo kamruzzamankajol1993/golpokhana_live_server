@@ -78,4 +78,9 @@ class Order extends Model
     {
         return $this->hasOne(Review::class);
     }
+
+    public function duePayments()
+    {
+        return $this->hasMany(OrderDuePayment::class)->orderByDesc('paid_at')->orderByDesc('id');
+    }
 }

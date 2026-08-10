@@ -183,6 +183,7 @@ Route::post('food-category-status/{id}', [FoodCategoryController::class, 'update
     // Order edit page: only quantity and payment summary can be changed.
     Route::get('orders/{id}/edit', [App\Http\Controllers\Admin\OrderController::class, 'edit'])->name('order.edit');
     Route::put('orders/{id}', [App\Http\Controllers\Admin\OrderController::class, 'update'])->name('order.update');
+    Route::post('orders/{id}/pay-due', [App\Http\Controllers\Admin\OrderController::class, 'payDue'])->name('order.pay_due');
     Route::get('orders/{id}', [App\Http\Controllers\Admin\OrderController::class, 'show'])->name('order.show');
     Route::get('orders/{id}/delete-history', [App\Http\Controllers\Admin\OrderController::class, 'deletedHistory'])->name('order.delete_history');
     Route::delete('orders/{id}', [App\Http\Controllers\Admin\OrderController::class, 'destroy'])

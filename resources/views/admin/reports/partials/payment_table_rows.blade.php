@@ -40,6 +40,8 @@
     <td>{{ $order->created_at->format('d M, h:i A') }}</td>
     <td>{{ $order->customer->name ?? 'Walk-in' }}</td>
     <td>{{ $order->table->table_number ?? 'Takeaway' }}</td>
+    <td class="text-danger">৳{{ number_format($order->discount_amount ?? 0, 2) }}</td>
+    <td class="text-danger">৳{{ number_format($order->product_discount_amount ?? 0, 2) }}</td>
     <td>
         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
             @if($showCash) <span class="progga-badge progga-badge-neutral">Cash</span> @endif
@@ -56,5 +58,5 @@
     <td class="text-primary"><strong>৳{{ number_format($rowTotal, 2) }}</strong></td>
 </tr>
 @empty
-<tr><td colspan="9" class="text-center py-4 text-muted">No data found.</td></tr>
+<tr><td colspan="11" class="text-center py-4 text-muted">No data found.</td></tr>
 @endforelse

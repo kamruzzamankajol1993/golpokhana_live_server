@@ -5,7 +5,8 @@
         <th>Order #</th>
         <th>Customer</th>
         <th>Subtotal</th>
-        <th>Discount Amount</th>
+        <th>Honored</th>
+        <th>Product Discount</th>
         <th>Tips</th>
         <th>Given</th>
         <th>Change</th>
@@ -48,6 +49,10 @@
             <td>
               @php $discountAmount = max(0, (float)($order->discount_amount ?? 0)); @endphp
               <strong class="text-danger">৳{{ number_format($discountAmount, 0) }}</strong>
+            </td>
+            <td>
+              @php $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0)); @endphp
+              <strong class="text-danger">৳{{ number_format($productDiscountAmount, 0) }}</strong>
             </td>
             <td>
               @php $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0)))); @endphp
@@ -131,7 +136,7 @@
             </td>
           </tr>
       @empty
-          <tr><td colspan="14" class="text-center py-4">No orders found.</td></tr>
+          <tr><td colspan="15" class="text-center py-4">No orders found.</td></tr>
       @endforelse
     </tbody>
   </table>

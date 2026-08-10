@@ -74,10 +74,13 @@
       font-size: 11px; color: #000;
       line-height: 1.6; margin-bottom: 2px; font-family: var(--mono);
     }
-    .bill-restaurant-phone {
+    .bill-restaurant-phone,
+    .bill-registration-line {
       font-size: 11.5px; color: #000; font-weight: 900;
-      margin-top: 4px; font-family: var(--mono);
+      font-family: var(--mono);
     }
+    .bill-restaurant-phone { margin-top: 4px; }
+    .bill-registration-line { margin-top: 2px; }
 
     .bill-title-bar {
       background: #fff; padding: 7px 20px;
@@ -246,14 +249,13 @@
         {!! nl2br(e($restaurantSettingAddress ?? 'Block I, House 52, Road No. 01\nBanani, Dhaka 1213')) !!}
       </div>
       <div class="bill-restaurant-phone">📞 {{ $restaurantSettingPhone ?? '01755 898 542' }}</div>
+      <div class="bill-registration-line">BIN: {{ $taxSettingTaxRegistrationNo ?? '006334813-0101' }}</div>
+      <div class="bill-registration-line">Mushak No: 6.3</div>
     </div>
 
     <div class="bill-title-bar">
       <span class="bill-title-text">Guest Bill</span>
-      <span class="bill-musak">MUSAK – 6.3</span>
     </div>
-
-    <div class="bill-vat-line">Bin No – {{ $taxSettingTaxRegistrationNo ?? '006334813-0101' }}</div>
 
     <div class="bill-body">
 
@@ -304,6 +306,9 @@
                       @if((isset($item->is_complimentary) && $item->is_complimentary) || ((float) $item->price <= 0 && (float) $item->subtotal <= 0))
                         <div class="bill-item-note">Complimentary</div>
                       @endif
+                      @if(($item->product_discount_amount ?? 0) > 0)
+                        <div class="bill-item-note">Product Discount</div>
+                      @endif
                       @if($item->food_note)
                         <div class="bill-item-note">{{ $item->food_note }}</div>
                       @endif
@@ -313,7 +318,12 @@
                         </div>
                       @endif
                     </td>
-                    <td>{{ round($item->subtotal) }}</td>
+                    <td>
+                      <div>{{ round($item->subtotal) }}</div>
+                      @if(($item->product_discount_amount ?? 0) > 0)
+                        <div class="bill-item-note">−{{ number_format($item->product_discount_amount, 0) }}</div>
+                      @endif
+                    </td>
                   </tr>
               @endif
 
@@ -345,7 +355,13 @@
           <span>+ {{ number_format($order->vat_tax, 0) }}</span>
         </div>
         @endif
- @if($order->discount_amount > 0)
+@if(($order->product_discount_amount ?? 0) > 0)
+        <div class="bill-total-row discount">
+          <span>Product Discount</span>
+          <span>− {{ number_format($order->product_discount_amount, 0) }}</span>
+        </div>
+        @endif
+        @if($order->discount_amount > 0)
         <div class="bill-total-row discount">
           <span>Honored</span>
           <span>− {{ number_format($order->discount_amount, 0) }}</span>
@@ -378,7 +394,7 @@
           </div>
           <div class="bill-total-row"><span>Cash</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_cash ?? $order->paid_in_cash ?? 0, 0) }}</span></div>
           <div class="bill-total-row"><span>Card</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0, 0) }}</span></div>
-          <div class="bill-total-row"><span>MFC / Mobile</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0, 0) }}</span></div>
+          <div class="bill-total-row"><span>MFS / Mobile</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0, 0) }}</span></div>
 
           @if($invoiceGivenAmount > 0 || $invoiceTipsAmount > 0)
             <div class="bill-payment-adjustments">
@@ -444,7 +460,7 @@
       @endif
 
       <div class="bill-server">
-        You Have Been Served By: <strong>{{ $order->waiter->name ?? $order->user->name ?? 'N/A' }}</strong>
+       Served By: <strong>{{ $order->waiter->name ?? $order->user->name ?? 'N/A' }}</strong>
       </div>
 
     </div><div class="bill-footer">

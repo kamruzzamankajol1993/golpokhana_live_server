@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\PosSession;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
@@ -24,6 +25,17 @@ class LoginController extends Controller
     // লগইনের পর রোল চেক করে POS সেশন অটোমেটিক ম্যানেজ করা হবে
     protected function authenticated(Request $request, $user)
     {
+        $employee = $user->employee;
+        if ($employee && (!$employee->can_login || $employee->employment_status !== 'active')) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')->withErrors([
+                'email' => 'Login access for this employee is disabled or the employee is not active.',
+            ]);
+        }
+
         // ওয়েটার ছাড়া অন্য সব ইউজারের জন্য লগইনের সময় নতুন POS সেশন শুরু হবে
         if (!$user->hasRole('waiter')) {
             // আগের কোনো Open সেশন থাকলে আগে অটোমেটিক Closed করে দেওয়া হবে

@@ -39,12 +39,20 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
         <div class="progga-stat-card">
           <div class="progga-stat-icon success"><i class="bi bi-graph-up-arrow"></i></div>
           <div class="progga-stat-info">
-            <div class="progga-stat-label">{{ $isSuperAdmin ? 'Monthly Revenue' : "Today's Revenue" }}</div>
-            <div class="progga-stat-value">৳{{ number_format($monthlySales) }}</div>
-            <div class="progga-stat-change {{ $monthlyChange >= 0 ? 'up' : 'down' }}">
-                <i class="bi {{ $monthlyChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>
-                {{ $monthlyChange > 0 ? '+' : '' }}{{ number_format($monthlyChange, 1) }}% {{ $isSuperAdmin ? 'this month' : 'vs yesterday' }}
-            </div>
+            @if($isSuperAdmin)
+              <div class="progga-stat-label">Monthly Revenue</div>
+              <div class="progga-stat-value">৳{{ number_format($monthlySales) }}</div>
+              <div class="progga-stat-change {{ $monthlyChange >= 0 ? 'up' : 'down' }}">
+                  <i class="bi {{ $monthlyChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>
+                  {{ $monthlyChange > 0 ? '+' : '' }}{{ number_format($monthlyChange, 1) }}% this month
+              </div>
+            @else
+              <div class="progga-stat-label"> Pending Amount</div>
+              <div class="progga-stat-value">৳{{ number_format($todayPendingAmount, 0) }}</div>
+              <div class="progga-stat-change neutral">
+                  <i class="bi bi-clock"></i> Business day
+              </div>
+            @endif
           </div>
         </div>
       </div>

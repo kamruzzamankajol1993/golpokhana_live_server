@@ -96,7 +96,8 @@
             <th>Order #</th>
             <th>Customer</th>
             <th>Subtotal</th>
-            <th>Discount</th>
+            <th>Honored</th>
+            <th>Product Discount</th>
             <th>Service</th>
             <th>Tips</th>
             <th>Given</th>

@@ -48,6 +48,7 @@
           <th class="text-center">Qty</th>
           <th class="text-end">Unit Price</th>
           <th class="text-end">Total</th>
+          <th class="text-end">Product Discount</th>
         </tr>
       </thead>
       <tbody>
@@ -66,6 +67,16 @@
           <td class="text-center">{{ $item->quantity }}</td>
           <td class="text-end">৳{{ number_format($item->price, 0) }}</td>
           <td class="text-end"><strong>৳{{ number_format($item->subtotal, 0) }}</strong></td>
+          <td class="text-end">
+            @if(($item->product_discount_amount ?? 0) > 0)
+              <strong class="text-danger">−৳{{ number_format($item->product_discount_amount, 0) }}</strong>
+              <div class="text-muted" style="font-size:10px;">
+                {{ ($item->product_discount_type ?? 'fixed') === 'percentage' ? number_format($item->product_discount_value, 2) . '%' : 'Fixed' }}
+              </div>
+            @else
+              <span class="text-muted">—</span>
+            @endif
+          </td>
         </tr>
         @endforeach
       </tbody>
@@ -89,9 +100,14 @@
         <div class="progga-order-summary-row">
           <span>{{ $taxLabelText }} ({{ $vatRateText }}%)</span><span>৳{{ number_format($order->vat_tax, 0) }}</span>
         </div>
+        @if(($order->product_discount_amount ?? 0) > 0)
+        <div class="progga-order-summary-row text-danger">
+          <span>Product Discount</span><span>−৳{{ number_format($order->product_discount_amount, 0) }}</span>
+        </div>
+        @endif
         @if($order->discount_amount > 0)
         <div class="progga-order-summary-row text-danger">
-          <span>Discount</span><span>−৳{{ number_format($order->discount_amount, 0) }}</span>
+          <span>Honored</span><span>−৳{{ number_format($order->discount_amount, 0) }}</span>
         </div>
         @endif
         <div class="progga-order-summary-row grand">

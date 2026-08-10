@@ -128,6 +128,8 @@
             <th>Date</th>
             <th>Customer</th>
             <th>Table</th>
+            <th>Honored</th>
+            <th>Product Discount</th>
             <th>Payment Type</th>
             <th>Cash</th>
             <th>Card</th>
