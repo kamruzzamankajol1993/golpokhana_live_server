@@ -53,7 +53,7 @@
                     <th>Payment Type</th>
                     <th class="text-right">Cash</th>
                     <th class="text-right">Card</th>
-                    <th class="text-right">MFC</th>
+                    <th class="text-right">MFS</th>
                     <th class="text-right">Total Paid</th>
                 </tr>
             </thead>
@@ -242,7 +242,7 @@
                         $splits = [];
                         if((float)$order->paid_in_cash > 0) $splits[] = 'Cash: ' . number_format($order->paid_in_cash, 0);
                         if((float)$order->paid_in_card > 0) $splits[] = 'Card: ' . number_format($order->paid_in_card, 0);
-                        if((float)$order->paid_in_mfc > 0) $splits[] = 'MFC: ' . number_format($order->paid_in_mfc, 0);
+                        if((float)$order->paid_in_mfc > 0) $splits[] = 'MFS: ' . number_format($order->paid_in_mfc, 0);
                         $paymentText .= count($splits) ? '<br><span style="font-size:8px;color:#555;">' . implode(', ', $splits) . '</span>' : '';
                     }
                 @endphp

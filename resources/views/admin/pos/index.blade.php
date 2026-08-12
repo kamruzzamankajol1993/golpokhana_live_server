@@ -549,6 +549,34 @@
 
     $('#posBackToTables').click(function() { showStep(1); });
 
+    function reloadActiveOrderOffcanvas(orderId, tableId, orderType) {
+        const normalizedType = String(orderType || '')
+            .toLowerCase()
+            .replace(/[\s-]+/g, '_');
+        const isDineIn = normalizedType === 'dine_in' || normalizedType === 'dinein';
+        const url = isDineIn && tableId
+            ? "{{ route('pos.get_table_order', ':id') }}".replace(':id', tableId)
+            : "{{ route('pos.get_pos_order', ':id') }}".replace(':id', orderId);
+
+        return $.get(url, function(res) {
+            if (typeof res === 'object' && res !== null) {
+                if (res.status === 'load_cart') {
+                    bootstrap.Offcanvas.getInstance(document.getElementById('tableOrderOffcanvas'))?.hide();
+                    window.loadHeldQrOrderToPos(res.order_data);
+                    return;
+                }
+
+                if (res.status === 'error') {
+                    Swal.fire('Notice', res.message || 'Could not reload the active order.', 'info');
+                    return;
+                }
+            }
+
+            $('#ocBody').html(res);
+            bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('tableOrderOffcanvas')).show();
+        });
+    }
+
     $(document).on('click', '.progga-pos-table-card', function(e) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -1719,6 +1747,61 @@
                 showConfirmButton: false
             });
         }
+    });
+
+    $(document).on('click', '.js-make-order-item-complimentary', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const $btn = $(this);
+        const orderId = $btn.data('order-id');
+        const orderDetailId = $btn.data('order-detail-id');
+        const tableId = $btn.data('table-id');
+        const orderType = $btn.data('order-type') || 'dine_in';
+        const productName = $btn.data('product-name') || 'this food';
+
+        Swal.fire({
+            title: 'Make Complimentary?',
+            text: productName + ' will become complimentary and its food/addon value will be changed to 0.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, make complimentary',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#198754'
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+
+            const originalHtml = $btn.html();
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            $.post("{{ route('pos.order_item.complimentary') }}", {
+                order_id: orderId,
+                order_detail_id: orderDetailId
+            }).done(function(res) {
+                if (res.status !== 'success') {
+                    $btn.prop('disabled', false).html(originalHtml);
+                    Swal.fire('Error', res.message || 'Complimentary conversion failed.', 'error');
+                    return;
+                }
+
+                reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                    .done(function() {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Complimentary',
+                            text: res.message || 'Food converted to complimentary successfully.',
+                            timer: 1100,
+                            showConfirmButton: false
+                        });
+                    })
+                    .fail(function() {
+                        window.location.reload();
+                    });
+            }).fail(function(xhr) {
+                $btn.prop('disabled', false).html(originalHtml);
+                Swal.fire('Error', xhr.responseJSON?.message || 'Complimentary conversion failed.', 'error');
+            });
+        });
     });
 
     $(document).on('click', '#btnContinueOrdering', function() {

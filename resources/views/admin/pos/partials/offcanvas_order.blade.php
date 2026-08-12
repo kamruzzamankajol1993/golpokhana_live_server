@@ -58,7 +58,11 @@
             </div>
 
            @foreach($kot->orderDetails as $item)
-                @php $addons = json_decode($item->addons, true) ?? []; @endphp
+                @php
+                    $addons = json_decode($item->addons, true) ?? [];
+                    $isComplimentaryItem = (isset($item->is_complimentary) && $item->is_complimentary)
+                        || ((float) $item->price <= 0 && (float) $item->subtotal <= 0);
+                @endphp
 
                 {{-- POS UI note. --}}
                 <div class="progga-oc-item {{ $item->is_unavailable ? 'opacity-50' : '' }}">
@@ -71,8 +75,8 @@
                             {{ $item->product_name }}
                         @endif
 
-                        @if((isset($item->is_complimentary) && $item->is_complimentary) || ((float) $item->price <= 0 && (float) $item->subtotal <= 0))
-                            <span class="badge bg-success" style="font-size: 9px; margin-left: 5px;">Complimentary</span>
+                        @if($isComplimentaryItem)
+                            <span class="progga-complimentary-food-label">Complimentary</span>
                         @endif
 
                         @if(count($addons) > 0)
@@ -93,6 +97,19 @@
                             ৳{{ round($item->subtotal) }}
                         @endif
                     </span>
+
+                    @if(!$item->is_unavailable && !$isComplimentaryItem)
+                        <button type="button"
+                                class="btn btn-sm btn-outline-success progga-oc-item-complimentary js-make-order-item-complimentary"
+                                title="Convert to complimentary"
+                                data-order-id="{{ $order->id }}"
+                                data-order-detail-id="{{ $item->id }}"
+                                data-table-id="{{ $order->table_id }}"
+                                data-order-type="{{ $jsOrderType }}"
+                                data-product-name="{{ $item->product_name }}">
+                            <i class="bi bi-gift"></i>
+                        </button>
+                    @endif
 
                     @if(!$item->is_unavailable && !auth()->user()->hasRole('waiter'))
                         <button type="button"
@@ -262,6 +279,24 @@
         border-radius: 6px;
         margin-left: 6px;
         flex: 0 0 auto;
+    }
+
+    .progga-oc-item-complimentary {
+        padding: 3px 7px;
+        line-height: 1;
+        border-radius: 6px;
+        margin-left: 6px;
+        flex: 0 0 auto;
+    }
+
+    .progga-complimentary-food-label {
+        display: block;
+        width: max-content;
+        margin-top: 3px;
+        color: #198754;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1.1;
     }
 
     .progga-table-swap-box {

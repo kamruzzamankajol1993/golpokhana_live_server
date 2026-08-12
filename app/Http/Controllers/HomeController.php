@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Table;
-use App\Models\OrderDetail;
 use App\Models\RestaurantSetting;
 use App\Support\OrderVisibility;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HomeController extends Controller
 {
@@ -243,7 +243,7 @@ class HomeController extends Controller
 
     private function emptyDashboardChartPayload(string $period = '7'): array
     {
-        $period = in_array($period, ['7', '30', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $chartLabels = [];
         $chartData = [];
 
@@ -280,7 +280,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['7', '30', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
 
         $hours = $reportingWindow['hours'];
@@ -381,29 +381,12 @@ class HomeController extends Controller
 
         $statusData = array_map(fn ($status) => (int) ($orderStatuses[$status] ?? 0), $statusLabels);
 
-        $yearRange = $this->businessYearRange($currentBusinessDate, $hours);
-        $topItemsQuery = OrderVisibility::constrain(
-            OrderDetail::query()->join('orders', 'order_details.order_id', '=', 'orders.id'),
-            $visibleOrderIds
-        )
-            ->where('orders.status', 'Completed')
-            ->whereBetween('orders.created_at', [$yearRange['start'], $yearRange['end']]);
-
-        $topItems = $this->applyBusinessHoursFilter($topItemsQuery, 'orders.created_at', $hours)
-            ->select('order_details.product_name', DB::raw('SUM(order_details.quantity) as total_qty'))
-            ->groupBy('order_details.product_name')
-            ->orderByDesc('total_qty')
-            ->take(5)
-            ->get();
-
         return [
             'period' => $period,
             'chartLabels' => $chartLabels,
             'chartData' => $chartData,
             'statusLabels' => $statusLabels,
             'statusData' => $statusData,
-            'topItemsLabels' => $topItems->pluck('product_name')->toArray(),
-            'topItemsData' => $topItems->pluck('total_qty')->map(fn ($qty) => (int) $qty)->toArray(),
         ];
     }
 
@@ -465,18 +448,6 @@ class HomeController extends Controller
 
         $statusData = array_map(fn ($status) => (int) ($orderStatuses[$status] ?? 0), $statusLabels);
 
-        $topItems = OrderVisibility::constrain(
-            OrderDetail::query()->join('orders', 'order_details.order_id', '=', 'orders.id'),
-            $visibleOrderIds
-        )
-            ->where('orders.status', 'Completed')
-            ->whereBetween('orders.created_at', [$todayWindow['start'], $todayWindow['end']])
-            ->select('order_details.product_name', DB::raw('SUM(order_details.quantity) as total_qty'))
-            ->groupBy('order_details.product_name')
-            ->orderByDesc('total_qty')
-            ->take(5)
-            ->get();
-
         $todayRevenue = OrderVisibility::constrain(Order::query(), $visibleOrderIds)
             ->whereBetween('created_at', [$todayWindow['start'], $todayWindow['end']])
             ->where('status', 'Completed')
@@ -488,8 +459,183 @@ class HomeController extends Controller
             'chartData' => [round((float) $todayRevenue, 2)],
             'statusLabels' => $statusLabels,
             'statusData' => $statusData,
-            'topItemsLabels' => $topItems->pluck('product_name')->toArray(),
-            'topItemsData' => $topItems->pluck('total_qty')->map(fn ($qty) => (int) $qty)->toArray(),
+        ];
+    }
+
+    /**
+     * Build grouped Cash/Card/MFS income bars for 7, 30, 60, 90, 180 days or 12 months.
+     * Split orders are naturally allocated to their stored paid_in_* components.
+     * Due collections are moved to their actual paid_at business date when the
+     * order_due_payments ledger is available, so the same money is not counted twice.
+     */
+    private function dashboardIncomeChartPayload(
+        string $period = '7',
+        ?array $visibleOrderIds = null,
+        ?array $reportingWindow = null
+    ): array {
+        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
+        $hours = $reportingWindow['hours'];
+        $currentBusinessDate = $reportingWindow['business_date'];
+
+        $labels = [];
+        $bucketKeys = [];
+
+        if ($period === '12m') {
+            $startMonth = $currentBusinessDate->copy()->subMonths(11)->startOfMonth();
+            $endMonthDate = $currentBusinessDate->copy()->endOfMonth();
+            $overallStart = $this->businessWindowForDate($startMonth, $hours)['start'];
+            $overallEnd = $this->businessWindowForDate($endMonthDate, $hours)['end'];
+
+            for ($i = 0; $i < 12; $i++) {
+                $date = $startMonth->copy()->addMonths($i);
+                $bucketKeys[] = $date->format('Y-m');
+                $labels[] = $date->format('M y');
+            }
+        } else {
+            $days = (int) $period;
+            $firstBusinessDate = $currentBusinessDate->copy()->subDays($days - 1);
+            $overallStart = $this->businessWindowForDate($firstBusinessDate, $hours)['start'];
+            $overallEnd = $reportingWindow['end'];
+
+            for ($i = $days - 1; $i >= 0; $i--) {
+                $date = $currentBusinessDate->copy()->subDays($i);
+                $bucketKeys[] = $date->format('Y-m-d');
+                $labels[] = $days <= 7 ? $date->format('D') : $date->format('d M');
+            }
+        }
+
+        $cashTotals = array_fill_keys($bucketKeys, 0.0);
+        $cardTotals = array_fill_keys($bucketKeys, 0.0);
+        $mfsTotals = array_fill_keys($bucketKeys, 0.0);
+
+        $ordersQuery = OrderVisibility::constrain(Order::query(), $visibleOrderIds)
+            ->where('status', 'Completed')
+            ->whereBetween('created_at', [$overallStart, $overallEnd]);
+
+        $orders = $this->applyBusinessHoursFilter($ordersQuery, 'created_at', $hours)
+            ->get([
+                'id',
+                'created_at',
+                'payment_type',
+                'total_paid_amount',
+                'paid_in_cash',
+                'paid_in_card',
+                'paid_in_mfc',
+            ]);
+
+        $dueByOrder = [];
+
+        if (Schema::hasTable('order_due_payments') && $orders->isNotEmpty()) {
+            $dueRows = DB::table('order_due_payments')
+                ->whereIn('order_id', $orders->pluck('id')->all())
+                ->get(['order_id', 'payment_type', 'amount']);
+
+            foreach ($dueRows as $dueRow) {
+                $orderId = (int) $dueRow->order_id;
+                $type = strtolower(trim((string) $dueRow->payment_type));
+                $amount = max(0, (float) $dueRow->amount);
+
+                $dueByOrder[$orderId] ??= ['cash' => 0.0, 'card' => 0.0, 'mfs' => 0.0, 'total' => 0.0];
+
+                if ($type === 'cash') {
+                    $dueByOrder[$orderId]['cash'] += $amount;
+                } elseif ($type === 'card') {
+                    $dueByOrder[$orderId]['card'] += $amount;
+                } elseif (in_array($type, ['mobile banking', 'mfc', 'mfs'], true)) {
+                    $dueByOrder[$orderId]['mfs'] += $amount;
+                }
+
+                $dueByOrder[$orderId]['total'] += $amount;
+            }
+        }
+
+        foreach ($orders as $order) {
+            $businessDate = $this->businessDateForTimestamp(Carbon::parse($order->created_at), $hours);
+
+            if ($businessDate === null) {
+                continue;
+            }
+
+            $key = $period === '12m' ? $businessDate->format('Y-m') : $businessDate->format('Y-m-d');
+
+            if (!array_key_exists($key, $cashTotals)) {
+                continue;
+            }
+
+            $due = $dueByOrder[(int) $order->id] ?? ['cash' => 0.0, 'card' => 0.0, 'mfs' => 0.0, 'total' => 0.0];
+            $cash = max(0, (float) ($order->paid_in_cash ?? 0) - $due['cash']);
+            $card = max(0, (float) ($order->paid_in_card ?? 0) - $due['card']);
+            $mfs = max(0, (float) ($order->paid_in_mfc ?? 0) - $due['mfs']);
+
+            // Backward compatibility for old single-payment orders without paid_in_* values.
+            if (($cash + $card + $mfs) <= 0) {
+                $legacyInitialAmount = max(0, (float) ($order->total_paid_amount ?? 0) - $due['total']);
+                $legacyType = strtolower(trim((string) $order->payment_type));
+
+                if ($legacyType === 'cash') {
+                    $cash = $legacyInitialAmount;
+                } elseif ($legacyType === 'card') {
+                    $card = $legacyInitialAmount;
+                } elseif (in_array($legacyType, ['mobile banking', 'mfc', 'mfs'], true)) {
+                    $mfs = $legacyInitialAmount;
+                }
+            }
+
+            $cashTotals[$key] += $cash;
+            $cardTotals[$key] += $card;
+            $mfsTotals[$key] += $mfs;
+        }
+
+        // Due payments are income on the date they are actually collected.
+        if (Schema::hasTable('order_due_payments')) {
+            $dueIncomeQuery = DB::table('order_due_payments')
+                ->join('orders', 'order_due_payments.order_id', '=', 'orders.id')
+                ->whereBetween('order_due_payments.paid_at', [$overallStart, $overallEnd]);
+
+            $dueIncomeQuery = OrderVisibility::constrain($dueIncomeQuery, $visibleOrderIds);
+            $dueIncomeRows = $this->applyBusinessHoursFilter(
+                $dueIncomeQuery,
+                'order_due_payments.paid_at',
+                $hours
+            )->get([
+                'order_due_payments.paid_at',
+                'order_due_payments.payment_type',
+                'order_due_payments.amount',
+            ]);
+
+            foreach ($dueIncomeRows as $dueIncome) {
+                $businessDate = $this->businessDateForTimestamp(Carbon::parse($dueIncome->paid_at), $hours);
+
+                if ($businessDate === null) {
+                    continue;
+                }
+
+                $key = $period === '12m' ? $businessDate->format('Y-m') : $businessDate->format('Y-m-d');
+
+                if (!array_key_exists($key, $cashTotals)) {
+                    continue;
+                }
+
+                $amount = max(0, (float) $dueIncome->amount);
+                $type = strtolower(trim((string) $dueIncome->payment_type));
+
+                if ($type === 'cash') {
+                    $cashTotals[$key] += $amount;
+                } elseif ($type === 'card') {
+                    $cardTotals[$key] += $amount;
+                } elseif (in_array($type, ['mobile banking', 'mfc', 'mfs'], true)) {
+                    $mfsTotals[$key] += $amount;
+                }
+            }
+        }
+
+        return [
+            'incomePeriod' => $period,
+            'incomeChartLabels' => $labels,
+            'incomeCashData' => array_map(fn ($key) => round((float) $cashTotals[$key], 2), $bucketKeys),
+            'incomeCardData' => array_map(fn ($key) => round((float) $cardTotals[$key], 2), $bucketKeys),
+            'incomeMfsData' => array_map(fn ($key) => round((float) $mfsTotals[$key], 2), $bucketKeys),
         ];
     }
 
@@ -503,35 +649,35 @@ class HomeController extends Controller
         $amounts = [
             'Cash' => 0.0,
             'Card' => 0.0,
-            'Mobile Banking / MFC' => 0.0,
+            'Mobile Banking / MFS' => 0.0,
         ];
         $counts = [
             'Cash' => 0,
             'Card' => 0,
-            'Mobile Banking / MFC' => 0,
+            'Mobile Banking / MFS' => 0,
         ];
 
         foreach ($orders as $order) {
             $cash = (float) ($order->paid_in_cash ?? 0);
             $card = (float) ($order->paid_in_card ?? 0);
-            $mfc = (float) ($order->paid_in_mfc ?? 0);
+            $mfs = (float) ($order->paid_in_mfc ?? 0);
 
             // Backward compatibility for old orders that only stored payment_type + total_paid_amount.
-            if (($cash + $card + $mfc) <= 0 && (float) ($order->total_paid_amount ?? 0) > 0) {
+            if (($cash + $card + $mfs) <= 0 && (float) ($order->total_paid_amount ?? 0) > 0) {
                 $legacyAmount = (float) $order->total_paid_amount;
 
                 if (strcasecmp((string) $order->payment_type, 'Cash') === 0) {
                     $cash = $legacyAmount;
                 } elseif (strcasecmp((string) $order->payment_type, 'Card') === 0) {
                     $card = $legacyAmount;
-                } elseif (in_array(strtolower((string) $order->payment_type), ['mobile banking', 'mfc'], true)) {
-                    $mfc = $legacyAmount;
+                } elseif (in_array(strtolower((string) $order->payment_type), ['mobile banking', 'mfc', 'mfs'], true)) {
+                    $mfs = $legacyAmount;
                 }
             }
 
             $amounts['Cash'] += $cash;
             $amounts['Card'] += $card;
-            $amounts['Mobile Banking / MFC'] += $mfc;
+            $amounts['Mobile Banking / MFS'] += $mfs;
 
             if ($cash > 0) {
                 $counts['Cash']++;
@@ -539,8 +685,8 @@ class HomeController extends Controller
             if ($card > 0) {
                 $counts['Card']++;
             }
-            if ($mfc > 0) {
-                $counts['Mobile Banking / MFC']++;
+            if ($mfs > 0) {
+                $counts['Mobile Banking / MFS']++;
             }
         }
 
@@ -548,7 +694,7 @@ class HomeController extends Controller
         $icons = [
             'Cash' => 'bi-cash-coin',
             'Card' => 'bi-credit-card',
-            'Mobile Banking / MFC' => 'bi-phone',
+            'Mobile Banking / MFS' => 'bi-phone',
         ];
 
         $paymentRows = collect($amounts)->map(function ($amount, $label) use ($counts, $icons, $totalCollected) {
@@ -577,19 +723,20 @@ class HomeController extends Controller
                 ]
             );
 
-            return response()->json($this->todayDashboardPayload($todayWindow, $todayVisibleIds));
+            $todayPayload = $this->todayDashboardPayload($todayWindow, $todayVisibleIds);
+            return response()->json($todayPayload);
         }
 
         $activeWindow = $this->currentBusinessWindow();
         $reportingWindow = $activeWindow ?? $this->reportingBusinessWindow();
 
-        return response()->json(
-            $this->dashboardChartPayload(
-                (string) $request->get('period', '7'),
-                $this->dashboardVisibleOrderIds(),
-                $reportingWindow
-            )
-        );
+        $visibleOrderIds = $this->dashboardVisibleOrderIds();
+        $period = (string) $request->get('period', '7');
+
+        return response()->json(array_merge(
+            $this->dashboardChartPayload($period, $visibleOrderIds, $reportingWindow),
+            $this->dashboardIncomeChartPayload($period, $visibleOrderIds, $reportingWindow)
+        ));
     }
 
     public function index()
@@ -727,55 +874,28 @@ class HomeController extends Controller
 
         extract($chartPayload);
 
+        $incomePayload = $isSuperAdmin
+            ? $this->dashboardIncomeChartPayload(
+                '7',
+                $this->dashboardVisibleOrderIds(),
+                $reportingWindow
+            )
+            : [
+                'incomePeriod' => '7',
+                'incomeChartLabels' => [],
+                'incomeCashData' => [],
+                'incomeCardData' => [],
+                'incomeMfsData' => [],
+            ];
+
+        extract($incomePayload);
+
         // Running Tables is intentionally unchanged for every role.
         $totalTables = Table::count();
         $runningTables = Table::whereHas('orders', function ($query) {
             $query->whereIn('status', ['Pending', 'Cooking']);
         })->count();
         $availableTables = max($totalTables - $runningTables, 0);
-
-        $kitchenQueueWindow = $isSuperAdmin ? $activeWindow : $todayWindow;
-        $kitchenQueueVisibleIds = $isSuperAdmin && $kitchenQueueWindow !== null
-            ? $this->rangeVisibleOrderIds(
-                $kitchenQueueWindow['start'],
-                $kitchenQueueWindow['end'],
-                [
-                    'dashboard_metric' => 'kitchen_queue',
-                    'business_date' => $kitchenQueueWindow['business_date']->format('Y-m-d'),
-                ]
-            )
-            : $todayVisibleIds;
-
-        $kitchenQueue = $kitchenQueueWindow !== null
-            ? OrderVisibility::constrain(
-                Order::with(['table', 'orderDetails']),
-                $kitchenQueueVisibleIds
-            )
-                ->whereBetween('created_at', [$kitchenQueueWindow['start'], $kitchenQueueWindow['end']])
-                ->whereIn('status', ['Pending', 'Cooking', 'Ready'])
-                ->orderBy('id', 'asc')
-                ->limit(5)
-                ->get()
-            : collect();
-
-        if ($isSuperAdmin) {
-            $recentOrders = OrderVisibility::constrain(
-                Order::with(['table', 'waiter', 'orderDetails']),
-                $this->dashboardVisibleOrderIds()
-            )
-                ->orderBy('id', 'desc')
-                ->limit(6)
-                ->get();
-        } else {
-            $recentOrders = OrderVisibility::constrain(
-                Order::with(['table', 'waiter', 'orderDetails']),
-                $todayVisibleIds
-            )
-                ->whereBetween('created_at', [$todayWindow['start'], $todayWindow['end']])
-                ->orderBy('id', 'desc')
-                ->limit(6)
-                ->get();
-        }
 
         return view('admin.dashboard.index', compact(
             'isSuperAdmin',
@@ -794,12 +914,13 @@ class HomeController extends Controller
             'chartData',
             'statusLabels',
             'statusData',
-            'topItemsLabels',
-            'topItemsData',
             'paymentRows',
             'totalCollected',
-            'kitchenQueue',
-            'recentOrders'
+            'incomePeriod',
+            'incomeChartLabels',
+            'incomeCashData',
+            'incomeCardData',
+            'incomeMfsData',
         ));
     }
 

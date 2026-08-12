@@ -431,7 +431,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
     /**
      * Order edit page.
      * এখানে নতুন প্রোডাক্ট অ্যাড করার কোনো অপশন নেই।
-     * শুধু existing order item quantity এবং payment summary edit করা যাবে।
+     * Existing item quantity/payment summary edit এবং food complimentary conversion করা যাবে।
      */
     public function edit($id)
     {
@@ -456,15 +456,17 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
     /**
      * Update order quantity + payment summary.
-     * নতুন item add/delete করা হচ্ছে না; শুধু বর্তমান order_details line quantity update হবে।
+     * Existing food lines can also be converted to complimentary; no new item is created here.
      */
     public function update(Request $request, $id)
     {
         $request->validate([
             'items' => ['required', 'array'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'items.*.make_complimentary' => ['nullable', 'boolean'],
             'items.*.product_discount_type' => ['nullable', Rule::in(['fixed', 'percentage'])],
             'items.*.product_discount_value' => ['nullable', 'numeric', 'min:0'],
+            'delete_item_id' => ['nullable', 'integer', 'exists:order_details,id'],
             'discount_type' => ['required', Rule::in(['fixed', 'percentage'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['required', Rule::in(['Cash', 'Card', 'Mobile Banking', 'Split'])],
@@ -483,11 +485,74 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
         try {
             $order = Order::with('orderDetails')->lockForUpdate()->findOrFail($id);
             $inputItems = $request->input('items', []);
+            $deleteItemId = $request->filled('delete_item_id') ? (int) $request->delete_item_id : null;
+            $deletedItemName = null;
+
+            if ($deleteItemId && !$order->orderDetails->contains('id', $deleteItemId)) {
+                DB::rollBack();
+
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->with('error', 'Selected product does not belong to this order.');
+            }
 
             $newSubtotal = 0;
             $productDiscountTotal = 0;
 
             foreach ($order->orderDetails as $detail) {
+                if ($deleteItemId && (int) $detail->id === $deleteItemId) {
+                    $currentQty = max(1, (int) ($detail->quantity ?? 1));
+                    $lineSubtotal = max(0, (float) ($detail->subtotal ?? 0));
+                    $addons = json_decode($detail->addons ?? '[]', true);
+                    if (!is_array($addons)) {
+                        $addons = [];
+                    }
+
+                    $addonTotal = 0;
+                    foreach ($addons as $addon) {
+                        $addonTotal += (float) ($addon['price'] ?? 0);
+                    }
+
+                    // Keep edit-page deletions in the same audit history used by POS item deletions.
+                    if (Schema::hasTable('pos_deleted_item_histories')) {
+                        DB::table('pos_deleted_item_histories')->insert([
+                            'order_id' => $order->id,
+                            'order_detail_id' => $detail->id,
+                            'order_kot_id' => $detail->order_kot_id,
+                            'food_id' => $detail->product_id,
+                            'product_name' => $detail->product_name,
+                            'unit_price' => $detail->price ?? 0,
+                            'addon_total' => $addonTotal,
+                            'deleted_quantity' => $currentQty,
+                            'previous_quantity' => $currentQty,
+                            'remaining_quantity' => 0,
+                            'subtotal_removed' => $lineSubtotal,
+                            'source' => 'ordered_item',
+                            'cart_key' => null,
+                            'cart_item_key' => null,
+                            'order_type' => $order->order_type,
+                            'table_id' => $order->table_id,
+                            'addons' => json_encode($addons),
+                            'note' => $detail->food_note ?? null,
+                            'deleted_by' => auth()->id(),
+                            'reason' => 'Ordered item deleted from Order List edit page',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+
+                    $deletedItemName = $detail->product_name ?: 'Product';
+                    $kotId = $detail->order_kot_id;
+                    $detail->delete();
+
+                    if ($kotId && !OrderDetail::where('order_kot_id', $kotId)->exists()) {
+                        OrderKot::where('id', $kotId)->delete();
+                    }
+
+                    continue;
+                }
+
                 // শুধু existing detail id গুলোই update হবে, নতুন কোনো item create হবে না।
                 if (!isset($inputItems[$detail->id])) {
                     $newSubtotal += (float) ($detail->subtotal ?? 0);
@@ -499,6 +564,42 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                 $newQty = max(1, (int) ($itemInput['quantity'] ?? $detail->quantity));
                 $oldQty = max(1, (int) ($detail->quantity ?? 1));
                 $oldLineSubtotal = (float) ($detail->subtotal ?? 0);
+
+                $isAlreadyComplimentary = !empty($detail->is_complimentary)
+                    || ((float) ($detail->price ?? 0) <= 0 && $oldLineSubtotal <= 0);
+                $makeComplimentary = filter_var(
+                    $itemInput['make_complimentary'] ?? false,
+                    FILTER_VALIDATE_BOOLEAN
+                );
+
+                if ($isAlreadyComplimentary || $makeComplimentary) {
+                    $addons = json_decode($detail->addons ?? '[]', true);
+                    if (!is_array($addons)) {
+                        $addons = [];
+                    }
+
+                    foreach ($addons as &$addon) {
+                        if (is_array($addon)) {
+                            $addon['price'] = 0;
+                        }
+                    }
+                    unset($addon);
+
+                    $detail->quantity = $newQty;
+                    $detail->price = 0;
+                    $detail->subtotal = 0;
+                    $detail->addons = json_encode($addons);
+                    $detail->product_discount_type = null;
+                    $detail->product_discount_value = 0;
+                    $detail->product_discount_amount = 0;
+
+                    if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                        $detail->is_complimentary = 1;
+                    }
+
+                    $detail->save();
+                    continue;
+                }
 
                 // Existing line subtotal/qty থেকে unit total বের করা হচ্ছে, যাতে addon price preserve থাকে।
                 if ($oldLineSubtotal > 0 && $oldQty > 0) {
@@ -611,9 +712,13 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
             DB::commit();
 
+            $successMessage = $deletedItemName
+                ? 'Product "' . $deletedItemName . '" deleted and order updated successfully.'
+                : 'Order updated successfully.';
+
             return redirect()
                 ->route('order.edit', $order->id)
-                ->with('success', 'Order updated successfully.');
+                ->with('success', $successMessage);
         } catch (\Exception $e) {
             DB::rollBack();
 

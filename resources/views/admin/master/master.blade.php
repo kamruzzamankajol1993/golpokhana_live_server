@@ -34,7 +34,7 @@
 
   <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
 
-  <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/progga-style.css">
+  <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/progga-style.css?v={{ time() }}">
  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
     /* New Web Order Alert modal height/dropdown fix */

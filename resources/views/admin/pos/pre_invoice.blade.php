@@ -332,7 +332,7 @@
       </div>
 
       <div class="bill-server" style="margin-top:20px; font-weight:bold;">
-        *** PLEASE PAY AT THE COUNTER ***
+        *** We are requesting to pay ***
       </div>
       <div class="bill-server">
         Served By: <strong>{{ $order->waiter->name ?? 'N/A' }}</strong>

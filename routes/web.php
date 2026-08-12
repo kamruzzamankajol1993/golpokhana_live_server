@@ -133,6 +133,7 @@ Route::post('/kitchen/mark-unavailable', [App\Http\Controllers\Admin\KitchenCont
     Route::post('/pos/cart/update', [App\Http\Controllers\Admin\PosController::class, 'updateCart'])->name('pos.cart.update');
     Route::post('/pos/cart/remove', [App\Http\Controllers\Admin\PosController::class, 'removeFromCart'])->name('pos.cart.remove');
     Route::post('/pos/order-item/remove', [App\Http\Controllers\Admin\PosController::class, 'removeOrderedItem'])->name('pos.order_item.remove');
+    Route::post('/pos/order-item/complimentary', [App\Http\Controllers\Admin\PosController::class, 'makeOrderedItemComplimentary'])->name('pos.order_item.complimentary');
     Route::post('/pos/cart/clear', [App\Http\Controllers\Admin\PosController::class, 'clearCart'])->name('pos.cart.clear');
 Route::get('reviews', [App\Http\Controllers\Admin\ReviewController::class, 'index'])->name('reviews.index');
     // POS: Order & Payment
@@ -180,7 +181,7 @@ Route::post('food-category-status/{id}', [FoodCategoryController::class, 'update
     // Order Management Routes
     // ==========================================
     Route::get('orders', [App\Http\Controllers\Admin\OrderController::class, 'index'])->name('order.index');
-    // Order edit page: only quantity and payment summary can be changed.
+    // Order edit page: existing quantity/payment summary and complimentary conversion can be changed.
     Route::get('orders/{id}/edit', [App\Http\Controllers\Admin\OrderController::class, 'edit'])->name('order.edit');
     Route::put('orders/{id}', [App\Http\Controllers\Admin\OrderController::class, 'update'])->name('order.update');
     Route::post('orders/{id}/pay-due', [App\Http\Controllers\Admin\OrderController::class, 'payDue'])->name('order.pay_due');

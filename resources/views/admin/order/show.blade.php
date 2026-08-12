@@ -126,7 +126,7 @@
                         <td>
                             <strong style="color: var(--progga-text);">{{ $item->product_name }}</strong>
                             @if((isset($item->is_complimentary) && $item->is_complimentary) || ((float) $item->price <= 0 && (float) $item->subtotal <= 0))
-                                <span class="badge bg-success ms-1" style="font-size: 9px;">Complimentary</span>
+                                <div style="font-size:10px; color:#198754; font-weight:800; margin-top:2px;">Complimentary</div>
                             @endif
                             @if($item->food_note)
                                 <div style="font-size: 11px; color: #d33; font-style: italic;">Note: {{ $item->food_note }}</div>

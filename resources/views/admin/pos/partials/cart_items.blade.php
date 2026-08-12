@@ -4,7 +4,7 @@
             <div class="progga-pos-item-name">
                 {{ $item['name'] }}
                 @if(!empty($item['is_complimentary']))
-                    <span class="badge bg-success ms-1" style="font-size: 9px;">Complimentary</span>
+                    <div style="font-size:10px; color:#198754; font-weight:800; margin-top:2px;">Complimentary</div>
                 @endif
                 @if(count($item['addons']) > 0)
                     <div style="font-size: 10px; color: #777; font-weight: normal; margin-top: 2px;">

@@ -1975,6 +1975,173 @@ public function placeOrder(Request $request)
     }
 
 
+    /**
+     * Convert an already ordered POS food line into a complimentary line.
+     * Existing "Add Complimentary" cart flow stays unchanged; this only affects
+     * a saved order_detail that is already visible in the active-order offcanvas.
+     */
+    public function makeOrderedItemComplimentary(Request $request)
+    {
+        $request->validate([
+            'order_id' => 'required|exists:orders,id',
+            'order_detail_id' => 'required|exists:order_details,id',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
+
+            $order = Order::where('id', $request->order_id)
+                ->whereIn('status', $activeStatuses)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only an active POS order can be changed from this screen.'
+                ], 422);
+            }
+
+            $detail = OrderDetail::where('order_id', $order->id)
+                ->lockForUpdate()
+                ->findOrFail($request->order_detail_id);
+
+            if (!empty($detail->is_unavailable)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unavailable food cannot be converted to complimentary.'
+                ], 422);
+            }
+
+            $alreadyComplimentary = !empty($detail->is_complimentary)
+                || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+
+            $addons = json_decode($detail->addons ?? '[]', true);
+            if (!is_array($addons)) {
+                $addons = [];
+            }
+
+            foreach ($addons as &$addon) {
+                if (is_array($addon)) {
+                    $addon['price'] = 0;
+                }
+            }
+            unset($addon);
+
+            // Normalize both newly converted and legacy complimentary rows to a true zero-value line.
+            $detail->price = 0;
+            $detail->subtotal = 0;
+            $detail->addons = json_encode($addons);
+            $detail->product_discount_type = null;
+            $detail->product_discount_value = 0;
+            $detail->product_discount_amount = 0;
+
+            if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                $detail->is_complimentary = 1;
+            }
+
+            $detail->save();
+
+            $remainingDetails = OrderDetail::where('order_id', $order->id)
+                ->where('is_unavailable', 0)
+                ->get();
+
+            $newSubtotal = 0;
+            $productDiscountTotal = 0;
+
+            foreach ($remainingDetails as $remainingDetail) {
+                $lineSubtotal = max(0, (float) ($remainingDetail->subtotal ?? 0));
+                $lineIsComplimentary = !empty($remainingDetail->is_complimentary)
+                    || ((float) ($remainingDetail->price ?? 0) <= 0 && $lineSubtotal <= 0);
+
+                if ($lineIsComplimentary) {
+                    $remainingDetail->product_discount_type = null;
+                    $remainingDetail->product_discount_value = 0;
+                    $remainingDetail->product_discount_amount = 0;
+                    $remainingDetail->save();
+                    continue;
+                }
+
+                $newSubtotal += $lineSubtotal;
+
+                $type = ($remainingDetail->product_discount_type ?? 'fixed') === 'percentage'
+                    ? 'percentage'
+                    : 'fixed';
+                $value = max(0, (float) ($remainingDetail->product_discount_value ?? 0));
+
+                if ($type === 'percentage') {
+                    $value = min($value, 100);
+                    $lineProductDiscount = round(($lineSubtotal * $value) / 100);
+                } else {
+                    $lineProductDiscount = min($value, $lineSubtotal);
+                }
+
+                $lineProductDiscount = max(0, round($lineProductDiscount));
+                $remainingDetail->product_discount_type = $lineProductDiscount > 0 ? $type : null;
+                $remainingDetail->product_discount_value = $lineProductDiscount > 0 ? $value : 0;
+                $remainingDetail->product_discount_amount = $lineProductDiscount;
+                $remainingDetail->save();
+
+                $productDiscountTotal += $lineProductDiscount;
+            }
+
+            $newSubtotal = max(0, round($newSubtotal, 2));
+            $taxSetting = DB::table('tax_settings')->first();
+            $vatRate = (float) ($taxSetting->vat_rate ?? 0);
+            $normalizedOrderType = $this->normalizePosOrderType($order->order_type ?? 'dine_in');
+            $serviceRate = $normalizedOrderType === 'dine_in'
+                ? (float) ($taxSetting->service_charge ?? 0)
+                : 0;
+
+            $serviceCharge = round(($newSubtotal * $serviceRate) / 100);
+            $vatTax = round((($newSubtotal + $serviceCharge) * $vatRate) / 100);
+
+            // orders.discount_amount stores the already-calculated other discount amount.
+            // Keep that amount, but cap it against the newly reduced bill.
+            $discountAmount = min(
+                max(0, round((float) ($order->discount_amount ?? 0))),
+                round($newSubtotal + $serviceCharge + $vatTax)
+            );
+            $productDiscountTotal = min(max(0, round($productDiscountTotal)), round($newSubtotal));
+            $grandTotal = max(0, round(
+                ($newSubtotal + $serviceCharge + $vatTax) - $discountAmount - $productDiscountTotal
+            ));
+            $totalPaid = max(0, (float) ($order->total_paid_amount ?? 0));
+
+            $order->subtotal = $newSubtotal;
+            $order->service_charge = $serviceCharge;
+            $order->vat_tax = $vatTax;
+            $order->discount_amount = $discountAmount;
+            $order->product_discount_amount = $productDiscountTotal;
+            $order->grand_total = $grandTotal;
+            $order->due = max(0, round($grandTotal - $totalPaid, 2));
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $alreadyComplimentary
+                    ? 'Food is already complimentary.'
+                    : 'Food converted to complimentary successfully.',
+                'order_id' => $order->id,
+                'order_detail_id' => $detail->id,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Complimentary conversion failed! ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+
     public function removeOrderedItem(Request $request)
     {
         $request->validate([

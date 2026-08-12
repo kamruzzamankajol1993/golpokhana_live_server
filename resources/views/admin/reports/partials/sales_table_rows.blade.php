@@ -14,7 +14,7 @@
             $splits = [];
             if((float)$order->paid_in_cash > 0) $splits[] = 'Cash: ' . number_format($order->paid_in_cash, 0);
             if((float)$order->paid_in_card > 0) $splits[] = 'Card: ' . number_format($order->paid_in_card, 0);
-            if((float)$order->paid_in_mfc > 0) $splits[] = 'MFC: ' . number_format($order->paid_in_mfc, 0);
+            if((float)$order->paid_in_mfc > 0) $splits[] = 'MFS: ' . number_format($order->paid_in_mfc, 0);
             $paymentText .= count($splits) ? '<br><span style="font-size:10px;color:#666;">' . implode(', ', $splits) . '</span>' : '';
         }
     @endphp

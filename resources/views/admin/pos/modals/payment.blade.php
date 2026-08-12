@@ -60,7 +60,7 @@
                 </div>
                 <div class="col-6">
 
-                    <label style="font-size: 11px; font-weight: 700; color: #777; margin-bottom: 4px;">Honored</label>
+                    <label style="font-size: 11px; font-weight: 700; color: #777; margin-bottom: 4px;">Discount Amount</label>
                     <input type="number" name="discount_value" id="modal_discount_value" class="form-control" placeholder="0" min="0" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px;" onkeyup="calculateModalTotal()">
                 </div>
               </div>
@@ -90,7 +90,7 @@
                 <input type="radio" id="payBkash" name="payment_method" value="Mobile Banking" style="display: none;">
                 <label for="payBkash" class="progga-pay-method-btn" style="border: 2px solid var(--progga-border); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;">
                   <i class="bi bi-phone d-block" style="font-size: 18px; color: var(--progga-primary);"></i>
-                  <span style="font-size: 11px; font-weight: 700;">Mobile</span>
+                  <span style="font-size: 11px; font-weight: 700;">MFS</span>
                 </label>
 
                 <input type="radio" id="paySplit" name="payment_method" value="Split" style="display: none;">

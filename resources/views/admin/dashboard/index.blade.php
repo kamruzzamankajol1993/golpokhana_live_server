@@ -21,7 +21,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
       </div>
     </div>
 
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 dashboard-stat-row">
       <div class="col-xl-3 col-md-6">
         <div class="progga-stat-card">
           <div class="progga-stat-icon secondary"><i class="bi bi-currency-dollar"></i></div>
@@ -47,7 +47,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
                   {{ $monthlyChange > 0 ? '+' : '' }}{{ number_format($monthlyChange, 1) }}% this month
               </div>
             @else
-              <div class="progga-stat-label"> Pending Amount</div>
+              <div class="progga-stat-label">Pending Amount</div>
               <div class="progga-stat-value">৳{{ number_format($todayPendingAmount, 0) }}</div>
               <div class="progga-stat-change neutral">
                   <i class="bi bi-clock"></i> Business day
@@ -60,7 +60,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
         <div class="progga-stat-card">
           <div class="progga-stat-icon primary"><i class="bi bi-receipt"></i></div>
           <div class="progga-stat-info">
-            <div class="progga-stat-label">Total Orders (Today)</div>
+            <div class="progga-stat-label">TOTAL ORDER (BUSINESS DAY)</div>
             <div class="progga-stat-value">{{ $todayOrdersCount }}</div>
             <div class="progga-stat-change {{ $ordersChange >= 0 ? 'up' : 'down' }}">
                 <i class="bi {{ $ordersChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>
@@ -90,9 +90,12 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
               <div class="progga-card-title">Revenue Overview</div>
               <div class="progga-card-subtitle" id="revenueChartSubtitle">Dynamic revenue trend from completed orders</div>
             </div>
-            <div class="progga-chart-toggle">
+            <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
               <button class="progga-chart-toggle-btn active" data-revenue-period="7">7 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="30">30 Days</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="60">60 Days</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="90">90 Days</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="180">180 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="12m">12 Months</button>
             </div>
           </div>
@@ -116,7 +119,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
               <canvas id="paymentCollectionChart" data-dashboard-dynamic="true"></canvas>
             </div>
             <div class="text-center text-muted" style="font-size:12px;margin-top:10px;">
-              Split payment amounts are included in their respective Cash, Card and Mobile Banking / MFC bars.
+              Split payment amounts are included in their respective Cash, Card and MFS bars.
             </div>
           </div>
         </div>
@@ -137,142 +140,36 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
       </div>
     </div>
 
-    <div class="row g-3 mb-4">
-      <div class="col-xl-5">
-        <div class="progga-card" style="height: 100%;">
-          <div class="progga-card-header">
-            <div class="progga-card-title">{{ $isSuperAdmin ? 'Top Selling Items' : 'Top Selling Items (Today)' }}</div>
-            <span class="progga-badge progga-badge-secondary">{{ $isSuperAdmin ? 'This Year' : 'Today' }}</span>
-          </div>
-          <div class="progga-card-body" style="padding: 20px;">
-            <div class="progga-progress-list" style="display: flex; flex-direction: column; gap: 16px;">
-              @php
-                $maxQty = count($topItemsData) > 0 ? max($topItemsData) : 1;
-              @endphp
-              @forelse($topItemsLabels as $index => $label)
-                @php
-                  $currentQty = $topItemsData[$index] ?? 0;
-                  $percentage = ($currentQty / $maxQty) * 100;
-                  // Theme color assignment for top item bars
-                  $barColor = $index == 0 ? '#21352a' : ($index == 1 ? '#2c4436' : '#d5aa65');
-                @endphp
-                <div>
-                  <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #444; margin-bottom: 6px;">
-                    <span>{{ $label }}</span>
-                    <span style="color: #666;">{{ $currentQty }} Qty</span>
-                  </div>
-                  <div style="width: 100%; height: 14px; background-color: rgba(33, 53, 42, 0.08); border-radius: 6px; overflow: hidden;">
-                    <div style="width: {{ $percentage }}%; height: 100%; background-color: {{ $barColor }}; border-radius: 6px; transition: width 0.5s ease;"></div>
-                  </div>
-                </div>
-              @empty
-                <div class="text-center py-3 text-muted">No data found.</div>
-              @endforelse
+    @if($isSuperAdmin)
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <div class="progga-card">
+            <div class="progga-card-header">
+              <div>
+                <div class="progga-card-title">Income Overview</div>
+                <div class="progga-card-subtitle" id="incomeChartSubtitle">Daily income by payment method for the last 7 days</div>
+              </div>
+              <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
+                <button class="progga-chart-toggle-btn active" data-income-period="7">7 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="30">30 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="60">60 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="90">90 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="180">180 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="12m">12 Months</button>
+              </div>
+            </div>
+            <div class="progga-card-body">
+              <div class="progga-chart-container" style="height:320px;">
+                <canvas id="incomeChart" data-dashboard-dynamic="true"></canvas>
+              </div>
+              <div class="text-center text-muted" style="font-size:12px;margin-top:10px;">
+                Split payment amounts are included in their respective Cash, Card and Mobile (MFS) bars.
+              </div>
             </div>
           </div>
         </div>
       </div>
-
-      <div class="col-xl-7">
-        <div class="progga-card">
-          <div class="progga-card-header">
-            <div class="progga-card-title">
-              {{ $isSuperAdmin ? 'Kitchen Queue' : 'Kitchen Queue (Today)' }}
-              <span class="progga-badge progga-badge-danger" style="margin-left:8px;">{{ $kitchenQueue->count() }} Pending</span>
-            </div>
-            <span class="progga-live-indicator"><span class="progga-live-dot"></span> Live</span>
-          </div>
-          <div class="progga-card-body" style="padding:0;">
-            <div class="progga-table-wrapper" style="border:none;border-radius:0;">
-              <table class="progga-table">
-                <thead>
-                  <tr>
-                    <th>Order</th><th>Table</th><th>Items</th><th>Time</th><th>Status</th><th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @forelse($kitchenQueue as $kq)
-                      @php
-                          $mins = \Carbon\Carbon::parse($kq->created_at)->diffInMinutes(now());
-                          $statusClass = strtolower($kq->status);
-                          if($kq->status == 'Ready') $statusClass = 'success';
-                      @endphp
-                  <tr>
-                    <td>#{{ $kq->order_number }}</td>
-                    <td>{{ $kq->table->table_number ?? 'Takeaway' }}</td>
-                    <td>{{ $kq->orderDetails->sum('quantity') }} items</td>
-                    <td>
-                        @if($mins > 15 && $kq->status != 'Ready')
-                            <span style="color:var(--progga-warning);font-weight:700;">{{ $mins }} min</span>
-                        @else
-                            {{ $mins }} min
-                        @endif
-                    </td>
-                    <td><span class="progga-badge progga-status-{{ $statusClass }}">{{ $kq->status }}</span></td>
-                    <td>
-                        <a href="{{ route('kitchen.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">View</a>
-                    </td>
-                  </tr>
-                  @empty
-                  <tr><td colspan="6" class="text-center py-3">No pending orders in kitchen queue.</td></tr>
-                  @endforelse
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div class="progga-card-footer" style="text-align:right;">
-            <a href="{{ route('kitchen.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">
-              View Full Kitchen Board <i class="bi bi-arrow-right"></i>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="progga-card">
-      <div class="progga-card-header">
-        <div class="progga-card-title">{{ $isSuperAdmin ? 'Recent Orders' : 'Recent Orders (Today)' }}</div>
-        <a href="{{ route('order.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">View All</a>
-      </div>
-      <div class="progga-card-body" style="padding:0;">
-        <div class="progga-table-wrapper" style="border:none;border-radius:0;">
-          <table class="progga-table">
-            <thead>
-              <tr>
-                <th>#</th><th>Table</th><th>Items</th><th>Waiter</th><th>Amount</th><th>Payment</th><th>Status</th><th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              @forelse($recentOrders as $order)
-                  @php
-                      $payClass = $order->payment_type == 'Cash' ? 'primary' : ($order->payment_type == 'Card' ? 'info' : 'warning');
-                      $stClass = strtolower($order->status);
-                      if($order->status == 'Completed') $stClass = 'primary';
-                      elseif($order->status == 'Cancelled') $stClass = 'danger';
-                      elseif($order->status == 'Ready') $stClass = 'success';
-                  @endphp
-              <tr>
-                <td><strong>#{{ $order->order_number }}</strong></td>
-                <td>{{ $order->table->table_number ?? 'Takeaway' }}</td>
-                <td>{{ $order->orderDetails->sum('quantity') }}</td>
-                <td>{{ $order->waiter->name ?? 'N/A' }}</td>
-                <td>৳{{ number_format($order->grand_total, 2) }}</td>
-                <td>
-                    <span class="progga-badge progga-badge-{{ $payClass }}">{{ $order->payment_type ?? 'Unpaid' }}</span>
-                </td>
-                <td>
-                    <span class="progga-badge progga-status-{{ $stClass }}">{{ $order->status }}</span>
-                </td>
-                <td>{{ $order->created_at->diffForHumans(null, true, true) }} ago</td>
-              </tr>
-              @empty
-              <tr><td colspan="8" class="text-center py-4">No recent orders found.</td></tr>
-              @endforelse
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    @endif
 
   </main>
 @endsection
@@ -284,11 +181,22 @@ document.addEventListener("DOMContentLoaded", function() {
     let revenueChart;
     let orderStatusChart;
     let paymentCollectionChart;
+    let incomeChart;
 
     function revenueSubtitle(period) {
-        if (period === '30') return 'Daily revenue trend from the last 30 days';
         if (period === '12m') return 'Monthly revenue trend from the last 12 months';
+        if (['7', '30', '60', '90', '180'].includes(period)) {
+            return 'Daily revenue trend from the last ' + period + ' days';
+        }
         return 'Daily revenue trend from the last 7 days';
+    }
+
+    function incomeSubtitle(period) {
+        if (period === '12m') return 'Monthly income by payment method for the last 12 months';
+        if (['7', '30', '60', '90', '180'].includes(period)) {
+            return 'Daily income by payment method for the last ' + period + ' days';
+        }
+        return 'Daily income by payment method for the last 7 days';
     }
 
     function buildPaymentCollectionChart(rows) {
@@ -349,6 +257,93 @@ document.addEventListener("DOMContentLoaded", function() {
                     x: {
                         grid: { display: false },
                         ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 }
+                    }
+                }
+            }
+        });
+    }
+
+    function buildIncomeChart(labels, cashData, cardData, mfsData) {
+        const incomeCanvas = document.getElementById('incomeChart');
+        if (!incomeCanvas || typeof Chart === 'undefined') return;
+
+        const oldIncomeChart = Chart.getChart(incomeCanvas);
+        if (oldIncomeChart) oldIncomeChart.destroy();
+
+        const ctxIncome = incomeCanvas.getContext('2d');
+        incomeChart = new Chart(ctxIncome, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Cash',
+                        data: cashData,
+                        backgroundColor: '#1e7a4a',
+                        borderColor: '#1e7a4a',
+                        borderWidth: 1,
+                        borderRadius: 5,
+                        borderSkipped: false
+                    },
+                    {
+                        label: 'Card',
+                        data: cardData,
+                        backgroundColor: '#21352a',
+                        borderColor: '#21352a',
+                        borderWidth: 1,
+                        borderRadius: 5,
+                        borderSkipped: false
+                    },
+                    {
+                        label: 'Mobile (MFS)',
+                        data: mfsData,
+                        backgroundColor: '#d5aa65',
+                        borderColor: '#d5aa65',
+                        borderWidth: 1,
+                        borderRadius: 5,
+                        borderSkipped: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, usePointStyle: true, padding: 18 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const amount = Number(context.raw || 0).toLocaleString('en-BD', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                });
+                                return context.dataset.label + ': ৳' + amount;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '৳' + Number(value).toLocaleString('en-BD');
+                            }
+                        },
+                        grid: { borderDash: [4, 4] }
+                    },
+                    x: {
+                        stacked: false,
+                        grid: { display: false },
+                        ticks: {
+                            autoSkip: false,
+                            maxRotation: labels.length > 12 ? 45 : 0,
+                            minRotation: labels.length > 12 ? 45 : 0
+                        }
                     }
                 }
             }
@@ -422,6 +417,35 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    function refreshIncomeChart(period) {
+        fetch(chartDataUrl + '?period=' + encodeURIComponent(period), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(payload => {
+            if (!incomeChart) {
+                buildIncomeChart(
+                    payload.incomeChartLabels,
+                    payload.incomeCashData,
+                    payload.incomeCardData,
+                    payload.incomeMfsData
+                );
+            } else {
+                incomeChart.data.labels = payload.incomeChartLabels;
+                incomeChart.data.datasets[0].data = payload.incomeCashData;
+                incomeChart.data.datasets[1].data = payload.incomeCardData;
+                incomeChart.data.datasets[2].data = payload.incomeMfsData;
+                incomeChart.options.scales.x.ticks.maxRotation = payload.incomeChartLabels.length > 12 ? 45 : 0;
+                incomeChart.options.scales.x.ticks.minRotation = payload.incomeChartLabels.length > 12 ? 45 : 0;
+                incomeChart.update();
+            }
+
+            const subtitle = document.getElementById('incomeChartSubtitle');
+            if (subtitle) subtitle.textContent = incomeSubtitle(payload.incomePeriod || period);
+        })
+        .catch(error => console.error('Dashboard income chart data loading failed.', error));
+    }
+
     function refreshDashboardCharts(period) {
         fetch(chartDataUrl + '?period=' + encodeURIComponent(period), {
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -453,12 +477,23 @@ document.addEventListener("DOMContentLoaded", function() {
     buildRevenueChart(@json($chartLabels), @json($chartData));
     buildPaymentCollectionChart(@json($paymentRows));
     buildOrderStatusChart(@json($statusLabels), @json($statusData));
+    @if($isSuperAdmin)
+      buildIncomeChart(@json($incomeChartLabels), @json($incomeCashData), @json($incomeCardData), @json($incomeMfsData));
+    @endif
 
     document.querySelectorAll('[data-revenue-period]').forEach(button => {
         button.addEventListener('click', function() {
             document.querySelectorAll('[data-revenue-period]').forEach(item => item.classList.remove('active'));
             this.classList.add('active');
             refreshDashboardCharts(this.getAttribute('data-revenue-period'));
+        });
+    });
+
+    document.querySelectorAll('[data-income-period]').forEach(button => {
+        button.addEventListener('click', function() {
+            document.querySelectorAll('[data-income-period]').forEach(item => item.classList.remove('active'));
+            this.classList.add('active');
+            refreshIncomeChart(this.getAttribute('data-income-period'));
         });
     });
 });

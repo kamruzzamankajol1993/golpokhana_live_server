@@ -131,12 +131,12 @@
 </div>
   </div>
 
-  <div class="row g-3 mb-4">
+  <div class="row g-3 mb-4 order-stat-row">
     <div class="col-6 col-md-3">
       <div class="progga-stat-card">
         <div class="progga-stat-icon primary"><i class="bi bi-receipt-cutoff"></i></div>
         <div class="progga-stat-info">
-          <div class="progga-stat-label">Today's Orders</div>
+          <div class="progga-stat-label">Calendar Day's Orders</div>
           <div class="progga-stat-value">{{ $stats['today_orders'] }}</div>
         </div>
       </div>
@@ -163,7 +163,7 @@
       <div class="progga-stat-card">
         <div class="progga-stat-icon secondary"><i class="bi bi-currency-exchange"></i></div>
         <div class="progga-stat-info">
-          <div class="progga-stat-label">Calenderday Revenue</div>
+          <div class="progga-stat-label">CALENDARDAY REVENUE</div>
           <div class="progga-stat-value">৳{{ number_format($stats['revenue_today'], 0) }}</div>
         </div>
       </div>

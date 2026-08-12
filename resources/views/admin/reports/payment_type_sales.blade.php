@@ -133,7 +133,7 @@
             <th>Payment Type</th>
             <th>Cash</th>
             <th>Card</th>
-            <th>MFC</th>
+            <th>MFS</th>
             <th>Total Paid</th>
           </tr>
         </thead>

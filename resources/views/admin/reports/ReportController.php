@@ -189,7 +189,7 @@ class ReportController extends Controller
         $paymentRows = collect([
             ['label' => 'Cash', 'icon' => 'bi-cash-coin', 'amount' => $cashAmount, 'orders_count' => $orders->filter(fn ($order) => (float) $order->paid_in_cash > 0)->count(), 'percentage' => $totalCollected > 0 ? ($cashAmount / $totalCollected) * 100 : 0],
             ['label' => 'Card', 'icon' => 'bi-credit-card', 'amount' => $cardAmount, 'orders_count' => $orders->filter(fn ($order) => (float) $order->paid_in_card > 0)->count(), 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0],
-            ['label' => 'Mobile Banking / MFC', 'icon' => 'bi-phone', 'amount' => $mfcAmount, 'orders_count' => $orders->filter(fn ($order) => (float) $order->paid_in_mfc > 0)->count(), 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0],
+            ['label' => 'Mobile Banking / MFS', 'icon' => 'bi-phone', 'amount' => $mfcAmount, 'orders_count' => $orders->filter(fn ($order) => (float) $order->paid_in_mfc > 0)->count(), 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0],
         ]);
 
         $paymentOrdersQuery = Order::with(['customer', 'table'])
@@ -266,7 +266,7 @@ class ReportController extends Controller
             $dataRows = collect([
                 ['label' => 'Cash', 'orders_count' => $orders->filter(fn ($o) => (float) $o->paid_in_cash > 0)->count(), 'amount' => $cashAmount, 'percentage' => $totalCollected > 0 ? ($cashAmount / $totalCollected) * 100 : 0],
                 ['label' => 'Card', 'orders_count' => $orders->filter(fn ($o) => (float) $o->paid_in_card > 0)->count(), 'amount' => $cardAmount, 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0],
-                ['label' => 'Mobile Banking / MFC', 'orders_count' => $orders->filter(fn ($o) => (float) $o->paid_in_mfc > 0)->count(), 'amount' => $mfcAmount, 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0],
+                ['label' => 'Mobile Banking / MFS', 'orders_count' => $orders->filter(fn ($o) => (float) $o->paid_in_mfc > 0)->count(), 'amount' => $mfcAmount, 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0],
             ]);
         } elseif ($report === 'food_sales') {
             $dataRows = OrderDetail::query()
@@ -313,7 +313,7 @@ class ReportController extends Controller
                 $cardAmount = (float) $orders->sum('paid_in_card');
                 $mfcAmount = (float) $orders->sum('paid_in_mfc');
                 $total = $cashAmount + $cardAmount + $mfcAmount;
-                $rows = [['Cash', $orders->filter(fn ($o) => (float) $o->paid_in_cash > 0)->count(), $cashAmount], ['Card', $orders->filter(fn ($o) => (float) $o->paid_in_card > 0)->count(), $cardAmount], ['Mobile Banking / MFC', $orders->filter(fn ($o) => (float) $o->paid_in_mfc > 0)->count(), $mfcAmount]];
+                $rows = [['Cash', $orders->filter(fn ($o) => (float) $o->paid_in_cash > 0)->count(), $cashAmount], ['Card', $orders->filter(fn ($o) => (float) $o->paid_in_card > 0)->count(), $cardAmount], ['Mobile Banking / MFS', $orders->filter(fn ($o) => (float) $o->paid_in_mfc > 0)->count(), $mfcAmount]];
                 foreach ($rows as $row) {
                     fputcsv($file, [$row[0], $row[1], $row[2], $total > 0 ? round(($row[2] / $total) * 100, 2) . '%' : '0%']);
                 }

@@ -5,7 +5,7 @@
 <style>
     .order-edit-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+        grid-template-columns: minmax(0, 1fr);
         gap: 18px;
         align-items: start;
     }
@@ -50,38 +50,79 @@
         font-weight: 700;
         color: var(--progga-text-muted);
     }
+    .order-edit-table-wrap {
+        width: 100%;
+        overflow-x: hidden;
+    }
+    .order-edit-table {
+        width: 100%;
+        table-layout: fixed;
+    }
     .order-edit-table th {
-        font-size: 12px;
+        padding: 9px 7px;
+        font-size: 10px;
+        line-height: 1.25;
         text-transform: uppercase;
-        letter-spacing: .02em;
+        letter-spacing: .01em;
         color: var(--progga-text-muted);
         background: #f8f9fa;
-        white-space: nowrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
     .order-edit-table td {
+        padding: 9px 7px;
         vertical-align: middle;
-        font-size: 13px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+    }
+    .order-edit-item-name {
+        display: block;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+    .order-edit-price-stack {
+        display: grid;
+        gap: 5px;
+    }
+    .order-edit-price-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 5px;
+        padding-bottom: 4px;
+        border-bottom: 1px dashed var(--progga-border-light);
+        white-space: nowrap;
+    }
+    .order-edit-price-line:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+    }
+    .order-edit-price-label {
+        font-size: 9px;
+        font-weight: 800;
+        color: var(--progga-text-muted);
+        text-transform: uppercase;
     }
     .order-edit-qty-control {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
-        padding: 5px;
+        gap: 4px;
+        padding: 4px;
         border: 1px solid var(--progga-border-light);
         border-radius: 999px;
         background: #fff;
-        min-width: 128px;
+        max-width: 100%;
     }
     .order-edit-qty-btn {
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         border: 0;
         border-radius: 50%;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 900;
         line-height: 1;
         color: #fff;
@@ -92,9 +133,9 @@
     .order-edit-qty-btn:hover { transform: translateY(-1px); opacity: .92; }
     .order-edit-qty-btn.minus { background: #dc3545; }
     .order-edit-qty-value {
-        min-width: 32px;
+        min-width: 24px;
         text-align: center;
-        font-size: 15px;
+        font-size: 13px;
         font-weight: 900;
         color: var(--progga-primary);
     }
@@ -140,17 +181,154 @@
     }
     .order-product-discount-control {
         display: grid;
-        grid-template-columns: minmax(105px, .8fr) minmax(85px, 1fr);
-        gap: 6px;
-        min-width: 205px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 5px;
+        min-width: 0;
+        width: 100%;
     }
     .order-product-discount-control .form-control {
-        min-height: 34px;
-        padding: 5px 8px;
-        font-size: 12px;
+        width: 100%;
+        min-width: 0;
+        min-height: 32px;
+        padding: 4px 6px;
+        font-size: 11px;
+    }
+    .order-product-discount-amount {
+        margin-top: 5px;
+        font-size: 10px;
+        font-weight: 800;
+        color: #dc3545;
+        text-align: right;
+    }
+    .complimentary-food-label {
+        display: block;
+        width: max-content;
+        margin-top: 4px;
+        color: #198754;
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1.1;
+    }
+    .order-edit-complimentary-control {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 100%;
+        min-width: 0;
+        padding: 6px 5px;
+        border: 1px solid rgba(25, 135, 84, .28);
+        border-radius: 9px;
+        background: rgba(25, 135, 84, .06);
+        color: #198754;
+        font-size: 11px;
+        font-weight: 800;
+        cursor: pointer;
+        user-select: none;
+    }
+    .order-edit-complimentary-control input {
+        width: 15px;
+        height: 15px;
+        margin: 0;
+        accent-color: #198754;
+    }
+    .order-item-row.is-complimentary-preview td {
+        background: rgba(25, 135, 84, .025);
+    }
+    @media (max-width: 1199.98px) {
+        .order-product-discount-control {
+            grid-template-columns: 1fr;
+        }
+        .order-edit-table th,
+        .order-edit-table td {
+            padding-left: 5px;
+            padding-right: 5px;
+        }
     }
     @media (max-width: 991.98px) {
         .order-edit-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (max-width: 767.98px) {
+        .order-edit-card-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+        .order-edit-table-wrap {
+            padding: 10px;
+            overflow: visible;
+        }
+        .order-edit-table,
+        .order-edit-table tbody,
+        .order-edit-table tr,
+        .order-edit-table td {
+            display: block;
+            width: 100%;
+        }
+        .order-edit-table thead,
+        .order-edit-table colgroup {
+            display: none;
+        }
+        .order-edit-table {
+            border: 0;
+        }
+        .order-edit-table tbody {
+            border: 0;
+        }
+        .order-edit-table tr {
+            margin-bottom: 12px;
+            border: 1px solid var(--progga-border-light);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fff;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, .04);
+        }
+        .order-edit-table tr:last-child {
+            margin-bottom: 0;
+        }
+        .order-edit-table td {
+            display: grid;
+            grid-template-columns: 105px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 9px 10px;
+            text-align: left !important;
+            border-width: 0 0 1px 0;
+        }
+        .order-edit-table td:last-child {
+            border-bottom: 0;
+        }
+        .order-edit-table td::before {
+            content: attr(data-label);
+            color: var(--progga-text-muted);
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .02em;
+        }
+        .order-edit-price-stack,
+        .order-product-discount-control {
+            width: 100%;
+        }
+        .order-edit-qty-control,
+        .order-edit-complimentary-control,
+        .js-delete-order-item {
+            justify-self: start;
+            width: auto;
+        }
+        .order-product-discount-control {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+        .order-product-discount-amount {
+            text-align: left;
+        }
+    }
+    @media (max-width: 420px) {
+        .order-edit-table td {
+            grid-template-columns: 88px minmax(0, 1fr);
+        }
+        .order-product-discount-control {
             grid-template-columns: 1fr;
         }
     }
@@ -216,7 +394,7 @@
         @method('PUT')
 
         <div class="order-edit-grid">
-            <div class="order-edit-card">
+            <div class="order-edit-card col-12">
                 <div class="order-edit-card-header">
                     <h2 class="order-edit-card-title">
                         <i class="bi bi-basket me-1"></i> Ordered Items
@@ -225,16 +403,24 @@
                 </div>
 
                 <div class="order-edit-card-body p-0">
-                    <div class="table-responsive">
+                    <div class="order-edit-table-wrap">
                         <table class="table table-bordered mb-0 order-edit-table">
+                            <colgroup>
+                                <col style="width:27%;">
+                                <col style="width:15%;">
+                                <col style="width:12%;">
+                                <col style="width:14%;">
+                                <col style="width:24%;">
+                                <col style="width:8%;">
+                            </colgroup>
                             <thead>
                                 <tr>
-                                    <th style="min-width:220px;">Item</th>
-                                    <th class="text-end">Unit Total</th>
+                                    <th>Item</th>
+                                    <th>Price</th>
                                     <th class="text-center">Qty</th>
-                                    <th class="text-end">Line Total</th>
+                                    <th class="text-center">Convert</th>
                                     <th>Product Discount</th>
-                                    <th class="text-end">Product Discount Amount</th>
+                                    <th class="text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -253,13 +439,27 @@
                                         $unitTotal = $lineSubtotal > 0
                                             ? ($lineSubtotal / $oldQty)
                                             : ((float) ($detail->price ?? 0) + $addonTotal);
+
+                                        $isComplimentary = !empty($detail->is_complimentary)
+                                            || ((float) ($detail->price ?? 0) <= 0 && $lineSubtotal <= 0);
+                                        $makeComplimentaryChecked = !$isComplimentary
+                                            && (bool) old('items.'.$detail->id.'.make_complimentary', false);
+                                        $previewComplimentary = $isComplimentary || $makeComplimentaryChecked;
+
+                                        $currentQty = max(1, (int) old('items.'.$detail->id.'.quantity', $oldQty));
+                                        $productDiscountType = old('items.'.$detail->id.'.product_discount_type', $detail->product_discount_type ?: 'fixed');
+                                        $productDiscountValue = old('items.'.$detail->id.'.product_discount_value', $detail->product_discount_value ?? 0);
+                                        if (is_numeric($productDiscountValue)) {
+                                            $productDiscountValue = rtrim(rtrim(number_format((float) $productDiscountValue, 2, '.', ''), '0'), '.');
+                                        }
                                     @endphp
-                                    <tr class="order-item-row" data-unit="{{ $unitTotal }}">
-                                        <td>
-                                            <strong>{{ $detail->product_name }}</strong>
-                                            @if(!empty($detail->is_complimentary))
-                                                <span class="badge bg-success ms-1">Complimentary</span>
-                                            @endif
+                                    <tr class="order-item-row {{ $previewComplimentary ? 'is-complimentary-preview' : '' }}"
+                                        data-unit="{{ $isComplimentary ? 0 : $unitTotal }}"
+                                        data-complimentary="{{ $isComplimentary ? 1 : 0 }}">
+                                        <td data-label="Item">
+                                            <strong class="order-edit-item-name">{{ $detail->product_name }}</strong>
+                                            <span class="complimentary-food-label js-complimentary-label"
+                                                  style="{{ $previewComplimentary ? '' : 'display:none;' }}">Complimentary</span>
 
                                             @if(count($addons) > 0)
                                                 <div class="text-muted mt-1" style="font-size:11px;">
@@ -275,18 +475,19 @@
                                                 </div>
                                             @endif
                                         </td>
-                                        <td class="text-end">
-                                            ৳<span class="unit-total">{{ number_format($unitTotal, 0) }}</span>
+                                        <td data-label="Price">
+                                            <div class="order-edit-price-stack">
+                                                <div class="order-edit-price-line">
+                                                    <span class="order-edit-price-label">Unit</span>
+                                                    <strong>৳<span class="unit-total">{{ number_format($previewComplimentary ? 0 : $unitTotal, 0) }}</span></strong>
+                                                </div>
+                                                <div class="order-edit-price-line">
+                                                    <span class="order-edit-price-label">Total</span>
+                                                    <strong>৳<span class="line-total">{{ number_format($previewComplimentary ? 0 : ($unitTotal * $currentQty), 0) }}</span></strong>
+                                                </div>
+                                            </div>
                                         </td>
-                                        <td class="text-center">
-                                            @php
-                                                $currentQty = max(1, (int) old('items.'.$detail->id.'.quantity', $oldQty));
-                                                $productDiscountType = old('items.'.$detail->id.'.product_discount_type', $detail->product_discount_type ?: 'fixed');
-                                                $productDiscountValue = old('items.'.$detail->id.'.product_discount_value', $detail->product_discount_value ?? 0);
-                                                if (is_numeric($productDiscountValue)) {
-                                                    $productDiscountValue = rtrim(rtrim(number_format((float) $productDiscountValue, 2, '.', ''), '0'), '.');
-                                                }
-                                            @endphp
+                                        <td class="text-center" data-label="Qty">
                                             <div class="order-edit-qty-control">
                                                 <button type="button" class="order-edit-qty-btn minus js-qty-minus" aria-label="Decrease quantity">−</button>
                                                 <span class="order-edit-qty-value js-qty-value">{{ $currentQty }}</span>
@@ -297,12 +498,23 @@
                                                    class="js-order-qty"
                                                    value="{{ $currentQty }}">
                                         </td>
-                                        <td class="text-end fw-bold">
-                                            ৳<span class="line-total">{{ number_format($unitTotal * $currentQty, 0) }}</span>
+                                        <td class="text-center" data-label="Convert">
+                                            @if($isComplimentary)
+                                                <span class="text-success fw-bold" style="font-size:11px;"><i class="bi bi-check-circle me-1"></i>Done</span>
+                                            @else
+                                                <label class="order-edit-complimentary-control">
+                                                    <input type="checkbox"
+                                                           name="items[{{ $detail->id }}][make_complimentary]"
+                                                           value="1"
+                                                           class="js-complimentary-toggle"
+                                                           {{ $makeComplimentaryChecked ? 'checked' : '' }}>
+                                                    <span><i class="bi bi-gift me-1"></i>Convert</span>
+                                                </label>
+                                            @endif
                                         </td>
-                                        <td>
+                                        <td data-label="Product Discount">
                                             <div class="order-product-discount-control">
-                                                <select name="items[{{ $detail->id }}][product_discount_type]" class="form-control js-product-discount-type">
+                                                <select name="items[{{ $detail->id }}][product_discount_type]" class="form-control js-product-discount-type" {{ $previewComplimentary ? 'disabled' : '' }}>
                                                     <option value="fixed" {{ $productDiscountType === 'fixed' ? 'selected' : '' }}>Fixed (৳)</option>
                                                     <option value="percentage" {{ $productDiscountType === 'percentage' ? 'selected' : '' }}>Percentage (%)</option>
                                                 </select>
@@ -312,11 +524,22 @@
                                                        value="{{ $productDiscountValue }}"
                                                        min="0"
                                                        step="0.01"
-                                                       placeholder="Value">
+                                                       placeholder="Value"
+                                                       {{ $previewComplimentary ? 'disabled' : '' }}>
+                                            </div>
+                                            <div class="order-product-discount-amount">
+                                                Discount: − ৳<span class="js-product-discount-amount">{{ number_format($detail->product_discount_amount ?? 0, 0) }}</span>
                                             </div>
                                         </td>
-                                        <td class="text-end fw-bold text-danger">
-                                            − ৳<span class="js-product-discount-amount">{{ number_format($detail->product_discount_amount ?? 0, 0) }}</span>
+                                        <td class="text-center" data-label="Action">
+                                            <button type="button"
+                                                    class="progga-btn progga-btn-danger progga-btn-sm progga-btn-icon js-delete-order-item"
+                                                    data-item-id="{{ $detail->id }}"
+                                                    data-product-name="{{ $detail->product_name }}"
+                                                    title="Delete {{ $detail->product_name }}"
+                                                    aria-label="Delete {{ $detail->product_name }}">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -326,7 +549,7 @@
                 </div>
             </div>
 
-            <div class="order-edit-card">
+            <div class="order-edit-card col-12">
                 <div class="order-edit-card-header">
                     <h2 class="order-edit-card-title">
                         <i class="bi bi-wallet2 me-1"></i> Payment Summary
@@ -511,6 +734,8 @@
     const transactionIdBox = document.getElementById('transactionIdBox');
     const transactionIdInput = document.getElementById('transactionIdInput');
     const splitInputs = document.querySelectorAll('.split-input');
+    const complimentaryToggles = document.querySelectorAll('.js-complimentary-toggle');
+    const deleteItemButtons = document.querySelectorAll('.js-delete-order-item');
     const tipsAmount = document.getElementById('tipsAmount');
     const givenMoney = document.getElementById('givenMoney');
     const changeAmount = document.getElementById('changeAmount');
@@ -591,6 +816,9 @@
         document.querySelectorAll('.order-item-row').forEach(function (row) {
             const unit = Number(row.dataset.unit || 0);
             const qtyInput = row.querySelector('.js-order-qty');
+            const complimentaryToggle = row.querySelector('.js-complimentary-toggle');
+            const isComplimentary = row.dataset.complimentary === '1'
+                || Boolean(complimentaryToggle && complimentaryToggle.checked);
             let qty = parseInt(qtyInput.value || '1', 10);
 
             if (qty < 1 || isNaN(qty)) {
@@ -601,19 +829,34 @@
             const qtyValue = row.querySelector('.js-qty-value');
             if (qtyValue) qtyValue.textContent = qty;
 
-            const lineTotal = unit * qty;
+            row.classList.toggle('is-complimentary-preview', isComplimentary);
+
+            const complimentaryLabel = row.querySelector('.js-complimentary-label');
+            if (complimentaryLabel) {
+                complimentaryLabel.style.display = isComplimentary ? 'block' : 'none';
+            }
+
+            const unitDisplay = row.querySelector('.unit-total');
+            if (unitDisplay) {
+                unitDisplay.textContent = money(isComplimentary ? 0 : unit);
+            }
+
+            const lineTotal = isComplimentary ? 0 : (unit * qty);
             row.querySelector('.line-total').textContent = money(lineTotal);
             subtotal += lineTotal;
 
             const productType = row.querySelector('.js-product-discount-type');
             const productValue = row.querySelector('.js-product-discount-value');
-            let discountValue = Math.max(0, numberValue(productValue));
+            if (productType) productType.disabled = isComplimentary;
+            if (productValue) productValue.disabled = isComplimentary;
+
+            let discountValue = isComplimentary ? 0 : Math.max(0, numberValue(productValue));
             let lineDiscount = 0;
 
-            if (productType && productType.value === 'percentage') {
+            if (!isComplimentary && productType && productType.value === 'percentage') {
                 discountValue = Math.min(discountValue, 100);
                 lineDiscount = Math.round((lineTotal * discountValue) / 100);
-            } else {
+            } else if (!isComplimentary) {
                 lineDiscount = Math.min(discountValue, lineTotal);
             }
 
@@ -697,6 +940,53 @@
     document.querySelectorAll('.js-product-discount-type, .js-product-discount-value').forEach(function (el) {
         el.addEventListener('input', calculateTotals);
         el.addEventListener('change', calculateTotals);
+    });
+
+    complimentaryToggles.forEach(function (toggle) {
+        toggle.addEventListener('change', calculateTotals);
+    });
+
+    deleteItemButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            const productName = button.dataset.productName || 'this product';
+            const itemId = button.dataset.itemId;
+            const form = button.closest('form');
+
+            if (!form || !itemId) return;
+
+            Swal.fire({
+                title: 'Delete item?',
+                text: 'Are you sure you want to delete "' + productName + '" from this order?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, delete it',
+                cancelButtonText: 'Cancel',
+                reverseButtons: true,
+                focusCancel: true
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+
+                let deleteInput = form.querySelector('input.js-delete-item-input[name="delete_item_id"]');
+                if (!deleteInput) {
+                    deleteInput = document.createElement('input');
+                    deleteInput.type = 'hidden';
+                    deleteInput.name = 'delete_item_id';
+                    deleteInput.className = 'js-delete-item-input';
+                    form.appendChild(deleteInput);
+                }
+
+                deleteInput.value = itemId;
+                button.disabled = true;
+
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
+            });
+        });
     });
 
     if (paymentMethod) {
