@@ -64,7 +64,7 @@
             @endphp
 
             <td class="qr-cell">
-                <div class="restaurant-name">{{ $restaurant->name ?? 'Progga RMS' }}</div>
+                <div class="restaurant-name">{{ $restaurant->name ?? $restaurantSettingName }}</div>
                 <div class="table-name">
                     Table: {{ $table->table_number }}<br>
                     <span>({{ $table->zone->name ?? '' }})</span>

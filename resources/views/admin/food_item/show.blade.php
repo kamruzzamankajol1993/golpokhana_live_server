@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Food Details — TableTrack RMS')
+@section('title', 'Food Details — ' . $restaurantSettingName)
 
 @section('body')
 <main class="progga-content">

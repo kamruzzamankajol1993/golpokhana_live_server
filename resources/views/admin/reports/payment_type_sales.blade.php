@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Payment Wise Sales — TableTrack RMS')
+@section('title', 'Payment Wise Sales — ' . $restaurantSettingName)
 
 @section('css')
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">

@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Leave Management — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('title', 'Leave Management — ' . $restaurantSettingName)
 @section('css')
 @include('admin.hr.shared.styles')
 <style>.leave-balance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.leave-balance-item{padding:10px;border:1px solid var(--progga-border-light);border-radius:10px;background:#fafbfa}.leave-balance-name{font-size:11px;color:var(--progga-text-muted)}.leave-balance-value{font-size:17px;font-weight:900;color:var(--progga-primary)}@media(max-width:767px){.leave-balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>

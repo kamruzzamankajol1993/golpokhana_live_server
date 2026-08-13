@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Table QR Code Builder — TableTrack RMS')
+@section('title', 'Table QR Code Builder — ' . $restaurantSettingName)
 
 @section('body')
 <main class="progga-content">

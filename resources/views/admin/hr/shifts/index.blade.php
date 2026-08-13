@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Shifts & Duty Roster — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('title', 'Shifts & Duty Roster — ' . $restaurantSettingName)
 @section('css')
 @include('admin.hr.shared.styles')
 <style>

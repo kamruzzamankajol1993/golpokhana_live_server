@@ -27,7 +27,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
 
 @if($mode === 'header')
     <div class="header">
-        <h2>{{ optional($restaurant)->name ?? 'Progga RMS' }}</h2>
+        <h2>{{ optional($restaurant)->name ?? $restaurantSettingName }}</h2>
         <p>{{ optional($restaurant)->address ?? 'Dhaka, Bangladesh' }} | Phone: {{ optional($restaurant)->phone ?? 'N/A' }}</p>
         <h3>Order Report — {{ $dateFilterLabel ?? now()->format('d M, Y') }}</h3>
         <div class="report-meta">Total Orders: {{ number_format((int)($totalOrders ?? 0)) }}</div>
@@ -168,7 +168,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
     @endif
 
     <div class="footer">
-        Generated on: {{ now()->format('d M, Y h:i A') }} | System: Table Track RMS
+        Generated on: {{ now()->format('d M, Y h:i A') }} | System: {{ $restaurantSettingName }}
     </div>
 @endif
 

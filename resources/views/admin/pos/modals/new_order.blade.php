@@ -21,6 +21,17 @@
               </div>
             </div>
 
+            <div class="pos-modal-section" id="deliveryPartnerSection" style="display:none; margin-top:14px;">
+              <div class="pos-modal-label">Delivery Partner <span class="text-danger">*</span></div>
+              <select id="posDeliveryPartnerSelect" class="progga-select w-100">
+                <option value="">-- Select Delivery Partner --</option>
+                <option value="inhouse">In-house Delivery</option>
+                <option value="foodpanda">Foodpanda</option>
+                <option value="foodi">Foodi</option>
+                <option value="pathao_food">Pathao Food</option>
+              </select>
+            </div>
+
             <div class="pos-modal-section" id="modalTableSelectSection" style="margin-top:14px;">
               <div class="pos-modal-label">Select Table <span class="text-danger dine-required-mark">*</span></div>
               <select id="modalTableSelect" class="progga-select w-100">

@@ -24,6 +24,14 @@
           @php
               $statusClass = strtolower($order->status);
               $badgeClass = 'neutral';
+              $normalizedOrderType = strtolower(trim((string) ($order->order_type ?? '')));
+              $deliveryPartnerLabels = [
+                  'inhouse' => 'In-house Delivery',
+                  'foodpanda' => 'Foodpanda',
+                  'foodi' => 'Foodi',
+                  'pathao_food' => 'Pathao Food',
+              ];
+              $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
               $iconClass = 'clock-fill';
               if($order->status == 'Completed') { $badgeClass = 'primary'; $iconClass = 'check2-all'; }
               elseif($order->status == 'Pending') { $badgeClass = 'warning'; $iconClass = 'clock-fill'; }
@@ -37,8 +45,11 @@
               <div class="progga-order-customer">
                 <span class="progga-order-customer-name">{{ $order->customer->name ?? 'Walk-in Customer' }}</span>
                 <span class="progga-order-customer-table">
-                  @if($order->order_type == 'Takeaway')
+                  @if($normalizedOrderType === 'takeaway' || $normalizedOrderType === 'take away')
                     <i class="bi bi-bag"></i> Takeaway
+                  @elseif($normalizedOrderType === 'delivery')
+                    <i class="bi bi-truck"></i> Delivery
+                    <span style="color:#997300;">— {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
                   @else
                     <i class="bi bi-layout-wtf"></i> Table T-{{ $order->table->table_number ?? 'N/A' }}
                   @endif

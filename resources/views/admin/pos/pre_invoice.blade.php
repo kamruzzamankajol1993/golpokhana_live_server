@@ -214,7 +214,7 @@
 
     <div class="bill-header">
       <div class="bill-logo-circle">{{ substr($restaurantSettingName ?? 'P', 0, 1) }}</div>
-      <div class="bill-restaurant-name">{{ $restaurantSettingName ?? 'Progga RMS' }}</div>
+      <div class="bill-restaurant-name">{{ $restaurantSettingName }}</div>
       <div class="bill-restaurant-addr">
         {!! nl2br(e($restaurantSettingAddress ?? 'Banani, Dhaka')) !!}
       </div>
@@ -241,6 +241,21 @@
           <span class="bill-meta-label">Customer</span>
           <span class="bill-meta-val">: {{ $order->customer->name ?? 'Walk-in' }}</span>
         </div>
+        @if(strtolower((string) ($order->order_type ?? '')) === 'delivery')
+          @php
+              $deliveryPartnerLabels = [
+                  'inhouse' => 'In-house Delivery',
+                  'foodpanda' => 'Foodpanda',
+                  'foodi' => 'Foodi',
+                  'pathao_food' => 'Pathao Food',
+              ];
+              $deliveryPartnerValue = $order->delivery_partner ?? 'inhouse';
+          @endphp
+          <div class="bill-meta-row">
+            <span class="bill-meta-label">Delivery</span>
+            <span class="bill-meta-val">: {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+          </div>
+        @endif
       </div>
 
       <hr class="dashed-sep-thick">
@@ -259,11 +274,17 @@
 
               {{-- যদি Unavailable না হয়, তবেই ইনভয়েসে প্রিন্ট হবে --}}
               @if(!$item->is_unavailable)
-                  @php $addons = json_decode($item->addons, true) ?? []; @endphp
+                  @php
+                    $addons = json_decode($item->addons, true) ?? [];
+                    $isComplimentaryItem = !empty($order->is_complimentary_order) || !empty($item->is_complimentary);
+                  @endphp
                   <tr>
                     <td>{{ $item->quantity }}</td>
                     <td>
                       <div class="bill-item-name">{{ $item->product_name }}</div>
+                      @if($isComplimentaryItem)
+                        <div class="bill-item-note" style="font-weight:900;text-transform:uppercase;">Complimentary</div>
+                      @endif
                       @if(($item->product_discount_amount ?? 0) > 0)
                         <div class="bill-item-note">Product Discount</div>
                       @endif
@@ -292,15 +313,21 @@
 
       <hr class="dashed-sep-thick">
 
+      @php
+          $isDeliveryInvoice = strtolower((string) ($order->order_type ?? '')) === 'delivery';
+      @endphp
+      @if($isDeliveryInvoice)
+        <div style="text-align:center; font-weight:800; font-size:12px; text-transform:uppercase; margin:2px 0 7px;">Order Summary</div>
+      @endif
       <div class="bill-totals">
         <div class="bill-total-row">
-          <span>Sub Total</span>
+          <span>{{ $isDeliveryInvoice ? 'Subtotal' : 'Sub Total' }}</span>
           <span>{{ number_format($order->subtotal, 0) }}</span>
         </div>
 
 
 
-        @if($order->service_charge > 0)
+        @if(!$isDeliveryInvoice && $order->service_charge > 0)
         <div class="bill-total-row">
           <span>Service Charge ({{ $taxSettingServiceCharge }}%)</span>
           <span>+ {{ number_format($order->service_charge, 0) }}</span>
@@ -326,7 +353,7 @@
         </div>
         @endif
         <div class="bill-total-row grand">
-          <span>Total Payable</span>
+          <span>{{ $isDeliveryInvoice ? 'Grand Total' : 'Total Payable' }}</span>
           <span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->grand_total, 0) }}</span>
         </div>
       </div>

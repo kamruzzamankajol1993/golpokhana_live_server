@@ -9,7 +9,7 @@
         @endif
     </div>
     <div>
-      <div class="progga-brand-name">{{ $restaurantSettingName ?? 'Progga RMS' }}</div>
+      <div class="progga-brand-name">{{ $restaurantSettingName }}</div>
     </div>
   </div>
   <nav class="progga-sidebar-nav">
@@ -122,7 +122,65 @@
     </div>
     @endcan
 
-  
+    @canany(['hr-dashboard-view', 'employee-view', 'attendance-view', 'leave-management-view', 'payroll-view', 'shift-view', 'hr-setting-view'])
+    <div class="progga-nav-section"><div class="progga-nav-section-label">Human Resources</div></div>
+
+    @can('hr-dashboard-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.dashboard') ? 'active' : '' }}" href="{{ route('hr.dashboard') }}">
+            <i class="bi bi-speedometer2 progga-nav-icon"></i><span>HR Dashboard</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('employee-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.employees.*') ? 'active' : '' }}" href="{{ route('hr.employees.index') }}">
+            <i class="bi bi-person-vcard-fill progga-nav-icon"></i><span>Employees</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('attendance-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.attendance.*') ? 'active' : '' }}" href="{{ route('hr.attendance.index') }}">
+            <i class="bi bi-fingerprint progga-nav-icon"></i><span>Attendance</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('leave-management-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.leaves.*') ? 'active' : '' }}" href="{{ route('hr.leaves.index') }}">
+            <i class="bi bi-calendar2-check-fill progga-nav-icon"></i><span>Leave Management</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('payroll-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.payroll.*') ? 'active' : '' }} {{ Route::has('hr.payroll.index') ? '' : 'opacity-50' }}" href="{{ Route::has('hr.payroll.index') ? route('hr.payroll.index') : 'javascript:void(0)' }}" title="{{ Route::has('hr.payroll.index') ? 'Payroll' : 'Available in the next HR phase' }}">
+            <i class="bi bi-wallet2 progga-nav-icon"></i><span>Payroll</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('shift-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.shifts.*') ? 'active' : '' }}" href="{{ route('hr.shifts.index') }}">
+            <i class="bi bi-clock-history progga-nav-icon"></i><span>Shifts</span>
+        </a>
+    </div>
+    @endcan
+
+    @can('hr-setting-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('hr.settings.*') ? 'active' : '' }}" href="{{ route('hr.settings.index') }}">
+            <i class="bi bi-sliders2-vertical progga-nav-icon"></i><span>HR Settings</span>
+        </a>
+    </div>
+    @endcan
+    @endcanany
 @canany(['report-sales-order-view', 'report-complimentary-orders-view', 'report-payment-type-sales-view', 'report-food-sales-view', 'report-waiter-daily-orders-view'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Analytics</div></div>
 
@@ -135,6 +193,11 @@
             @can('report-sales-order-view')
             <a class="progga-nav-link {{ request()->routeIs('reports.index') || request()->routeIs('reports.sales_order') ? 'active' : '' }}" href="{{ route('reports.sales_order') }}" style="padding-left: 42px; font-size: 13px;">
                 <i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Sales & Order Report</span>
+            </a>
+            @endcan
+            @can('report-sales-order-view')
+            <a class="progga-nav-link {{ request()->routeIs('reports.delivery') ? 'active' : '' }}" href="{{ route('reports.delivery') }}" style="padding-left: 42px; font-size: 13px;">
+                <i class="bi bi-truck progga-nav-icon"></i><span>Delivery Report</span>
             </a>
             @endcan
             @can('report-complimentary-orders-view')

@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'HR Settings — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('title', 'HR Settings — ' . $restaurantSettingName)
 
 @section('css')
 <style>
@@ -216,7 +216,7 @@
     .progga-modal .modal-body { padding: 20px; }
     .progga-modal .modal-footer { padding: 14px 20px 18px; border-top-color: rgba(33, 53, 42, .08); }
 
-    /* Select2 uses the project-wide Progga theme. */
+    /* Select2 uses the project-wide theme. */
     .hr-settings-shell .select2-container,
     .progga-modal .select2-container {
         width: 100% !important;

@@ -29,6 +29,17 @@
         <div class="progga-oc-chips" id="ocChips">
             <span class="progga-oc-chip"><i class="bi bi-receipt"></i> #{{ $order->order_number }}</span>
             <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> {{ $order->order_type }}</span>
+            @if($jsOrderType === 'delivery' && !empty($order->delivery_partner))
+                @php
+                    $deliveryPartnerLabels = [
+                        'inhouse' => 'In-house Delivery',
+                        'foodpanda' => 'Foodpanda',
+                        'foodi' => 'Foodi',
+                        'pathao_food' => 'Pathao Food',
+                    ];
+                @endphp
+                <span class="progga-oc-chip"><i class="bi bi-truck"></i> {{ $deliveryPartnerLabels[$order->delivery_partner] ?? $order->delivery_partner }}</span>
+            @endif
             <span class="progga-oc-chip"><i class="bi bi-person"></i> <span id="ocWaiterName">{{ $order->waiter->name ?? 'Unassigned' }}</span></span>
             <span class="progga-oc-chip"><i class="bi bi-person-check"></i> <span id="ocCustomerName">{{ $order->customer->name ?? 'Walk-in' }}</span></span>
         </div>
@@ -205,6 +216,7 @@
                     data-table-id="{{ $order->table_id }}"
                     data-order-type="{{ $jsOrderType }}"
                     data-order-label="{{ $orderDisplayName }}"
+                    data-delivery-partner="{{ $order->delivery_partner ?? '' }}"
                     data-waiter-id="{{ $order->waiter_id }}"
                     data-waiter-name="{{ $order->waiter->name ?? '' }}"
                     data-customer-id="{{ $order->customer_id }}"
@@ -217,6 +229,7 @@
                     data-table-id="{{ $order->table_id }}"
                     data-order-type="{{ $jsOrderType }}"
                     data-order-label="{{ $orderDisplayName }}"
+                    data-delivery-partner="{{ $order->delivery_partner ?? '' }}"
                     data-waiter-id="{{ $order->waiter_id }}"
                     data-waiter-name="{{ $order->waiter->name ?? '' }}"
                     data-customer-id="{{ $order->customer_id }}"

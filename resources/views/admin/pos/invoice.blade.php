@@ -10,7 +10,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Customer Invoice #{{ $order->order_number }} — {{ $restaurantSettingName ?? 'TableTrack RMS' }}</title>
+  <title>Customer Invoice #{{ $order->order_number }} — {{ $restaurantSettingName }}</title>
   <style>
 
     :root {
@@ -244,7 +244,7 @@
 
     <div class="bill-header">
       <div class="bill-logo-circle">{{ substr($restaurantSettingName ?? 'P', 0, 1) }}</div>
-      <div class="bill-restaurant-name">{{ $restaurantSettingName ?? 'Progga RMS' }}</div>
+      <div class="bill-restaurant-name">{{ $restaurantSettingName }}</div>
       <div class="bill-restaurant-addr">
         {!! nl2br(e($restaurantSettingAddress ?? 'Block I, House 52, Road No. 01\nBanani, Dhaka 1213')) !!}
       </div>
@@ -276,6 +276,21 @@
           <span class="bill-meta-label">Customer</span>
           <span class="bill-meta-val">: {{ $order->customer->name ?? 'Walk-in' }}</span>
         </div>
+        @if(strtolower((string) ($order->order_type ?? '')) === 'delivery')
+          @php
+              $deliveryPartnerLabels = [
+                  'inhouse' => 'In-house Delivery',
+                  'foodpanda' => 'Foodpanda',
+                  'foodi' => 'Foodi',
+                  'pathao_food' => 'Pathao Food',
+              ];
+              $deliveryPartnerValue = $order->delivery_partner ?? 'inhouse';
+          @endphp
+          <div class="bill-meta-row">
+            <span class="bill-meta-label">Delivery</span>
+            <span class="bill-meta-val">: {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+          </div>
+        @endif
         <div class="bill-meta-row" style="grid-column:1/-1;">
           <span class="bill-meta-label">Time</span>
           <span class="bill-meta-val">: {{ $order->created_at->format('h:i:s A') }}</span>
@@ -334,15 +349,21 @@
 
       <hr class="dashed-sep-thick">
 
+      @php
+          $isDeliveryInvoice = strtolower((string) ($order->order_type ?? '')) === 'delivery';
+      @endphp
+      @if($isDeliveryInvoice)
+        <div style="text-align:center; font-weight:800; font-size:12px; text-transform:uppercase; margin:2px 0 7px;">Order Summary</div>
+      @endif
       <div class="bill-totals">
         <div class="bill-total-row">
-          <span>Sub Total</span>
+          <span>{{ $isDeliveryInvoice ? 'Subtotal' : 'Sub Total' }}</span>
           <span>{{ number_format($order->subtotal, 0) }}</span>
         </div>
 
 
 
-        @if($order->service_charge > 0)
+        @if(!$isDeliveryInvoice && $order->service_charge > 0)
         <div class="bill-total-row">
           <span>Service Charge ({{ $taxSettingServiceCharge }}%)</span>
           <span>+ {{ number_format($order->service_charge, 0) }}</span>
@@ -368,11 +389,12 @@
         </div>
         @endif
         <div class="bill-total-row grand">
-          <span>Total Payable</span>
+          <span>{{ $isDeliveryInvoice ? 'Grand Total' : 'Total Payable' }}</span>
           <span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->grand_total, 0) }}</span>
         </div>
       </div>
 
+      @if(!$isDeliveryInvoice)
       @php
           // Invoice payment display helper values.
           // Given Amount and Tips will show above Change when available.
@@ -458,6 +480,7 @@
           @endif
         </div>
       @endif
+      @endif
 
       <div class="bill-server">
        Served By: <strong>{{ $order->waiter->name ?? $order->user->name ?? 'N/A' }}</strong>
@@ -466,7 +489,7 @@
     </div><div class="bill-footer">
       {{-- <div class="bill-thankyou">✦ Thank You ✦</div> --}}
       <div class="bill-footer-links" style="font-size: 10px;">
-        {!! nl2br(e($invoiceSettingFooterNote ?? "Tech Partner — Progga RMS\nVisit our website to know more!")) !!}
+        {!! nl2br(e($invoiceSettingFooterNote ?? ("Tech Partner — " . $restaurantSettingName . "\nVisit our website to know more!"))) !!}
       </div>
       <div class="bill-partner">::::::::::::::::::::::::::::::::::::::::::::</div>
     </div>

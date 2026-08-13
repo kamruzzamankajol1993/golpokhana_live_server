@@ -14,7 +14,7 @@
 
                     <tr>
                         <td align="center" style="background-color: #21352a; padding: 30px 20px;">
-                            <h1 style="color: #d5aa65; margin: 0; font-size: 28px; letter-spacing: 1px;">Progga RMS</h1>
+                            <h1 style="color: #d5aa65; margin: 0; font-size: 28px; letter-spacing: 1px;">{{ $restaurantSettingName }}</h1>
                             <p style="color: #a0aab2; margin: 5px 0 0; font-size: 14px;">Restaurant Management System</p>
                         </td>
                     </tr>
@@ -24,7 +24,7 @@
                             <h2 style="margin-top: 0; font-size: 20px; color: #21352a;">Password Reset Request</h2>
                             <p style="font-size: 15px; line-height: 1.6; color: #555555;">
                                 Hello,<br><br>
-                                We received a request to reset the password for your Progga RMS account. Please use the following 6-digit OTP to proceed with resetting your password.
+                                We received a request to reset the password for your {{ $restaurantSettingName }} account. Please use the following 6-digit OTP to proceed with resetting your password.
                             </p>
 
                             <div style="text-align: center; margin: 30px 0;">
@@ -45,7 +45,7 @@
                     <tr>
                         <td align="center" style="background-color: #f8f9fa; padding: 20px; border-top: 1px solid #eeeeee;">
                             <p style="margin: 0; font-size: 12px; color: #888888;">
-                                &copy; {{ date('Y') }} Progga RMS. All rights reserved.<br>
+                                &copy; {{ date('Y') }} {{ $restaurantSettingName }}. All rights reserved.<br>
                                 This is an automated message, please do not reply.
                             </p>
                         </td>

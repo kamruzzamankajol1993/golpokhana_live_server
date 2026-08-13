@@ -22,7 +22,7 @@
 </head>
 <body>
     <div class="header">
-        <h2>{{ $restaurant->name ?? 'TableTrack RMS' }}</h2>
+        <h2>{{ $restaurant->name ?? $restaurantSettingName }}</h2>
         <p>{{ $restaurant->address ?? '' }} | Phone: {{ $restaurant->phone ?? 'N/A' }}</p>
         <div class="report-title">
             @if($report === 'payment_type_sales')
@@ -288,6 +288,6 @@
         </table>
     @endif
 
-    <div class="footer">Generated on: {{ now()->format('d M, Y h:i A') }} | Tech Partner: TableTrack RMS</div>
+    <div class="footer">Generated on: {{ now()->format('d M, Y h:i A') }} | Tech Partner: {{ $restaurantSettingName }}</div>
 </body>
 </html>

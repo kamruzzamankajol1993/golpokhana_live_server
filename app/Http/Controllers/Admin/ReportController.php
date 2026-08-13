@@ -17,7 +17,7 @@ class ReportController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('permission:report-sales-order-view', ['only' => ['salesOrder']]);
+        $this->middleware('permission:report-sales-order-view', ['only' => ['salesOrder', 'deliveryReport', 'deliveryReportPdf']]);
         $this->middleware('permission:report-complimentary-orders-view', ['only' => ['complimentaryOrders']]);
         $this->middleware('permission:report-payment-type-sales-view', ['only' => ['paymentTypeSales']]);
         $this->middleware('permission:report-food-sales-view', ['only' => ['foodSales']]);
@@ -180,6 +180,102 @@ class ReportController extends Controller
             'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
             'totalRevenue', 'totalDiscount', 'totalProductDiscount', 'totalOrders', 'avgOrderValue', 'uniqueCustomers', 'orders'
         ));
+    }
+
+    /** Delivery Report — show only Delivery order types. */
+    public function deliveryReport(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+
+        $baseQuery = Order::with(['customer', 'table', 'waiter', 'user'])
+            ->whereIn('order_type', ['Delivery', 'delivery'])
+            ->whereBetween('created_at', [$startDate, $endDate]);
+
+        $totalOrders = (clone $baseQuery)->count();
+        $completedOrders = (clone $baseQuery)->where('status', 'Completed')->count();
+        $totalValue = (float) (clone $baseQuery)->sum('grand_total');
+        $totalDue = (float) (clone $baseQuery)->sum('due');
+
+        $orders = (clone $baseQuery)
+            ->orderBy('id', 'desc')
+            ->paginate(15)
+            ->appends($request->query());
+
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('admin.reports.partials.delivery_table_rows', compact('orders'))->render(),
+                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
+                'summary' => [
+                    'orders' => $totalOrders,
+                    'completed' => $completedOrders,
+                    'value' => '৳' . number_format($totalValue, 0),
+                    'due' => '৳' . number_format($totalDue, 0),
+                ],
+            ]);
+        }
+
+        return view('admin.reports.delivery_report', compact(
+            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'totalOrders', 'completedOrders', 'totalValue', 'totalDue', 'orders'
+        ));
+    }
+
+    /** Open the filtered Delivery Report as an inline PDF in a new browser tab. */
+    public function deliveryReportPdf(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+
+        $orders = Order::with(['customer', 'table', 'waiter', 'user'])
+            ->whereIn('order_type', ['Delivery', 'delivery'])
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->orderByDesc('id')
+            ->get();
+
+        $totalOrders = $orders->count();
+        $completedOrders = $orders->where('status', 'Completed')->count();
+        $totalValue = (float) $orders->sum('grand_total');
+        $totalDue = (float) $orders->sum('due');
+        $restaurant = RestaurantSetting::first();
+
+        @ini_set('pcre.backtrack_limit', '50000000');
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
+        $html = view('admin.reports.delivery_pdf', compact(
+            'orders', 'startDate', 'endDate', 'totalOrders', 'completedOrders',
+            'totalValue', 'totalDue', 'restaurant'
+        ))->render();
+
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0775, true);
+        }
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => 'A4',
+            'orientation' => 'L',
+            'margin_left' => 7,
+            'margin_right' => 7,
+            'margin_top' => 8,
+            'margin_bottom' => 8,
+            'tempDir' => $tempDir,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+        ]);
+
+        $fileName = 'Delivery_Report_' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.pdf';
+        $mpdf->SetTitle($fileName);
+        $mpdf->WriteHTML($html);
+
+        return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
     }
 
     /**

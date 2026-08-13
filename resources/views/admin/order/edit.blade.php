@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Edit Order — TableTrack RMS')
+@section('title', 'Edit Order — ' . $restaurantSettingName)
 
 @section('css')
 <style>
@@ -336,6 +336,16 @@
 @endsection
 
 @section('body')
+@php
+    $deliveryPartnerLabels = [
+        'inhouse' => 'In-house Delivery',
+        'foodpanda' => 'Foodpanda',
+        'foodi' => 'Foodi',
+        'pathao_food' => 'Pathao Food',
+    ];
+    $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
+    $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+@endphp
 <main class="progga-content">
     <div class="progga-page-header">
         <div>
@@ -351,6 +361,9 @@
             <div class="order-edit-meta">
                 <span><i class="bi bi-person"></i> {{ $order->customer->name ?? 'Walk-in Customer' }}</span>
                 <span><i class="bi bi-receipt"></i> {{ $order->order_type ?? 'N/A' }}</span>
+                @if($isDeliveryOrder)
+                    <span><i class="bi bi-truck"></i> {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+                @endif
                 <span><i class="bi bi-credit-card"></i> {{ $order->payment_type ?? 'N/A' }}</span>
                 <span><i class="bi bi-clock"></i> {{ optional($order->created_at)->format('d M Y, h:i A') }}</span>
             </div>
@@ -557,6 +570,22 @@
                 </div>
 
                 <div class="order-edit-card-body">
+                    @if($isDeliveryOrder)
+                        <div class="mb-3 p-3" style="background:#fff9e8;border:1px solid #f3d98c;border-radius:10px;">
+                            <label class="form-label fw-bold mb-1" for="deliveryPartner" style="font-size:12px;">
+                                <i class="bi bi-truck me-1"></i> Delivery Partner
+                            </label>
+                            <select name="delivery_partner" id="deliveryPartner" class="form-control" required>
+                                @foreach($deliveryPartnerLabels as $partnerValue => $partnerLabel)
+                                    <option value="{{ $partnerValue }}" {{ old('delivery_partner', $deliveryPartnerValue) === $partnerValue ? 'selected' : '' }}>
+                                        {{ $partnerLabel }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="payment-helper-text">Changing this will update the delivery partner saved with the order.</div>
+                        </div>
+                    @endif
+
                     <div class="summary-row">
                         <span>Subtotal</span>
                         <strong>৳<span id="summarySubtotal">0</span></strong>

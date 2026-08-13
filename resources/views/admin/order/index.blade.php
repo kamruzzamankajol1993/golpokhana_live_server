@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Order List — TableTrack RMS')
+@section('title', 'Order List — ' . $restaurantSettingName)
 
 @section('css')
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">

@@ -1,7 +1,7 @@
 @extends('admin.master.master')
 
 @section('title')
-Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
+Dashboard — {{ $restaurantSettingName }}
 @endsection
 
 @section('body')
@@ -91,6 +91,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
               <div class="progga-card-subtitle" id="revenueChartSubtitle">Dynamic revenue trend from completed orders</div>
             </div>
             <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
+              <button class="progga-chart-toggle-btn" data-revenue-period="1">1 Day</button>
               <button class="progga-chart-toggle-btn active" data-revenue-period="7">7 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="30">30 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="60">60 Days</button>
@@ -150,6 +151,7 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
                 <div class="progga-card-subtitle" id="incomeChartSubtitle">Daily income by payment method for the last 7 days</div>
               </div>
               <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
+                <button class="progga-chart-toggle-btn" data-income-period="1">1 Day</button>
                 <button class="progga-chart-toggle-btn active" data-income-period="7">7 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="30">30 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="60">60 Days</button>
@@ -171,6 +173,147 @@ Dashboard — {{ $restaurantSettingName ?? 'TableTrack RMS' }}
       </div>
     @endif
 
+    @if($isSuperAdmin)
+      <div class="row g-3 mb-4">
+        <div class="col-xl-4">
+          <div class="progga-card" style="height:100%;">
+            <div class="progga-card-header">
+              <div>
+                <div class="progga-card-title">Top Selling Items</div>
+                <div class="progga-card-subtitle">Top 5 items by quantity sold this year</div>
+              </div>
+              <span class="progga-badge progga-badge-secondary">YTD</span>
+            </div>
+            <div class="progga-card-body">
+              @php
+                $topMaxQty = max(1, (int) ($topSellingItems->max('total_qty') ?? 1));
+              @endphp
+              @forelse($topSellingItems as $index => $item)
+                @php $progress = min(100, ((int) $item->total_qty / $topMaxQty) * 100); @endphp
+                <div style="padding:10px 0;{{ $loop->last ? '' : 'border-bottom:1px solid rgba(0,0,0,.06);' }}">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:7px;">
+                    <div style="min-width:0;display:flex;align-items:center;gap:9px;">
+                      <span class="progga-badge progga-badge-neutral" style="min-width:26px;text-align:center;">{{ $index + 1 }}</span>
+                      <strong style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ $item->product_name }}</strong>
+                    </div>
+                    <span style="font-size:12px;font-weight:800;white-space:nowrap;">{{ number_format($item->total_qty) }} sold</span>
+                  </div>
+                  <div style="height:6px;border-radius:999px;background:rgba(33,53,42,.10);overflow:hidden;">
+                    <div style="height:100%;width:{{ $progress }}%;background:#21352a;border-radius:999px;"></div>
+                  </div>
+                  <div class="text-muted" style="font-size:11px;margin-top:5px;">৳{{ number_format($item->total_amount ?? 0, 0) }} sales value</div>
+                </div>
+              @empty
+                <div class="text-center text-muted" style="padding:32px 12px;">No completed item sales found.</div>
+              @endforelse
+            </div>
+          </div>
+        </div>
+
+        <div class="col-xl-8">
+          <div class="progga-card" style="height:100%;">
+            <div class="progga-card-header">
+              <div>
+                <div class="progga-card-title">Kitchen Queue</div>
+                <div class="progga-card-subtitle">Active orders in the current business day</div>
+              </div>
+              <span class="progga-badge progga-badge-warning">{{ $kitchenQueue->count() }} active</span>
+            </div>
+            <div class="progga-table-wrapper" style="border:none;border-radius:0;overflow-x:auto;">
+              <table class="progga-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Table</th>
+                    <th>Items</th>
+                    <th>Wait</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @forelse($kitchenQueue as $order)
+                    @php
+                      $queueStatus = strtolower((string) $order->status);
+                      $queueBadge = in_array($queueStatus, ['ready'], true) ? 'primary' : ($queueStatus === 'cooking' ? 'secondary' : 'warning');
+                      $queueType = strtolower((string) $order->order_type);
+                      $queueLocation = $queueType === 'dine-in'
+                          ? 'T-' . ($order->table->table_number ?? 'N/A')
+                          : ($queueType === 'delivery'
+                              ? ($order->delivery_partner ?: 'Delivery')
+                              : ($order->order_type ?? 'N/A'));
+                      $waitMinutes = $order->created_at ? (int) max(0, floor($order->created_at->diffInMinutes(now()))) : 0;
+                    @endphp
+                    <tr>
+                      <td><a href="{{ route('order.show', $order->id) }}" style="font-weight:800;text-decoration:none;">#{{ $order->order_number }}</a></td>
+                      <td>{{ $queueLocation }}</td>
+                      <td>{{ number_format($order->orderDetails->sum('quantity')) }}</td>
+                      <td>{{ $waitMinutes }} min</td>
+                      <td><span class="progga-badge progga-badge-{{ $queueBadge }}">{{ $order->status }}</span></td>
+                    </tr>
+                  @empty
+                    <tr><td colspan="5" class="text-center text-muted" style="padding:30px 12px;">Kitchen queue is clear.</td></tr>
+                  @endforelse
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <div class="progga-card">
+            <div class="progga-card-header">
+              <div>
+                <div class="progga-card-title">Recent Orders</div>
+                <div class="progga-card-subtitle">Latest orders across the system</div>
+              </div>
+              <a href="{{ route('order.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">View All</a>
+            </div>
+            <div class="progga-table-wrapper" style="border:none;border-radius:0;overflow-x:auto;">
+              <table class="progga-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Type</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @forelse($recentOrders as $order)
+                    @php
+                      $recentStatus = strtolower((string) $order->status);
+                      $recentBadge = $recentStatus === 'completed' ? 'primary' : ($recentStatus === 'cancelled' ? 'danger' : 'warning');
+                      $recentType = strtolower((string) $order->order_type);
+                      $recentLocation = $recentType === 'dine-in'
+                          ? 'Dine-In · T-' . ($order->table->table_number ?? 'N/A')
+                          : ($recentType === 'delivery'
+                              ? 'Delivery' . ($order->delivery_partner ? ' · ' . $order->delivery_partner : '')
+                              : ($order->order_type ?? 'N/A'));
+                    @endphp
+                    <tr>
+                      <td>
+                        <a href="{{ route('order.show', $order->id) }}" style="font-weight:800;text-decoration:none;">#{{ $order->order_number }}</a>
+                        <div class="text-muted" style="font-size:10px;">{{ optional($order->created_at)->format('d M, h:i A') }}</div>
+                      </td>
+                      <td>{{ optional($order->customer)->name ?? 'Walk-in' }}</td>
+                      <td>{{ $recentLocation }}</td>
+                      <td><strong>৳{{ number_format($order->grand_total ?? 0, 0) }}</strong></td>
+                      <td><span class="progga-badge progga-badge-{{ $recentBadge }}">{{ $order->status ?? 'N/A' }}</span></td>
+                    </tr>
+                  @empty
+                    <tr><td colspan="5" class="text-center text-muted" style="padding:30px 12px;">No recent orders found.</td></tr>
+                  @endforelse
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    @endif
+
   </main>
 @endsection
 
@@ -184,6 +327,7 @@ document.addEventListener("DOMContentLoaded", function() {
     let incomeChart;
 
     function revenueSubtitle(period) {
+        if (period === '1') return 'Revenue for the current business day';
         if (period === '12m') return 'Monthly revenue trend from the last 12 months';
         if (['7', '30', '60', '90', '180'].includes(period)) {
             return 'Daily revenue trend from the last ' + period + ' days';
@@ -192,6 +336,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     function incomeSubtitle(period) {
+        if (period === '1') return 'Income by payment method for the current business day';
         if (period === '12m') return 'Monthly income by payment method for the last 12 months';
         if (['7', '30', '60', '90', '180'].includes(period)) {
             return 'Daily income by payment method for the last ' + period + ' days';

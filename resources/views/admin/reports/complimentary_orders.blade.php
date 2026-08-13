@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Complimentary Order Report — TableTrack RMS')
+@section('title', 'Complimentary Order Report — ' . $restaurantSettingName)
 
 @section('css')
 <style>

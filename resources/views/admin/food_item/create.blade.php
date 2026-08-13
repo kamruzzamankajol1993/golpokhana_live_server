@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Add Food Item — Progga RMS')
+@section('title', 'Add Food Item — ' . $restaurantSettingName)
 
 @section('css')
  <style>

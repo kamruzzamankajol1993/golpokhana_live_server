@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Reward Point Settings — Progga RMS')
+@section('title', 'Reward Point Settings — ' . $restaurantSettingName)
 
 @section('body')
 <main class="progga-content">

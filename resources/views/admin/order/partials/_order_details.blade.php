@@ -1,3 +1,13 @@
+@php
+    $deliveryPartnerLabels = [
+        'inhouse' => 'In-house Delivery',
+        'foodpanda' => 'Foodpanda',
+        'foodi' => 'Foodi',
+        'pathao_food' => 'Pathao Food',
+    ];
+    $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
+    $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+@endphp
 <div class="modal-header">
   <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Order #{{ $order->order_number }} — Details</h5>
   <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -19,7 +29,15 @@
         <div class="progga-stat-icon secondary" style="width:36px;height:36px;font-size:15px;"><i class="bi bi-layout-wtf"></i></div>
         <div class="progga-stat-info">
           <div class="progga-stat-label">Table / Type</div>
-          <div class="progga-stat-value" style="font-size:15px;">{{ $order->table->table_number ?? 'Takeaway' }} — {{ $order->order_type }}</div>
+          <div class="progga-stat-value" style="font-size:15px;">
+            @if($isDeliveryOrder)
+              Delivery — {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}
+            @elseif(strtolower(trim((string) ($order->order_type ?? ''))) === 'takeaway')
+              Takeaway
+            @else
+              {{ $order->table->table_number ?? 'N/A' }} — {{ $order->order_type }}
+            @endif
+          </div>
         </div>
       </div>
     </div>

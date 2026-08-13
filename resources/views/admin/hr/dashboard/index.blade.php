@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'HR Dashboard — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('title', 'HR Dashboard — ' . $restaurantSettingName)
 @section('css')
 @include('admin.hr.shared.styles')
 <style>

@@ -478,6 +478,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'paid_in_card' => ['nullable', 'numeric', 'min:0'],
             'paid_in_mfc' => ['nullable', 'numeric', 'min:0'],
             'transaction_id' => ['nullable', 'string', 'max:255'],
+            'delivery_partner' => ['nullable', Rule::in(['inhouse', 'foodpanda', 'foodi', 'pathao_food'])],
         ]);
 
         DB::beginTransaction();
@@ -706,6 +707,17 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             }
             if (Schema::hasColumn('orders', 'change_amount')) {
                 $order->change_amount = $changeAmount;
+            }
+
+            // Delivery partner can also be maintained from Order List > Edit.
+            if (Schema::hasColumn('orders', 'delivery_partner')) {
+                $normalizedOrderType = strtolower(trim((string) $order->order_type));
+                if ($normalizedOrderType === 'delivery') {
+                    $order->delivery_partner = $request->input('delivery_partner')
+                        ?: ($order->delivery_partner ?: 'inhouse');
+                } else {
+                    $order->delivery_partner = null;
+                }
             }
 
             $order->save();

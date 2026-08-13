@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Food Wise Sales — TableTrack RMS')
+@section('title', 'Food Wise Sales — ' . $restaurantSettingName)
 @section('body')
 <main class="progga-content">
   <div class="progga-page-header">

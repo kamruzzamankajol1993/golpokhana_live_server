@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\OrderDetail;
 use App\Models\Table;
 use App\Models\RestaurantSetting;
 use App\Support\OrderVisibility;
@@ -243,7 +244,7 @@ class HomeController extends Controller
 
     private function emptyDashboardChartPayload(string $period = '7'): array
     {
-        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $chartLabels = [];
         $chartData = [];
 
@@ -280,7 +281,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
 
         $hours = $reportingWindow['hours'];
@@ -473,7 +474,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
         $hours = $reportingWindow['hours'];
         $currentBusinessDate = $reportingWindow['business_date'];
@@ -897,6 +898,64 @@ class HomeController extends Controller
         })->count();
         $availableTables = max($totalTables - $runningTables, 0);
 
+        // Operational dashboard sections requested for Super Admin only.
+        // Non-super-admin users neither query nor receive these datasets.
+        $topSellingItems = collect();
+        $kitchenQueue = collect();
+        $recentOrders = collect();
+
+        if ($isSuperAdmin) {
+            $dashboardVisibleIds = $this->dashboardVisibleOrderIds();
+
+            $yearRange = $this->businessYearRange($businessDate, $hours);
+            $topItemsQuery = OrderVisibility::constrain(
+                OrderDetail::query()->join('orders', 'order_details.order_id', '=', 'orders.id'),
+                $dashboardVisibleIds
+            )
+                ->where('orders.status', 'Completed')
+                ->whereBetween('orders.created_at', [$yearRange['start'], $yearRange['end']]);
+
+            $topSellingItems = $this->applyBusinessHoursFilter($topItemsQuery, 'orders.created_at', $hours)
+                ->select(
+                    'order_details.product_name',
+                    DB::raw('SUM(order_details.quantity) as total_qty'),
+                    DB::raw('SUM(order_details.subtotal) as total_amount')
+                )
+                ->groupBy('order_details.product_name')
+                ->orderByDesc('total_qty')
+                ->take(5)
+                ->get();
+
+            if ($activeWindow !== null) {
+                $kitchenQueueVisibleIds = $this->rangeVisibleOrderIds(
+                    $activeWindow['start'],
+                    $activeWindow['end'],
+                    [
+                        'dashboard_metric' => 'kitchen_queue',
+                        'business_date' => $activeWindow['business_date']->format('Y-m-d'),
+                    ]
+                );
+
+                $kitchenQueue = OrderVisibility::constrain(
+                    Order::with(['table', 'orderDetails']),
+                    $kitchenQueueVisibleIds
+                )
+                    ->whereBetween('created_at', [$activeWindow['start'], $activeWindow['end']])
+                    ->whereIn('status', ['Pending', 'Processing', 'Cooking', 'Ready'])
+                    ->orderBy('id', 'asc')
+                    ->limit(5)
+                    ->get();
+            }
+
+            $recentOrders = OrderVisibility::constrain(
+                Order::with(['customer', 'table', 'waiter', 'orderDetails']),
+                $dashboardVisibleIds
+            )
+                ->orderByDesc('id')
+                ->limit(6)
+                ->get();
+        }
+
         return view('admin.dashboard.index', compact(
             'isSuperAdmin',
             'todaySales',
@@ -921,6 +980,9 @@ class HomeController extends Controller
             'incomeCashData',
             'incomeCardData',
             'incomeMfsData',
+            'topSellingItems',
+            'kitchenQueue',
+            'recentOrders',
         ));
     }
 

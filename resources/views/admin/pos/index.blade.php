@@ -1,5 +1,5 @@
 @extends('admin.pos.master')
-@section('title', 'POS System — TableTrack RMS')
+@section('title', 'POS System — ' . $restaurantSettingName)
 
 @section('css')
 <style>
@@ -145,7 +145,7 @@
         @else
             {{ strtoupper(substr($restaurantSettingName ?? 'P', 0, 1)) }}
         @endif
-        <span>{{ $restaurantSettingName ?? 'Progga RMS' }}</span>
+        <span>{{ $restaurantSettingName }}</span>
       </div>
 
       <div class="progga-pos-step-indicator">
@@ -339,7 +339,7 @@
     let currentOrder = {
         order_type: 'dine_in', table_id: null, table_name: '',
         waiter_id: null, waiter_name: '', customer_id: null, customer_name: '',
-        customer_phone: '', is_walk_in: 1, order_notes: '', is_complimentary_order: 0
+        customer_phone: '', is_walk_in: 1, order_notes: '', delivery_partner: '', is_complimentary_order: 0
     };
     window.currentOrder = currentOrder;
     let currentCat = '';
@@ -437,6 +437,9 @@
     function resetNewOrderModalCommon() {
         $('#posWalkIn').prop('checked', true).trigger('change');
         $('#order_notes').val('');
+        $('#posDeliveryPartnerSelect').val('');
+        $('#deliveryPartnerSection').hide();
+        currentOrder.delivery_partner = '';
         $('#posComplimentaryOrder').prop('checked', false);
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
@@ -524,7 +527,11 @@
         if(step === 2) {
             let tableMetaHtml = currentOrder.table_name;
             if(currentOrder.order_type === 'takeaway') tableMetaHtml = '<span class="text-danger">Takeaway</span>';
-            if(currentOrder.order_type === 'delivery') tableMetaHtml = '<span class="text-warning">Delivery</span>';
+            if(currentOrder.order_type === 'delivery') {
+                let partnerText = $('#posDeliveryPartnerSelect option[value="' + (currentOrder.delivery_partner || '') + '"]').text();
+                if(!partnerText || partnerText.indexOf('Select Delivery Partner') !== -1) partnerText = 'Delivery';
+                tableMetaHtml = '<span class="text-warning">Delivery - ' + $('<div>').text(partnerText).html() + '</span>';
+            }
             $('#posSelectedTableMeta').html(tableMetaHtml);
 
             let typeText = 'Dine-In';
@@ -732,7 +739,18 @@
             $('#modalTableSelect').val('').trigger('change');
             currentOrder.table_id = null;
             currentOrder.table_name = type === 'takeaway' ? 'Takeaway' : 'Delivery';
+
+            if(type === 'delivery') {
+                $('#deliveryPartnerSection').slideDown();
+            } else {
+                $('#deliveryPartnerSection').slideUp();
+                $('#posDeliveryPartnerSelect').val('');
+                currentOrder.delivery_partner = '';
+            }
         } else {
+            $('#deliveryPartnerSection').slideUp();
+            $('#posDeliveryPartnerSelect').val('');
+            currentOrder.delivery_partner = '';
             if(newOrderModalMode === 'table') {
                 $('#modalTableSelectSection').hide();
                 $('#modalSelectedTableNum').text(currentOrder.table_name);
@@ -794,6 +812,16 @@
         } else {
             currentOrder.table_id = null;
             currentOrder.table_name = selectedOrderType === 'takeaway' ? 'Takeaway' : 'Delivery';
+        }
+
+        if(selectedOrderType === 'delivery') {
+            currentOrder.delivery_partner = $('#posDeliveryPartnerSelect').val() || '';
+            if(!currentOrder.delivery_partner) {
+                Swal.fire('Notice', 'Please select a delivery partner.', 'info');
+                return;
+            }
+        } else {
+            currentOrder.delivery_partner = '';
         }
 
         currentOrder.waiter_id = $('#posWaiterSelect').val();
@@ -927,6 +955,10 @@
         currentOrder.customer_phone = data.customer_phone || '';
         currentOrder.is_walk_in = parseInt(typeof data.is_walk_in !== 'undefined' ? data.is_walk_in : (data.customer_id ? 0 : 1));
         currentOrder.order_notes = data.notes || '';
+        currentOrder.delivery_partner = data.delivery_partner || (currentOrder.order_type === 'delivery' ? 'inhouse' : '');
+        if(currentOrder.order_type === 'delivery') {
+            $('#posDeliveryPartnerSelect').val(currentOrder.delivery_partner);
+        }
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
 
@@ -1064,6 +1096,7 @@
             customer_name: currentOrder.customer_name,
             customer_phone: currentOrder.customer_phone,
             order_notes: currentOrder.order_notes,
+            delivery_partner: currentOrder.delivery_partner || '',
             is_complimentary_order: currentOrder.is_complimentary_order || 0,
             discount_type: discType,
             discount_value: discVal,
@@ -1709,11 +1742,13 @@
         const customerName = $(this).data('customer-name');
         const orderType = $(this).data('order-type') || 'dine_in';
         const orderLabel = $(this).data('order-label') || $('#ocTableNum').text();
+        const deliveryPartner = $(this).data('delivery-partner') || '';
 
         currentOrder.table_id = tId || null;
         currentOrder.table_name = orderLabel;
         currentOrder.order_id = orderId;
         currentOrder.order_type = orderType;
+        currentOrder.delivery_partner = deliveryPartner || (orderType === 'delivery' ? 'inhouse' : '');
         currentOrder.waiter_id = waiterId ? waiterId : null;
         currentOrder.waiter_name = waiterName ? waiterName : '';
 
@@ -1814,11 +1849,13 @@
 
         const orderType = $(this).data('order-type') || 'dine_in';
         const orderLabel = $(this).data('order-label') || $('#ocTableNum').text();
+        const deliveryPartner = $(this).data('delivery-partner') || '';
 
         currentOrder.table_id = tId || null;
         currentOrder.table_name = orderLabel;
         currentOrder.order_id = orderId;
         currentOrder.order_type = orderType;
+        currentOrder.delivery_partner = deliveryPartner || (orderType === 'delivery' ? 'inhouse' : '');
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
 

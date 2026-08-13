@@ -306,7 +306,63 @@ public function printSessionReport($id)
         $session = PosSession::with('user')->findOrFail($id);
         $restaurant = \App\Models\RestaurantSetting::first();
         $taxSetting = DB::table('tax_settings')->first();
-        return view('admin.pos.session_report', compact('session', 'restaurant', 'taxSetting'));
+
+        $reportEnd = $session->end_time ?: now();
+        $orders = Order::where('created_at', '>=', $session->start_time)
+            ->where('created_at', '<=', $reportEnd)
+            ->where('status', 'Completed')
+            ->get();
+
+        $productDiscount = $orders->sum(function ($order) {
+            return (float) ($order->product_discount_amount ?? 0);
+        });
+        $honored = $orders->sum(function ($order) {
+            return (float) ($order->discount_amount ?? 0);
+        });
+
+        $salesSummary = [
+            'sales_total' => (float) $orders->sum('subtotal'),
+            'product_discount' => (float) $productDiscount,
+            'honored' => (float) $honored,
+            'discount_total' => (float) ($productDiscount + $honored),
+            'service_charge' => (float) $orders->sum('service_charge'),
+            'vat_total' => (float) $orders->sum('vat_tax'),
+            'grand_total' => (float) $orders->sum('grand_total'),
+        ];
+
+        $reportIncomes = ['Cash' => 0, 'Card' => 0, 'MFC' => 0];
+        $departmentIncome = ['dine_in' => 0, 'delivery' => 0, 'takeaway' => 0];
+
+        foreach ($orders as $order) {
+            if ($order->payment_type === 'Split') {
+                $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0);
+                $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0);
+                $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0);
+            } else {
+                $paid = (float) ($order->total_paid_amount ?? 0);
+                if ($order->payment_type === 'Cash') {
+                    $reportIncomes['Cash'] += $paid;
+                } elseif ($order->payment_type === 'Card') {
+                    $reportIncomes['Card'] += $paid;
+                } elseif ($order->payment_type === 'Mobile Banking') {
+                    $reportIncomes['MFC'] += $paid;
+                }
+            }
+
+            $departmentKey = $this->normalizePosOrderType($order->order_type ?? 'dine_in');
+            if (array_key_exists($departmentKey, $departmentIncome)) {
+                $departmentIncome[$departmentKey] += (float) ($order->grand_total ?? 0);
+            }
+        }
+
+        return view('admin.pos.session_report', compact(
+            'session',
+            'restaurant',
+            'taxSetting',
+            'salesSummary',
+            'reportIncomes',
+            'departmentIncome'
+        ));
     }
 
     public function updateSession(Request $request)
@@ -676,6 +732,19 @@ public function placeOrder(Request $request)
             if($requestOrderType == 'takeaway') $order_type_val = 'Takeaway';
             if($requestOrderType == 'delivery') $order_type_val = 'Delivery';
 
+            $allowedDeliveryPartners = ['inhouse', 'foodpanda', 'foodi', 'pathao_food'];
+            $deliveryPartner = $requestOrderType === 'delivery'
+                ? trim((string) ($request->delivery_partner ?: 'inhouse'))
+                : null;
+
+            if ($requestOrderType === 'delivery' && !in_array($deliveryPartner, $allowedDeliveryPartners, true)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please select a valid delivery partner.'
+                ], 422);
+            }
+
             if ($request->filled('order_id')) {
                 $order = Order::findOrFail($request->order_id);
 
@@ -725,6 +794,9 @@ public function placeOrder(Request $request)
 
                     if (Schema::hasColumn('orders', 'is_complimentary_order')) {
                         $orderUpdateData['is_complimentary_order'] = $isComplimentaryOrder ? 1 : 0;
+                    }
+                    if (Schema::hasColumn('orders', 'delivery_partner')) {
+                        $orderUpdateData['delivery_partner'] = $deliveryPartner;
                     }
 
                     $order->update($orderUpdateData);
@@ -780,6 +852,9 @@ public function placeOrder(Request $request)
                     if (Schema::hasColumn('orders', 'is_complimentary_order') && $isComplimentaryOrder) {
                         $orderUpdateData['is_complimentary_order'] = 1;
                     }
+                    if (Schema::hasColumn('orders', 'delivery_partner') && $requestOrderType === 'delivery') {
+                        $orderUpdateData['delivery_partner'] = $deliveryPartner;
+                    }
 
                     $order->update($orderUpdateData);
                 }
@@ -824,6 +899,9 @@ public function placeOrder(Request $request)
 
                 if (Schema::hasColumn('orders', 'is_complimentary_order')) {
                     $orderCreateData['is_complimentary_order'] = $isComplimentaryOrder ? 1 : 0;
+                }
+                if (Schema::hasColumn('orders', 'delivery_partner')) {
+                    $orderCreateData['delivery_partner'] = $deliveryPartner;
                 }
 
                 $order = Order::create($orderCreateData);
@@ -951,6 +1029,7 @@ public function placeOrder(Request $request)
                     'customer_phone' => $order->customer->phone ?? '',
                     'is_walk_in' => $order->customer_id ? 0 : 1,
                     'notes' => $order->notes ?? '',
+                    'delivery_partner' => $order->delivery_partner ?? null,
                     'subtotal' => $order->subtotal
                 ]
             ]);

@@ -7,19 +7,19 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>@yield('title')</title>
     <meta name="title" content="@yield('title')">
-  <meta name="description" content="TableTrack Restaurant Management System - Complete solution for your restaurant operations.">
-  <meta name="keywords" content="restaurant management, pos, kitchen board, progga rms, dashboard">
-  <meta name="author" content="TableTrack RMS">
+  <meta name="description" content="{{ $restaurantSettingName }} - Complete solution for your restaurant operations.">
+  <meta name="keywords" content="restaurant management, pos, kitchen board, {{ $restaurantSettingName }}, dashboard">
+  <meta name="author" content="{{ $restaurantSettingName }}">
 
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ url()->full() }}">
   <meta property="og:title" content="@yield('title')">
-  <meta property="og:description" content="Manage your restaurant efficiently with TableTrack RMS.">
+  <meta property="og:description" content="Manage your restaurant efficiently with {{ $restaurantSettingName }}.">
   <meta property="og:image" content="{{ asset('public/'.$restaurantSettingLogo) }}">
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:url" content="{{ url()->full() }}">
   <meta property="twitter:title" content="@yield('title')">
-  <meta property="twitter:description" content="Manage your restaurant efficiently with TableTrack RMS.">
+  <meta property="twitter:description" content="Manage your restaurant efficiently with {{ $restaurantSettingName }}.">
   <meta property="twitter:image" content="{{ asset('public/'.$restaurantSettingLogo) }}">
   <link rel="icon" type="image/x-icon" href="{{ asset('public/'.$restaurantSettingIconName) }}">
   <link rel="apple-touch-icon" href="{{ asset('public/'.$restaurantSettingIconName) }}">

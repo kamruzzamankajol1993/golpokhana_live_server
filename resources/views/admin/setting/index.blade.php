@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'Settings — ' . ($restaurantSettingName ?? 'TableTrack RMS'))
+@section('title', 'Settings — ' . $restaurantSettingName)
 
 @section('body')
 <main class="progga-content">
@@ -35,7 +35,7 @@
                     <div class="row g-3">
                         <div class="col-md-8">
                             <div class="row g-3">
-                                <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Restaurant Name <span class="progga-required">*</span></label><input type="text" name="name" class="progga-form-control" value="{{ $restaurant->name ?? 'Progga Restaurant' }}" required></div></div>
+                                <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Restaurant Name <span class="progga-required">*</span></label><input type="text" name="name" class="progga-form-control" value="{{ $restaurant->name ?? $restaurantSettingName }}" required></div></div>
                                 <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Phone Number</label><input type="tel" name="phone" class="progga-form-control" value="{{ $restaurant->phone ?? '' }}"></div></div>
                                 <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Email Address</label><input type="email" name="email" class="progga-form-control" value="{{ $restaurant->email ?? '' }}"></div></div>
                                 <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Website</label><input type="url" name="website" class="progga-form-control" value="{{ $restaurant->website ?? '' }}"></div></div>

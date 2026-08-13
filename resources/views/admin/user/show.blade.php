@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@section('title', 'User Profile — Progga RMS')
+@section('title', 'User Profile — ' . $restaurantSettingName)
 
 @section('body')
 <main class="progga-content">

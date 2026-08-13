@@ -2,6 +2,16 @@
 @section('title', 'Order Details #'.$order->order_number)
 
 @section('body')
+@php
+    $deliveryPartnerLabels = [
+        'inhouse' => 'In-house Delivery',
+        'foodpanda' => 'Foodpanda',
+        'foodi' => 'Foodi',
+        'pathao_food' => 'Pathao Food',
+    ];
+    $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
+    $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+@endphp
 <main class="progga-content">
     <div class="progga-page-header d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -36,7 +46,12 @@
                 <h5 class="mb-3" style="font-weight: 800; color: var(--progga-primary);"><i class="bi bi-info-circle me-2"></i> General Info</h5>
                 <p class="mb-2" style="font-size: 14px;"><strong>Status:</strong> <span class="badge bg-primary px-2 py-1">{{ $order->status }}</span></p>
                 <p class="mb-2" style="font-size: 14px;"><strong>Order Type:</strong> {{ $order->order_type }}</p>
-                <p class="mb-2" style="font-size: 14px;"><strong>Table:</strong> {{ $order->table->table_number ?? 'Takeaway' }}</p>
+                @if($isDeliveryOrder)
+                    <p class="mb-2" style="font-size: 14px;"><strong>Delivery Partner:</strong> <span class="badge bg-warning text-dark px-2 py-1">{{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span></p>
+                    <p class="mb-2" style="font-size: 14px;"><strong>Table:</strong> N/A</p>
+                @else
+                    <p class="mb-2" style="font-size: 14px;"><strong>Table:</strong> {{ $order->table->table_number ?? 'Takeaway' }}</p>
+                @endif
                 <p class="mb-2" style="font-size: 14px;"><strong>Waiter:</strong> {{ $order->waiter->name ?? 'N/A' }}</p>
                 <p class="mb-2" style="font-size: 14px;"><strong>Date:</strong> {{ $order->created_at->format('d M, Y h:i A') }}</p>
             </div>
