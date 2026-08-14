@@ -11,6 +11,7 @@ use App\Support\OrderVisibility;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mpdf\Mpdf;
 
 class HomeController extends Controller
 {
@@ -244,7 +245,7 @@ class HomeController extends Controller
 
     private function emptyDashboardChartPayload(string $period = '7'): array
     {
-        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $chartLabels = [];
         $chartData = [];
 
@@ -281,7 +282,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
 
         $hours = $reportingWindow['hours'];
@@ -474,7 +475,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['1', '7', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
         $hours = $reportingWindow['hours'];
         $currentBusinessDate = $reportingWindow['business_date'];
@@ -738,6 +739,180 @@ class HomeController extends Controller
             $this->dashboardChartPayload($period, $visibleOrderIds, $reportingWindow),
             $this->dashboardIncomeChartPayload($period, $visibleOrderIds, $reportingWindow)
         ));
+    }
+
+    private function dashboardPeriodRange(string $period, array $reportingWindow): array
+    {
+        $allowedPeriods = ['1', '7', '14', '21', '30', '60', '90', '180', '12m'];
+        $period = in_array($period, $allowedPeriods, true) ? $period : '7';
+
+        $hours = $reportingWindow['hours'];
+        $currentBusinessDate = $reportingWindow['business_date'];
+
+        if ($period === '12m') {
+            $firstBusinessDate = $currentBusinessDate->copy()->subMonths(11)->startOfMonth();
+        } else {
+            $days = (int) $period;
+            $firstBusinessDate = $currentBusinessDate->copy()->subDays($days - 1);
+        }
+
+        return [
+            'period' => $period,
+            'start' => $this->businessWindowForDate($firstBusinessDate, $hours)['start'],
+            'end' => $reportingWindow['end'],
+            'first_business_date' => $firstBusinessDate,
+            'last_business_date' => $currentBusinessDate,
+            'hours' => $hours,
+        ];
+    }
+
+    private function topSellingItemsQuery(array $periodRange, ?array $visibleOrderIds)
+    {
+        $salesQuery = OrderVisibility::constrain(
+            DB::table('order_details')
+                ->join('orders', 'order_details.order_id', '=', 'orders.id'),
+            $visibleOrderIds
+        )
+            ->where('orders.status', 'Completed')
+            ->whereBetween('orders.created_at', [$periodRange['start'], $periodRange['end']]);
+
+        $salesSubQuery = $this->applyBusinessHoursFilter(
+            $salesQuery,
+            'orders.created_at',
+            $periodRange['hours']
+        )
+            ->select(
+                'order_details.product_id',
+                DB::raw('SUM(order_details.quantity) as total_qty'),
+                DB::raw('SUM(order_details.subtotal) as total_amount')
+            )
+            ->groupBy('order_details.product_id');
+
+        return DB::table('food_items')
+            ->leftJoinSub($salesSubQuery, 'sales', function ($join) {
+                $join->on('food_items.id', '=', 'sales.product_id');
+            })
+            ->select(
+                'food_items.id',
+                'food_items.name as product_name',
+                DB::raw('COALESCE(sales.total_qty, 0) as total_qty'),
+                DB::raw('COALESCE(sales.total_amount, 0) as total_amount')
+            )
+            ->orderByDesc('total_qty')
+            ->orderBy('food_items.name');
+    }
+
+    private function topSellingPeriodLabels(): array
+    {
+        return [
+            '1' => '1 Day',
+            '7' => '7 Days',
+            '14' => '14 Days',
+            '21' => '21 Days',
+            '30' => '30 Days',
+            '60' => '60 Days',
+            '90' => '90 Days',
+            '180' => '180 Days',
+            '12m' => '12 Months',
+        ];
+    }
+
+    private function topSellingReportContext(Request $request): array
+    {
+        $activeWindow = $this->currentBusinessWindow();
+        $reportingWindow = $activeWindow ?? $this->reportingBusinessWindow();
+        $periodRange = $this->dashboardPeriodRange((string) $request->get('period', '7'), $reportingWindow);
+        $period = $periodRange['period'];
+        $periodLabels = $this->topSellingPeriodLabels();
+        $dateRangeLabel = $periodRange['first_business_date']->format('d M Y')
+            . ' - ' . $periodRange['last_business_date']->format('d M Y');
+
+        return [
+            'periodRange' => $periodRange,
+            'period' => $period,
+            'periodLabels' => $periodLabels,
+            'periodLabel' => $periodLabels[$period],
+            'dateRangeLabel' => $dateRangeLabel,
+            'visibleOrderIds' => $this->dashboardVisibleOrderIds(),
+        ];
+    }
+
+    public function topSellingItems(Request $request)
+    {
+        abort_unless($this->isSuperAdminUser(), 403);
+
+        $context = $this->topSellingReportContext($request);
+        $perPage = (int) $request->get('per_page', 20);
+        $perPage = in_array($perPage, [20, 50, 100], true) ? $perPage : 20;
+
+        $topSellingItems = $this->topSellingItemsQuery(
+            $context['periodRange'],
+            $context['visibleOrderIds']
+        )
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return view('admin.dashboard.top_selling_items', [
+            'topSellingItems' => $topSellingItems,
+            'period' => $context['period'],
+            'periodLabel' => $context['periodLabel'],
+            'periodLabels' => $context['periodLabels'],
+            'dateRangeLabel' => $context['dateRangeLabel'],
+            'perPage' => $perPage,
+        ]);
+    }
+
+    public function downloadTopSellingItemsPdf(Request $request)
+    {
+        abort_unless($this->isSuperAdminUser(), 403);
+
+        @ini_set('pcre.backtrack_limit', '10000000');
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '180');
+        @set_time_limit(180);
+
+        $context = $this->topSellingReportContext($request);
+        $topSellingItems = $this->topSellingItemsQuery(
+            $context['periodRange'],
+            $context['visibleOrderIds']
+        )->get();
+
+        $mpdfTempDir = storage_path('app/mpdf-top-selling');
+        if (!is_dir($mpdfTempDir)) {
+            @mkdir($mpdfTempDir, 0775, true);
+        }
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => 'A4',
+            'orientation' => 'P',
+            'margin_left' => 10,
+            'margin_right' => 10,
+            'margin_top' => 12,
+            'margin_bottom' => 14,
+            'margin_header' => 5,
+            'margin_footer' => 7,
+            'tempDir' => $mpdfTempDir,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+        ]);
+
+        $restaurant = RestaurantSetting::query()->first();
+        $fileName = 'top-selling-items-' . $context['period'] . '-' . now()->format('Ymd-His') . '.pdf';
+
+        $mpdf->SetTitle('Top Selling Items - ' . $context['periodLabel']);
+        $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
+        $mpdf->WriteHTML(view('admin.dashboard.top_selling_items_pdf', [
+            'topSellingItems' => $topSellingItems,
+            'periodLabel' => $context['periodLabel'],
+            'dateRangeLabel' => $context['dateRangeLabel'],
+            'restaurant' => $restaurant,
+        ])->render());
+
+        return response($mpdf->Output($fileName, 'S'), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+        ]);
     }
 
     public function index()

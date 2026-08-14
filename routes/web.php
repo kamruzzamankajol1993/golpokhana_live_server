@@ -45,6 +45,8 @@ Auth::routes(['reset' => false]);
 
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 Route::get('/dashboard/chart-data', [App\Http\Controllers\HomeController::class, 'chartData'])->name('dashboard.chart_data');
+Route::get('/dashboard/top-selling-items', [App\Http\Controllers\HomeController::class, 'topSellingItems'])->name('dashboard.top_selling_items');
+Route::get('/dashboard/top-selling-items/pdf', [App\Http\Controllers\HomeController::class, 'downloadTopSellingItemsPdf'])->name('dashboard.top_selling_items.pdf');
 Route::get('/download-pdf', [PDFController::class, 'generatePDF']);
 Route::get('/admin/login', [LoginController::class, 'showLoginForm'])->name('admin.login');
 

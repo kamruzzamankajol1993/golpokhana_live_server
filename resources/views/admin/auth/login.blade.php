@@ -6,18 +6,18 @@
 
   <title>Login — {{ $restaurantSettingName }}</title>
   <meta name="title" content="Login — {{ $restaurantSettingName }}">
-  <meta name="description" content="Sign in to {{ $restaurantSettingName }} to manage your orders, kitchen, and analytics.">
+  <meta name="description" content="Sign in to {{ $restaurantSettingName }} Restaurant Management System to manage your orders, kitchen, and analytics.">
   <meta name="keywords" content="restaurant management, pos, kitchen board, {{ $restaurantSettingName }}">
   <meta name="author" content="{{ $restaurantSettingName }}">
 
   <meta property="og:type" content="website">
   <meta property="og:url" content="{{ url()->current() }}">
   <meta property="og:title" content="Login — {{ $restaurantSettingName }}">
-  <meta property="og:description" content="Sign in to {{ $restaurantSettingName }}.">
+  <meta property="og:description" content="Sign in to {{ $restaurantSettingName }} Restaurant Management System.">
   <meta property="og:image" content="{{ asset('public/'.$restaurantSettingLogo) }}"> <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:url" content="{{ url()->current() }}">
   <meta property="twitter:title" content="Login — {{ $restaurantSettingName }}">
-  <meta property="twitter:description" content="Sign in to {{ $restaurantSettingName }}.">
+  <meta property="twitter:description" content="Sign in to {{ $restaurantSettingName }} Restaurant Management System.">
   <meta property="twitter:image" content="{{ asset('public/'.$restaurantSettingLogo) }}">
   <link rel="icon" type="image/x-icon" href="{{ asset('public/'.$restaurantSettingIconName) }}">
   <link rel="apple-touch-icon" href="{{ asset('public/'.$restaurantSettingIconName) }}">

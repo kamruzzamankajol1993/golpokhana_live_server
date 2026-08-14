@@ -6,7 +6,7 @@
  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>@yield('title')</title>
   <meta name="title" content="@yield('title')">
-  <meta name="description" content="{{ $restaurantSettingName }} - Complete solution for your restaurant operations.">
+  <meta name="description" content="{{ $restaurantSettingName }} Restaurant Management System - Complete solution for your restaurant operations.">
   <meta name="keywords" content="restaurant management, pos, kitchen board, {{ $restaurantSettingName }}, dashboard">
   <meta name="author" content="{{ $restaurantSettingName }}">
 

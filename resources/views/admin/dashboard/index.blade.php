@@ -93,6 +93,8 @@ Dashboard — {{ $restaurantSettingName }}
             <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
               <button class="progga-chart-toggle-btn" data-revenue-period="1">1 Day</button>
               <button class="progga-chart-toggle-btn active" data-revenue-period="7">7 Days</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="14">14 Days</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="21">21 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="30">30 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="60">60 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="90">90 Days</button>
@@ -153,6 +155,8 @@ Dashboard — {{ $restaurantSettingName }}
               <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
                 <button class="progga-chart-toggle-btn" data-income-period="1">1 Day</button>
                 <button class="progga-chart-toggle-btn active" data-income-period="7">7 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="14">14 Days</button>
+                <button class="progga-chart-toggle-btn" data-income-period="21">21 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="30">30 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="60">60 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="90">90 Days</button>
@@ -182,7 +186,10 @@ Dashboard — {{ $restaurantSettingName }}
                 <div class="progga-card-title">Top Selling Items</div>
                 <div class="progga-card-subtitle">Top 5 items by quantity sold this year</div>
               </div>
-              <span class="progga-badge progga-badge-secondary">YTD</span>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                <span class="progga-badge progga-badge-secondary">YTD</span>
+                <a href="{{ route('dashboard.top_selling_items') }}" class="progga-btn progga-btn-outline progga-btn-sm">View More</a>
+              </div>
             </div>
             <div class="progga-card-body">
               @php
@@ -329,7 +336,7 @@ document.addEventListener("DOMContentLoaded", function() {
     function revenueSubtitle(period) {
         if (period === '1') return 'Revenue for the current business day';
         if (period === '12m') return 'Monthly revenue trend from the last 12 months';
-        if (['7', '30', '60', '90', '180'].includes(period)) {
+        if (['7', '14', '21', '30', '60', '90', '180'].includes(period)) {
             return 'Daily revenue trend from the last ' + period + ' days';
         }
         return 'Daily revenue trend from the last 7 days';
@@ -338,7 +345,7 @@ document.addEventListener("DOMContentLoaded", function() {
     function incomeSubtitle(period) {
         if (period === '1') return 'Income by payment method for the current business day';
         if (period === '12m') return 'Monthly income by payment method for the last 12 months';
-        if (['7', '30', '60', '90', '180'].includes(period)) {
+        if (['7', '14', '21', '30', '60', '90', '180'].includes(period)) {
             return 'Daily income by payment method for the last ' + period + ' days';
         }
         return 'Daily income by payment method for the last 7 days';

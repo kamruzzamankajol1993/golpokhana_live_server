@@ -2,11 +2,11 @@
   <div class="progga-footer-inner">
     <div class="progga-footer-brand">
       <div class="progga-footer-logo">T</div>
-      <span class="progga-footer-name">{{$restaurantSettingName}}</span>
+      <span class="progga-footer-name">{{ $restaurantSettingName }}</span>
       <span class="progga-footer-version">v1.0.0</span>
     </div>
     <div class="progga-footer-copy">
-      &copy; {{ date('Y') }} {{$restaurantSettingName}} Restaurant Management System &mdash; All rights reserved.
+      &copy; {{ date('Y') }} {{ $restaurantSettingName }} Restaurant Management System &mdash; All rights reserved.
     </div>
     <div class="progga-footer-links">
         @can('dashboard-view')

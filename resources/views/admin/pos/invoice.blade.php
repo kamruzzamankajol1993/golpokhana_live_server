@@ -489,7 +489,7 @@
     </div><div class="bill-footer">
       {{-- <div class="bill-thankyou">✦ Thank You ✦</div> --}}
       <div class="bill-footer-links" style="font-size: 10px;">
-        {!! nl2br(e($invoiceSettingFooterNote ?? ("Tech Partner — " . $restaurantSettingName . "\nVisit our website to know more!"))) !!}
+        {!! nl2br(e($invoiceSettingFooterNote ?? "Tech Partner — {$restaurantSettingName}\nVisit our website to know more!")) !!}
       </div>
       <div class="bill-partner">::::::::::::::::::::::::::::::::::::::::::::</div>
     </div>
