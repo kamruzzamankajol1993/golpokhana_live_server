@@ -163,7 +163,7 @@ button { font-family: var(--font); }
 }
 
 .progga-brand-logo {
-  width: 50px; 
+  width: 50px;
   height: 50px;
   display: flex; align-items: center; justify-content: center;
   font-size: 17px; font-weight: 900;
@@ -542,6 +542,49 @@ button { font-family: var(--font); }
 .progga-stat-change.up   { color: var(--progga-success); }
 .progga-stat-change.down { color: var(--progga-danger); }
 .progga-stat-change.neutral { color: var(--progga-text-muted); }
+
+
+/* Dashboard top stat cards: keep all cards the same height regardless of text length */
+.dashboard-stat-row > [class*="col-"] {
+  display: flex;
+}
+.dashboard-stat-row .progga-stat-card {
+  width: 100%;
+  height: 112px;
+}
+.dashboard-stat-row .progga-stat-info {
+  overflow: hidden;
+}
+.dashboard-stat-row .progga-stat-label,
+.dashboard-stat-row .progga-stat-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashboard-stat-row .progga-stat-change {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Order List top stat cards: keep all four cards the same height */
+.order-stat-row > [class*="col-"] {
+  display: flex;
+}
+.order-stat-row .progga-stat-card {
+  width: 100%;
+  height: 112px;
+}
+.order-stat-row .progga-stat-info {
+  min-width: 0;
+  overflow: hidden;
+}
+.order-stat-row .progga-stat-label,
+.order-stat-row .progga-stat-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── Badges ── */
 .progga-badge {
@@ -2187,18 +2230,25 @@ button { font-family: var(--font); }
 
 /* ── Order type pill ── */
 .pos-type-wrap {
+  width: 100%;
   background: var(--progga-bg-white); border-radius: 10px;
   border: 1.5px solid var(--progga-border); overflow: hidden;
+  gap: 0;
 }
 .pos-type-wrap input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
 .pos-type-wrap label {
-  flex: 1; text-align: center; padding: 10px 16px;
+  flex: 1 1 0; min-width: 0; text-align: center; padding: 10px 10px;
   font-weight: 700; font-size: 13px; cursor: pointer;
   transition: all .15s; display: flex; align-items: center; justify-content: center;
-  gap: 7px; color: var(--progga-text-muted); background: transparent;
+  gap: 6px; color: var(--progga-text-muted); background: transparent;
+  white-space: nowrap; overflow: hidden;
 }
+.pos-type-wrap label + label { border-left: 1px solid var(--progga-border-light); }
+.pos-type-wrap label i { flex: 0 0 auto; }
+.pos-type-wrap label span { min-width: 0; }
 .pos-type-wrap:has(#posTypeDineIn:checked) label[for="posTypeDineIn"],
-.pos-type-wrap:has(#posTypeTakeaway:checked) label[for="posTypeTakeaway"] {
+.pos-type-wrap:has(#posTypeTakeaway:checked) label[for="posTypeTakeaway"],
+.pos-type-wrap:has(#posTypeDelivery:checked) label[for="posTypeDelivery"] {
   background: var(--progga-primary); color: var(--progga-secondary);
 }
 
@@ -2279,7 +2329,7 @@ button { font-family: var(--font); }
     min-width: auto !important; width: auto !important;
     padding: 7px 14px !important; gap: 7px;
     border-radius: 20px !important; border-bottom: none !important;
-    border: 1.5px solid var(--progga-border); background: var(--progga-bg-white);
+    border: 1.5px solid var(--progga-border); background: var(--progga-bg);
   }
   .progga-pos-cat-item.active {
     background: var(--progga-primary) !important;
@@ -2292,6 +2342,12 @@ button { font-family: var(--font); }
     display: block !important; overflow: visible !important;
     -webkit-line-clamp: unset !important;
     line-clamp: unset !important;
+  }
+  .progga-pos-cat-item:not(.active) .progga-pos-cat-name {
+    color: var(--progga-primary) !important;
+  }
+  .progga-pos-cat-item.active .progga-pos-cat-name {
+    color: var(--progga-secondary) !important;
   }
 
   /* Food panel */
@@ -2369,6 +2425,13 @@ button { font-family: var(--font); }
   .progga-pos-table-card { min-height: 150px; padding: 16px 12px 14px; }
   .progga-pos-food-grid  { grid-template-columns: repeat(2, 1fr) !important; }
   #newOrderModal .modal-dialog { margin: 8px; max-width: calc(100% - 16px); }
+  #newOrderModal .modal-body { padding: 18px 14px !important; }
+  #newOrderModal .pos-type-wrap { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #newOrderModal .pos-type-wrap label {
+    width: 100%; min-width: 0; padding: 11px 4px; gap: 4px;
+    font-size: 11.5px; line-height: 1.15; white-space: nowrap;
+  }
+  #newOrderModal .pos-type-wrap label i { font-size: 14px; }
   #newOrderModal .row > [class*="col-"] { flex: 0 0 100%; max-width: 100%; }
   #paymentModal .col-md-5,
   #paymentModal .col-md-7 { flex: 0 0 100%; max-width: 100%; }

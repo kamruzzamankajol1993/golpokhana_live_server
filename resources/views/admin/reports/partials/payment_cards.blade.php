@@ -10,7 +10,7 @@
 @foreach($paymentRows as $row)
 <div class="col-md-3">
     <div class="payment-card" style="border:1px solid var(--progga-border-light); border-radius:14px; padding:18px; background:#fff;">
-        <div class="payment-card-label" style="font-size:12px; font-weight:800; color:#888;">{{ $row['label'] }}</div>
+        <div class="payment-card-label" style="font-size:12px; font-weight:800; color:#888;">{{ in_array($row['label'], ['Mobile Banking', 'Mobile Banking / MFC', 'Mobile Banking / MFS'], true) ? 'MFS' : $row['label'] }}</div>
         <div class="payment-card-amount" style="font-size:22px; font-weight:900; color:var(--progga-primary);">৳{{ number_format($row['amount'], 2) }}</div>
         <div class="payment-card-meta" style="display:flex; justify-content:space-between; font-size:11px; margin-top:5px; color:#666;">
             <span>{{ $row['orders_count'] }} order(s)</span>

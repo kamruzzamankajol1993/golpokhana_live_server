@@ -18,6 +18,13 @@
         <div class="alert alert-success" style="font-size:13px;"><i class="bi bi-check-circle-fill me-2"></i>{{ session('success') }}</div>
     @endif
 
+    @if(session('error'))
+        <div class="alert alert-danger" style="font-size:13px;"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ session('error') }}</div>
+    @endif
+    @if($errors->any())
+        <div class="alert alert-danger" style="font-size:13px;"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ $errors->first() }}</div>
+    @endif
+
     <div class="progga-tab-nav">
         <div class="progga-tab-item active" data-settings-tab="restaurant">Restaurant Info</div>
         <div class="progga-tab-item" data-settings-tab="tax">Tax &amp; Billing</div>
@@ -72,6 +79,18 @@
                                 <div class="col-12"><div class="progga-form-group"><label class="progga-form-label">Address</label><textarea name="address" class="progga-form-control progga-form-textarea" rows="2">{{ $restaurant->address ?? '' }}</textarea></div></div>
                                 <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Opening Time</label><input type="time" name="opening_time" class="progga-form-control" value="{{ $restaurant->opening_time ?? '08:00' }}"></div></div>
                                 <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Closing Time</label><input type="time" name="closing_time" class="progga-form-control" value="{{ $restaurant->closing_time ?? '23:00' }}"></div></div>
+                                <div class="col-md-6">
+                                    <div class="progga-form-group">
+                                        <label class="progga-form-label">POS Action Password</label>
+                                        <div style="position: relative;">
+                                            <input type="password" id="posActionPassword" name="pos_action_password" class="progga-form-control" value="" autocomplete="new-password" style="padding-right: 44px;" placeholder="{{ !empty($restaurant->pos_action_password) ? 'Password already set — enter only to change' : 'Set POS action password' }}">
+                                            <button type="button" id="togglePosActionPassword" aria-label="Show password" title="Show password" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); border:0; background:transparent; padding:4px; line-height:1; cursor:pointer;">
+                                                <i class="bi bi-eye" id="posActionPasswordIcon"></i>
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">Required for complimentary actions and deleting original food already saved on an order. New/unsaved cart food and food added through Add More can be removed without a password. Leave blank to keep the current password.</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -89,7 +108,7 @@
                             <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Changes</button>
                         </div>
                     </div>
-                </form>
+</form>
             </div>
         </div>
     </div>
@@ -216,6 +235,35 @@
                 </form>
             </div>
         </div>
+
+        @if(auth()->user()->hasRole('Super Admin'))
+        <div class="progga-card mt-3" style="border:1px solid rgba(220,53,69,.35);">
+            <div class="progga-card-header">
+                <div class="progga-card-title" style="color:#b02a37;"><i class="bi bi-trash3 me-2"></i>POS Transaction Data Cleanup</div>
+            </div>
+            <div class="progga-card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-lg-8">
+                        <p class="mb-2" style="font-size:13px;"><strong>Clear all POS transaction data and reset table status.</strong></p>
+                        <small class="text-muted d-block">
+                            Clears Orders, Order Details, KOT, Delete History, Due Payments, order-linked Reviews, POS Sessions and Table Bookings.
+                            All restaurant table statuses are reset to Available. Customers, menu items, users, waiters and other master/settings data are not deleted.
+                        </small>
+                    </div>
+                    <div class="col-lg-4 text-lg-end">
+                        <button type="button" id="clearPosTransactionDataButton" class="progga-btn" style="background:#dc3545;color:#fff;border-color:#dc3545;">
+                            <i class="bi bi-trash3"></i> Clear POS Transaction Data
+                        </button>
+                    </div>
+                </div>
+
+                <form id="clearPosTransactionDataForm" action="{{ route('settings.pos.clear-transactions') }}" method="POST" style="display:none;">
+                    @csrf
+                    <input type="hidden" name="confirmation" id="clearPosTransactionConfirmation" value="">
+                </form>
+            </div>
+        </div>
+        @endif
     </div>
 
     <div id="settingsRoles" style="display:none;">
@@ -365,6 +413,72 @@
         randomHalfButtonVisibilityToggle.addEventListener('change', function () {
             var label = document.getElementById('randomHalfOrderButtonVisibleLabel');
             if (label) label.textContent = randomHalfButtonVisibilityToggle.checked ? 'On' : 'Off';
+        });
+    }
+
+    // POS Action Password show/hide toggle
+    var posActionPasswordInput = document.getElementById('posActionPassword');
+    var posActionPasswordToggle = document.getElementById('togglePosActionPassword');
+    var posActionPasswordIcon = document.getElementById('posActionPasswordIcon');
+
+    if (posActionPasswordInput && posActionPasswordToggle) {
+        posActionPasswordToggle.addEventListener('click', function () {
+            var willShow = posActionPasswordInput.type === 'password';
+            posActionPasswordInput.type = willShow ? 'text' : 'password';
+            posActionPasswordToggle.setAttribute('aria-label', willShow ? 'Hide password' : 'Show password');
+            posActionPasswordToggle.setAttribute('title', willShow ? 'Hide password' : 'Show password');
+
+            if (posActionPasswordIcon) {
+                posActionPasswordIcon.classList.toggle('bi-eye', !willShow);
+                posActionPasswordIcon.classList.toggle('bi-eye-slash', willShow);
+            }
+        });
+    }
+
+    var clearPosDataButton = document.getElementById('clearPosTransactionDataButton');
+    var clearPosDataForm = document.getElementById('clearPosTransactionDataForm');
+    var clearPosDataConfirmation = document.getElementById('clearPosTransactionConfirmation');
+
+    if (clearPosDataButton && clearPosDataForm && clearPosDataConfirmation) {
+        clearPosDataButton.addEventListener('click', function () {
+            var confirmationText = 'CLEAR POS DATA';
+
+            if (!window.Swal) {
+                var typed = window.prompt(
+                    'This permanently clears POS transaction data and resets table status. Type ' + confirmationText + ' to continue.'
+                );
+                if (typed === confirmationText) {
+                    clearPosDataConfirmation.value = confirmationText;
+                    clearPosDataForm.submit();
+                } else if (typed !== null) {
+                    window.alert('Cleanup cancelled. Confirmation text did not match.');
+                }
+                return;
+            }
+
+            Swal.fire({
+                icon: 'warning',
+                title: 'Clear POS Transaction Data?',
+                html: 'This action cannot be undone.<br><br>Type <strong>' + confirmationText + '</strong> to continue.',
+                input: 'text',
+                inputPlaceholder: confirmationText,
+                showCancelButton: true,
+                confirmButtonText: 'Clear Data',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc3545',
+                focusCancel: true,
+                inputValidator: function (value) {
+                    if (value !== confirmationText) {
+                        return 'Please type ' + confirmationText + ' exactly.';
+                    }
+                }
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+                clearPosDataConfirmation.value = confirmationText;
+                clearPosDataButton.disabled = true;
+                clearPosDataButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Clearing...';
+                clearPosDataForm.submit();
+            });
         });
     }
 

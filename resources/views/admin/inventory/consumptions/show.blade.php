@@ -1,0 +1,7 @@
+@extends('admin.master.master')
+@section('title','Order Consumption')
+@section('body')
+<main class="progga-content"><div class="progga-page-header"><div><h1 class="progga-page-title">Order {{ $consumption->order?->order_number ?: '#'.$consumption->order_id }}</h1><p class="text-muted mb-0">Consumed by {{ str_replace('_',' ',$consumption->trigger_source) }} · {{ $consumption->consumed_at?->format('d M Y h:i A') }}</p></div><a href="{{ route('inventory.consumptions.index') }}" class="progga-btn progga-btn-outline">Back</a></div>
+<div class="alert alert-info">This consumption is immutable. @if($consumption->stockMovement) Ledger movement: <strong>{{ $consumption->stockMovement->movement_no }}</strong>. @else No inventory-tracked recipe rows were available for deduction. @endif</div>
+<div class="progga-card"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Order Item</th><th>Menu Item</th><th>Recipe Version</th><th>Ingredient</th><th>Base Quantity</th></tr></thead><tbody>@forelse($consumption->items as $item)<tr><td>#{{ $item->order_item_id }}</td><td>{{ $item->foodItem?->name }}</td><td>v{{ $item->recipe_version_no }}</td><td>{{ $item->ingredient?->name }}</td><td class="fw-semibold">{{ rtrim(rtrim((string)$item->quantity_base,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</td></tr>@empty<tr><td colspan="5" class="text-center text-muted py-4">No tracked ingredient rows.</td></tr>@endforelse</tbody></table></div></div></main>
+@endsection

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Order extends Model
 {
@@ -17,6 +18,10 @@ class Order extends Model
         parent::boot();
 
         static::creating(function ($order) {
+            if (empty($order->feedback_token)) {
+                $order->feedback_token = Str::random(48);
+            }
+
             // ডাটাবেজ থেকে ইনভয়েস সেটিং নিয়ে আসা
             $invoiceSetting = \App\Models\InvoiceSetting::first();
 
@@ -42,6 +47,83 @@ class Order extends Model
     // ==========================================
     // রিলেশনশিপস (Relationships)
     // ==========================================
+
+    public function deliveryPartner()
+    {
+        return $this->belongsTo(\App\Models\DeliveryPartner::class, "delivery_partner_id");
+    }
+
+    /**
+     * Resolve the delivery partner name for both the current ID-based field and
+     * older orders that still keep a partner key/ID in `delivery_partner`.
+     */
+    public function getDeliveryPartnerDisplayNameAttribute(): ?string
+    {
+        $partner = $this->relationLoaded('deliveryPartner') ? $this->getRelation('deliveryPartner') : null;
+
+        if (!$partner && !empty($this->attributes['delivery_partner_id'] ?? null)) {
+            $partner = $this->deliveryPartner()->first();
+        }
+
+        if ($partner) {
+            return (string) $partner->name;
+        }
+
+        $raw = trim((string) ($this->attributes['delivery_partner'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (ctype_digit($raw)) {
+            $name = \App\Models\DeliveryPartner::query()->whereKey((int) $raw)->value('name');
+            if ($name) {
+                return (string) $name;
+            }
+        }
+
+        $legacyLabels = [
+            'inhouse' => 'In-house Delivery',
+            'foodpanda' => 'Foodpanda',
+            'foodi' => 'Foodi',
+            'pathao_food' => 'Pathao Food',
+        ];
+
+        return $legacyLabels[$raw] ?? $raw;
+    }
+
+    /**
+     * Resolve the selected delivery partner ID, including numeric legacy rows.
+     */
+    public function getResolvedDeliveryPartnerIdAttribute(): ?int
+    {
+        $partnerId = (int) ($this->attributes['delivery_partner_id'] ?? 0);
+        if ($partnerId > 0) {
+            return $partnerId;
+        }
+
+        $raw = trim((string) ($this->attributes['delivery_partner'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (ctype_digit($raw)) {
+            return (int) $raw;
+        }
+
+        $legacyLabels = [
+            'inhouse' => 'In-house Delivery',
+            'foodpanda' => 'Foodpanda',
+            'foodi' => 'Foodi',
+            'pathao_food' => 'Pathao Food',
+        ];
+        $partnerName = $legacyLabels[$raw] ?? $raw;
+
+        $resolved = \App\Models\DeliveryPartner::query()
+            ->whereRaw('LOWER(TRIM(name)) = ?', [strtolower(trim($partnerName))])
+            ->value('id');
+
+        return $resolved ? (int) $resolved : null;
+    }
 
     public function customer()
     {
@@ -74,6 +156,11 @@ class Order extends Model
         return $this->belongsTo(Waiter::class, 'waiter_id');
     }
 
+    public function tableBooking()
+    {
+        return $this->belongsTo(TableBooking::class, 'table_booking_id');
+    }
+
     public function review()
     {
         return $this->hasOne(Review::class);
@@ -83,4 +170,17 @@ class Order extends Model
     {
         return $this->hasMany(OrderDuePayment::class)->orderByDesc('paid_at')->orderByDesc('id');
     }
+    public function ensureFeedbackToken(): string
+    {
+        if (empty($this->feedback_token)) {
+            do {
+                $token = Str::random(48);
+            } while (self::where('feedback_token', $token)->exists());
+
+            $this->forceFill(['feedback_token' => $token])->saveQuietly();
+        }
+
+        return (string) $this->feedback_token;
+    }
+
 }

@@ -164,6 +164,9 @@
       <div class="pos-cart-info" id="posCartMeta">
         <div class="pos-ci-row1">
           <span class="pos-ci-type" id="metaType">Dine-In</span>
+          <span id="metaDeliveryPartner" style="display:none; margin-left:10px; font-size:12px; font-weight:800;">
+            <i class="bi bi-truck"></i> Delivery Partner: <span id="metaDeliveryPartnerName">—</span>
+          </span>
         </div>
         <div class="pos-ci-row2">
           <div class="pos-ci-customer">

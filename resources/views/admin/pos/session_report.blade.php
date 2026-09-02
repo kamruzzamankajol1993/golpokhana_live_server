@@ -11,6 +11,7 @@
       --mono: 'Courier New', Courier, monospace;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .receipt-card, .receipt-card * { font-weight: 700 !important; }
     body {
       font-family: 'Segoe UI', system-ui, sans-serif;
       background: #e0e0e0;
@@ -33,13 +34,22 @@
     .dashed-line { border-top: 1px dashed #000; margin: 10px 0; }
     .report-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
     .report-table td, .report-table th { padding: 4px 0; }
+    .report-table td, .report-table td * {   font-weight: 900 !important; }
     .report-table th { text-align: left; border-bottom: 1px dotted #000; font-size: 12px; }
     .text-end { text-align: right !important; }
     .fw-bold { font-weight: bold; }
     .footer { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; line-height: 1.6; }
     @media print {
-      body { background: none; padding: 0; }
+      body { background: none;    font-weight: 900 !important; padding: 0; }
       .receipt-card { box-shadow: none; width: 100%; max-width: 320px; margin: 0 auto; }
+      .receipt-card,
+      .receipt-card * {
+          font-weight: 900 !important;
+      }
+      .report-table td,
+      .report-table td * {
+          font-weight: 900 !important;
+      }
       .no-print { display: none; }
     }
     .print-btn {
@@ -52,7 +62,7 @@
   <button class="print-btn no-print" onclick="window.print()">Print Report</button>
 
   <div class="receipt-card">
-    <div class="text-center">
+    <div class="text-center"  style="font-weight: 900 !important;">
         <div class="header-title">Work Period Report To Print- {{ $session->id }}</div>
         <div class="header-sub">Period: {{ $session->start_time->format('d M Y H:i') }} - {{ $session->end_time ? $session->end_time->format('d M Y H:i') : 'Running' }}</div>
         <div class="header-sub fw-bold" style="margin-top: 5px; font-size: 13px;">Work Period Closing Report</div>
@@ -69,7 +79,7 @@
         $totalIncome = array_sum($incomeRows);
     @endphp
 
-    <div class="meta-section">
+    <div class="meta-section" style="font-weight: 900 !important;">
         <div>Date Range: {{ $session->start_time->format('d M Y H:i') }} To {{ $session->end_time ? $session->end_time->format('d M Y H:i') : 'Now' }}</div>
         <div>{{ $restaurant->address ?? 'Plot#08, Road#111, Gulshan 2, Dhaka 1212, Bangladesh' }}</div>
         <div>VAT Reg No: {{ $vatRegistrationNo }}</div>
@@ -81,9 +91,15 @@
 
     <table class="report-table">
         <tr>
-            <td>SALES TOTAL</td>
+            <td>Outlet Sales</td>
             <td class="text-end fw-bold">{{ round($salesSummary['sales_total'] ?? $session->sales_total ?? 0) }}</td>
         </tr>
+        @foreach(($deliveryPartnerIncome ?? []) as $partner)
+        <tr>
+            <td>{{ $partner['name'] }}</td>
+            <td class="text-end fw-bold">{{ round($partner['amount']) }}</td>
+        </tr>
+        @endforeach
         <tr>
             <td>Product Discount</td>
             <td class="text-end">{{ round($salesSummary['product_discount'] ?? 0) }}</td>
@@ -105,16 +121,47 @@
             <td class="text-end">{{ round($salesSummary['vat_total'] ?? $session->vat_total ?? 0) }}</td>
         </tr>
         <tr class="fw-bold" style="font-size: 14px;">
-            <td style="padding-top: 8px;">GRAND TOTAL</td>
+            <td style="padding-top: 8px;">Total Sales</td>
             <td class="text-end" style="padding-top: 8px;">{{ round($salesSummary['grand_total'] ?? $session->grand_total ?? 0) }}</td>
         </tr>
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Incomes</div>
+    <div class="section-title">Advance &amp; Complimentary</div>
 
     <table class="report-table">
-        @foreach(['Cash' => 'Cash', 'Card' => 'Card', 'MFC' => 'MFS'] as $methodKey => $methodLabel)
+        <tr>
+            <td>Complimentary</td>
+            <td class="text-end fw-bold">{{ round($closingExtraSummary['complimentary'] ?? 0) }}</td>
+        </tr>
+        {{-- Due is intentionally hidden from the Session Report PDF.
+        <tr>
+            <td>Due</td>
+            <td class="text-end fw-bold">{{ round($closingExtraSummary['due'] ?? 0) }}</td>
+        </tr>
+        --}}
+        <tr>
+            <td>Customer Advance</td>
+            <td class="text-end fw-bold">{{ round($customerAdvance ?? 0) }}</td>
+        </tr>
+    </table>
+
+    <div class="dashed-line"></div>
+    <div class="section-title">Due</div>
+
+    <table class="report-table">
+        <tr><td>Customer Due (Dine In)</td><td class="text-end fw-bold">{{ round($closingExtraSummary['due'] ?? 0) }}</td></tr>
+        @foreach(($deliveryPartnerDue ?? []) as $partnerDue)
+        <tr><td>{{ $partnerDue['name'] }} Due</td><td class="text-end fw-bold">{{ round($partnerDue['due']) }}</td></tr>
+        @endforeach
+        <tr><td>Total Due</td><td class="text-end fw-bold">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
+    </table>
+
+    <div class="dashed-line"></div>
+    <div class="section-title">Collection Methods</div>
+
+    <table class="report-table">
+        @foreach(['Cash' => 'Cash', 'Card' => 'Bank / Card', 'MFC' => 'MFS'] as $methodKey => $methodLabel)
             @php
                 $amount = (float) ($incomeRows[$methodKey] ?? 0);
                 $percentage = $totalIncome > 0 ? ($amount / $totalIncome) * 100 : 0;
@@ -125,26 +172,17 @@
             </tr>
         @endforeach
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px dotted #000;">
-            <td style="padding-top: 8px;">TOTAL INCOME</td>
+            <td style="padding-top: 8px;">Total collection</td>
             <td class="text-end" style="padding-top: 8px;">{{ round($totalIncome) }}</td>
         </tr>
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Customer Due / Advance</div>
-
-    <table class="report-table">
-        <tr><td>Customer Due / Advance Collection Cash</td><td class="text-end">-</td></tr>
-        <tr><td>Customer Due / Advance Collection Card</td><td class="text-end">-</td></tr>
-        <tr><td>Customer Due / Advance Collection MFS</td><td class="text-end">-</td></tr>
-    </table>
-
-    <div class="dashed-line"></div>
-    <div class="section-title">Department Income</div>
+    <div class="section-title">Sales Type</div>
 
     <table class="report-table">
         <thead>
-            <tr><th>Department Name</th><th class="text-end">Income</th></tr>
+            <tr><th>Department</th><th class="text-end">Amount</th></tr>
         </thead>
         <tbody>
             <tr><td>Dine In</td><td class="text-end fw-bold">{{ round($departmentIncome['dine_in'] ?? 0) }}</td></tr>
@@ -154,9 +192,9 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="text-center fw-bold" style="font-family: var(--mono); font-size: 13px; margin: 10px 0;">Cash &amp; Card Summary</div>
+    <div class="text-center fw-bold" style="font-family: var(--mono); font-size: 13px; margin: 10px 0;">Cash &amp; Bank / Card Summary</div>
 
-    <div class="footer">
+    <div class="footer" style="font-weight: 900 !important;">
         <div>*** This is computer generated report and does not require any signature</div>
         <div style="margin-top: 5px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
     </div>

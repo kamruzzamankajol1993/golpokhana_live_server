@@ -3,14 +3,8 @@
 
 @section('body')
 @php
-    $deliveryPartnerLabels = [
-        'inhouse' => 'In-house Delivery',
-        'foodpanda' => 'Foodpanda',
-        'foodi' => 'Foodi',
-        'pathao_food' => 'Pathao Food',
-    ];
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
-    $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+    $deliveryPartnerName = $order->delivery_partner_display_name ?: 'Not selected';
 @endphp
 <main class="progga-content">
     <div class="progga-page-header d-flex justify-content-between align-items-center mb-4">
@@ -47,7 +41,7 @@
                 <p class="mb-2" style="font-size: 14px;"><strong>Status:</strong> <span class="badge bg-primary px-2 py-1">{{ $order->status }}</span></p>
                 <p class="mb-2" style="font-size: 14px;"><strong>Order Type:</strong> {{ $order->order_type }}</p>
                 @if($isDeliveryOrder)
-                    <p class="mb-2" style="font-size: 14px;"><strong>Delivery Partner:</strong> <span class="badge bg-warning text-dark px-2 py-1">{{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span></p>
+                    <p class="mb-2" style="font-size: 14px;"><strong>Delivery Partner:</strong> <span class="badge bg-warning text-dark px-2 py-1">{{ $deliveryPartnerName }}</span></p>
                     <p class="mb-2" style="font-size: 14px;"><strong>Table:</strong> N/A</p>
                 @else
                     <p class="mb-2" style="font-size: 14px;"><strong>Table:</strong> {{ $order->table->table_number ?? 'Takeaway' }}</p>
@@ -70,7 +64,7 @@
         <div class="col-md-4">
             <div class="progga-card h-100 p-4" style="border-top: 4px solid var(--progga-success);">
                 <h5 class="mb-3" style="font-weight: 800; color: var(--progga-primary);"><i class="bi bi-credit-card me-2"></i> Payment Info</h5>
-                <p class="mb-2" style="font-size: 14px;"><strong>Method:</strong> <span class="badge bg-secondary px-2 py-1">{{ $order->payment_type }}</span></p>
+                <p class="mb-2" style="font-size: 14px;"><strong>Method:</strong> <span class="badge bg-secondary px-2 py-1">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : $order->payment_type }}</span></p>
                 <p class="mb-2" style="font-size: 14px;"><strong>Trx ID:</strong> {{ $order->transaction_id ?? 'N/A' }}</p>
                 @if(!empty($order->payment_remark))
                     <p class="mb-2" style="font-size: 14px;"><strong>Remark:</strong> {{ $order->payment_remark }}</p>
@@ -91,8 +85,8 @@
                     <div class="mt-3 p-2" style="background: rgba(33, 53, 42, 0.05); border-radius: 6px; font-size: 13px; border: 1px dashed var(--progga-border);">
                         <strong style="color: var(--progga-primary);">Split Breakdown:</strong><br>
                         Cash: <span style="font-weight:700;">৳{{ number_format($order->paid_in_cash, 0) }}</span> <br>
-                        Card: <span style="font-weight:700;">৳{{ number_format($order->paid_in_card, 0) }}</span> <br>
-                        Card Ref: <span style="font-weight:700;">{{ $order->split_card_reference ?? 'N/A' }}</span> <br>
+                        Bank / Card: <span style="font-weight:700;">৳{{ number_format($order->paid_in_card, 0) }}</span> <br>
+                        Bank / Card Ref: <span style="font-weight:700;">{{ $order->split_card_reference ?? 'N/A' }}</span> <br>
                         MFS: <span style="font-weight:700;">৳{{ number_format($order->paid_in_mfc, 0) }}</span> <br>
                         MFS Ref: <span style="font-weight:700;">{{ $order->split_mfs_reference ?? 'N/A' }}</span>
                     </div>
@@ -280,7 +274,7 @@
                         <tr>
                             <td>{{ optional($duePayment->paid_at)->format('d M Y, h:i A') }}</td>
                             <td class="text-end fw-bold text-success">৳{{ number_format($duePayment->amount, 0) }}</td>
-                            <td><span class="badge bg-secondary">{{ $duePayment->payment_type }}</span></td>
+                            <td><span class="badge bg-secondary">{{ ($duePayment->payment_type ?? '') === 'Card' ? 'Bank / Card' : $duePayment->payment_type }}</span></td>
                             <td>{{ $duePayment->transaction_reference ?: '—' }}</td>
                             <td>{{ optional($duePayment->user)->name ?? 'System/User #' . ($duePayment->received_by ?? '—') }}</td>
                             <td class="text-end">৳{{ number_format($duePayment->due_before, 0) }}</td>
@@ -317,7 +311,7 @@
                         <label class="form-label fw-bold">Payment Method</label>
                         <select name="payment_type" id="duePaymentType" class="form-control" required>
                             <option value="Cash" {{ old('payment_type', 'Cash') === 'Cash' ? 'selected' : '' }}>Cash</option>
-                            <option value="Card" {{ old('payment_type') === 'Card' ? 'selected' : '' }}>Card</option>
+                            <option value="Card" {{ old('payment_type') === 'Card' ? 'selected' : '' }}>Bank / Card</option>
                             <option value="Mobile Banking" {{ old('payment_type') === 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
                         </select>
                     </div>
@@ -355,7 +349,7 @@
         const needsReference = type.value === 'Card' || type.value === 'Mobile Banking';
         box.style.display = needsReference ? 'block' : 'none';
         input.required = needsReference;
-        if (label) label.textContent = type.value === 'Card' ? 'Card Reference Number' : 'MFS Reference Number';
+        if (label) label.textContent = type.value === 'Card' ? 'Bank / Card Reference Number' : 'MFS Reference Number';
         if (!needsReference) input.value = '';
     }
 

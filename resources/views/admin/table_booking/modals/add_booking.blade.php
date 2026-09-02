@@ -125,6 +125,29 @@
                 </select>
               </div>
             </div>
+            <div class="col-md-4">
+              <div class="progga-form-group">
+                <label class="progga-form-label">Advance Amount</label>
+                <input type="number" step="0.01" name="advance_amount" class="progga-form-control" id="advance_amount" placeholder="0.00">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="progga-form-group">
+                <label class="progga-form-label">Payment Method</label>
+                <select name="advance_payment_method" class="progga-select">
+                  <option value="">Select</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Card">Bank / Card</option>
+                  <option value="MFS">MFS</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="progga-form-group">
+                <label class="progga-form-label">Reference Number</label>
+                <input type="text" name="advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
+              </div>
+            </div>
             <div class="col-12">
               <div class="progga-form-group">
                 <label class="progga-form-label">Special Requests</label>

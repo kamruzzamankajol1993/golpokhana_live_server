@@ -15,6 +15,7 @@ class PosSession extends Model
         'user_id',
         'weekday',
         'start_time',
+        'last_activity_at',
         'end_time',
         'duration',
         'status',
@@ -27,6 +28,7 @@ class PosSession extends Model
 
     protected $casts = [
         'start_time' => 'datetime',
+        'last_activity_at' => 'datetime',
         'end_time' => 'datetime',
         'incomes_summary' => 'array', // JSON ডেটাকে অটোমেটিক Array-তে কনভার্ট করার জন্য
     ];

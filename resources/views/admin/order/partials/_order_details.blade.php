@@ -1,12 +1,6 @@
 @php
-    $deliveryPartnerLabels = [
-        'inhouse' => 'In-house Delivery',
-        'foodpanda' => 'Foodpanda',
-        'foodi' => 'Foodi',
-        'pathao_food' => 'Pathao Food',
-    ];
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
-    $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+    $deliveryPartnerName = $order->delivery_partner_display_name ?: 'Not selected';
 @endphp
 <div class="modal-header">
   <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Order #{{ $order->order_number }} — Details</h5>
@@ -31,7 +25,7 @@
           <div class="progga-stat-label">Table / Type</div>
           <div class="progga-stat-value" style="font-size:15px;">
             @if($isDeliveryOrder)
-              Delivery — {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}
+              Delivery — {{ $deliveryPartnerName }}
             @elseif(strtolower(trim((string) ($order->order_type ?? ''))) === 'takeaway')
               Takeaway
             @else
@@ -150,7 +144,7 @@
         @endif
       </div>
       <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
-        <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-cash me-1"></i> Paid by {{ $order->payment_type }}</span>
+        <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-cash me-1"></i> Paid by {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : $order->payment_type }}</span>
         <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-clock me-1"></i> {{ $order->created_at->format('h:i A, M d') }}</span>
       </div>
     </div>

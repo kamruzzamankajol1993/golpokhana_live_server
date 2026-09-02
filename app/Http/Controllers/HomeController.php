@@ -976,12 +976,12 @@ class HomeController extends Controller
                 ->whereBetween('created_at', [$todayWindow['start'], $todayWindow['end']])
                 ->count();
 
-            // Non-super-admin dashboard pending amount uses the same configured business-day window.
-            // Only orders whose current order status is exactly Pending are included.
+            // Pending Amount is the total order value of Pending orders in the active business day.
+            // The same metric is shown to Super Admin and other dashboard users.
             $todayPendingAmount = OrderVisibility::constrain(Order::query(), $todayVisibleIds)
                 ->whereBetween('created_at', [$todayWindow['start'], $todayWindow['end']])
                 ->where('status', 'Pending')
-                ->sum('due');
+                ->sum('grand_total');
 
             $todayBusinessWindowLabel = $todayWindow['start']->format('h:i A')
                 . ' - ' . $todayWindow['end']->format('h:i A');

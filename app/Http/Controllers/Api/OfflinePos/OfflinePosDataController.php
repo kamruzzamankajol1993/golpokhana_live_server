@@ -623,7 +623,7 @@ class OfflinePosDataController extends Controller
 
         return [
             ['server_id' => 1, 'name' => 'Cash', 'code' => 'cash', 'is_active' => true, 'requires_transaction_id' => false, 'sort_order' => 1],
-            ['server_id' => 2, 'name' => 'Card', 'code' => 'card', 'is_active' => true, 'requires_transaction_id' => true, 'sort_order' => 2],
+            ['server_id' => 2, 'name' => 'Bank / Card', 'code' => 'card', 'is_active' => true, 'requires_transaction_id' => true, 'sort_order' => 2],
             ['server_id' => 3, 'name' => 'Mobile Banking', 'code' => 'mobile_banking', 'is_active' => true, 'requires_transaction_id' => true, 'sort_order' => 3],
             ['server_id' => 4, 'name' => 'Split', 'code' => 'split', 'is_active' => true, 'requires_transaction_id' => false, 'sort_order' => 4],
         ];

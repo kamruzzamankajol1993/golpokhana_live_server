@@ -32,7 +32,7 @@
   </div>
 
   <div class="progga-card" style="margin-bottom:16px;">
-      @include('admin.reports.partials.filter_component')
+      @include('admin.reports.partials.filter_component', ['showDeliveryPartnerFilter' => true])
   </div>
 
   <div class="row g-3 mb-4">
@@ -78,14 +78,16 @@
     <div class="progga-card-header">
         <div>
             <div class="progga-card-title">Delivery Order List</div>
-            <div class="progga-card-subtitle">Only Delivery orders from {{ $startDate->format('d M Y') }} to {{ $endDate->format('d M Y') }}</div>
+            <div class="progga-card-subtitle">Only Delivery orders from {{ $startDate->format('d M Y') }} to {{ $endDate->format('d M Y') }} · Partner: <strong id="deliveryPartnerLabel">{{ $selectedDeliveryPartnerLabel }}</strong></div>
         </div>
-        <button type="button"
-                class="progga-btn progga-btn-primary progga-btn-sm"
-                id="openDeliveryPdf"
-                data-pdf-url="{{ route('reports.delivery.pdf') }}">
-            <i class="bi bi-file-earmark-pdf"></i> PDF
-        </button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="progga-btn progga-btn-primary progga-btn-sm" id="openDeliveryPdf" data-pdf-url="{{ route('reports.delivery.pdf') }}">
+                <i class="bi bi-file-earmark-pdf"></i> PDF
+            </button>
+            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="downloadDeliveryExcel" data-excel-url="{{ route('reports.delivery.excel') }}" style="border-color:#198754;color:#198754;background:#f8fff9;">
+                <i class="bi bi-file-earmark-excel"></i> Excel
+            </button>
+        </div>
     </div>
 
     <div class="progga-table-wrapper report-table-wrap" style="border:none;border-radius:0;">
@@ -128,6 +130,12 @@ document.getElementById('openDeliveryPdf')?.addEventListener('click', function()
     window.open(pdfUrl, '_blank', 'noopener');
 });
 
+document.getElementById('downloadDeliveryExcel')?.addEventListener('click', function() {
+    const baseUrl = this.dataset.excelUrl;
+    const params = $('#reportFilterForm').serialize();
+    window.location.href = baseUrl + (params ? ('?' + params) : '');
+});
+
 function updateReportDOM(data) {
     document.getElementById('deliveryReportContainer').innerHTML = data.html;
     document.getElementById('deliveryReportPagination').innerHTML = data.pagination || '';
@@ -135,6 +143,7 @@ function updateReportDOM(data) {
     document.getElementById('cardCompleted').innerText = data.summary.completed;
     document.getElementById('cardValue').innerText = data.summary.value;
     document.getElementById('cardDue').innerText = data.summary.due;
+    if (data.summary.partner_label !== undefined) document.getElementById('deliveryPartnerLabel').innerText = data.summary.partner_label;
 }
 
 $(document).on('click', '#deliveryReportPagination a', function(event) {

@@ -3,16 +3,16 @@
 @endphp
 
 @if($mode === 'styles')
-body { font-family: sans-serif; font-size: 9px; color: #333333; }
+body { font-family: sans-serif; font-size: 8px; color: #333333; }
 .header { text-align: center; margin-bottom: 8px; border-bottom: 2px solid #21352a; padding-bottom: 7px; }
 .header h2 { margin: 0 0 4px 0; color: #21352a; font-size: 17px; }
 .header p { margin: 0; color: #666666; font-size: 9px; }
 .header h3 { margin: 6px 0 0 0; color: #444444; font-size: 12px; }
 .report-meta { margin-top: 4px; color: #777777; font-size: 8px; }
-.report-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-.report-table th, .report-table td { border: 1px solid #dddddd; padding: 4px 5px; vertical-align: top; }
-.report-table th { background-color: #21352a; color: #ffffff; font-size: 8px; font-weight: bold; text-align: left; }
-.report-table td { font-size: 8px; }
+.report-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
+.report-table th, .report-table td { border: 1px solid #dddddd; padding: 3px 3px; vertical-align: top; overflow-wrap: anywhere; }
+.report-table th { background-color: #21352a; color: #ffffff; font-size: 7px; font-weight: bold; text-align: left; }
+.report-table td { font-size: 7px; }
 .summary-table { width: 45%; border-collapse: collapse; margin-top: 10px; margin-left: auto; }
 .summary-table th, .summary-table td { border: 1px solid #dddddd; padding: 5px 6px; font-size: 9px; }
 .summary-table th { background-color: #f1f4f2; color: #21352a; text-align: left; }
@@ -38,21 +38,23 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
     <table class="report-table">
         <thead>
             <tr>
-                <th style="width:7%;">Order #</th>
-                <th style="width:13%;">Customer</th>
-                <th style="width:7%;" class="text-right">Subtotal</th>
-                <th style="width:6%;" class="text-right">Honored</th>
+                <th style="width:5%;">Order #</th>
+                <th style="width:12%;">Customer</th>
+                <th style="width:6%;" class="text-right">Subtotal</th>
+                <th style="width:5%;" class="text-right">Honored</th>
                 <th style="width:6%;" class="text-right">Product Discount</th>
-                <th style="width:7%;" class="text-right">Service</th>
-                <th style="width:6%;" class="text-right">Tips</th>
-                <th style="width:6%;" class="text-right">Given</th>
-                <th style="width:6%;" class="text-right">Change</th>
-                <th style="width:7%;" class="text-right">Grand</th>
-                <th style="width:8%;">Payment</th>
-                <th style="width:7%;" class="text-center">Status</th>
-                <th style="width:7%;">Date</th>
+                <th style="width:5%;" class="text-right">VAT</th>
+                <th style="width:5%;" class="text-right">Service Charge</th>
+                <th style="width:5%;" class="text-right">Tips</th>
+                <th style="width:5%;" class="text-right">Given</th>
+                <th style="width:5%;" class="text-right">Change</th>
+                <th style="width:6%;" class="text-right">Grand Total</th>
+                <th style="width:5%;" class="text-right">Due</th>
+                <th style="width:7%;">Payment</th>
+                <th style="width:6%;" class="text-center">Status</th>
+                <th style="width:6%;">Date</th>
                 <th style="width:6%;">Time</th>
-                <th style="width:6%;">KOT-Pay</th>
+                <th style="width:5%;">KOT-Pay</th>
             </tr>
         </thead>
         <tbody>
@@ -60,17 +62,19 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                 @php
                     $discountAmount = max(0, (float)($order->discount_amount ?? 0));
                     $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
+                    $vatAmount = max(0, (float)($order->vat_tax ?? 0));
                     $serviceCharge = max(0, (float)($order->service_charge ?? 0));
                     $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
                     $givenMoney = max(0, (float)($order->given_money ?? 0));
                     $changeAmount = max(0, (float)($order->change_amount ?? 0));
+                    $dueAmount = max(0, (float)($order->due ?? 0));
 
                     $orderType = strtolower(str_replace('_', '-', (string)($order->order_type ?? '')));
                     $tableText = in_array($orderType, ['takeaway', 'take-away'], true)
                         ? 'Takeaway'
                         : 'Table T-' . (optional($order->table)->table_number ?? 'N/A');
 
-                    $paymentText = $order->payment_type ?? 'N/A';
+                    $paymentText = ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A');
                     $splitText = '';
                     if ($paymentText === 'Split') {
                         $splits = [];
@@ -78,7 +82,7 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                             $splits[] = 'Cash: ' . number_format((float)$order->paid_in_cash, 0);
                         }
                         if ((float)($order->paid_in_card ?? 0) > 0) {
-                            $splits[] = 'Card: ' . number_format((float)$order->paid_in_card, 0);
+                            $splits[] = 'Bank / Card: ' . number_format((float)$order->paid_in_card, 0);
                         }
                         if ((float)($order->paid_in_mfc ?? 0) > 0) {
                             $splits[] = 'MFS: ' . number_format((float)$order->paid_in_mfc, 0);
@@ -95,11 +99,13 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                     <td class="text-right"><span class="strong">{{ number_format((float)($order->subtotal ?? 0), 0) }}</span></td>
                     <td class="text-right text-danger">{{ number_format($discountAmount, 0) }}</td>
                     <td class="text-right text-danger">{{ number_format($productDiscountAmount, 0) }}</td>
+                    <td class="text-right">{{ number_format($vatAmount, 0) }}</td>
                     <td class="text-right">{{ number_format($serviceCharge, 0) }}</td>
                     <td class="text-right text-success">{{ number_format($tipsAmount, 0) }}</td>
                     <td class="text-right">{{ number_format($givenMoney, 0) }}</td>
                     <td class="text-right text-success">{{ number_format($changeAmount, 0) }}</td>
                     <td class="text-right"><span class="strong">{{ number_format((float)($order->grand_total ?? 0), 0) }}</span></td>
+                    <td class="text-right {{ $dueAmount > 0 ? 'text-danger' : 'text-success' }}">{{ number_format($dueAmount, 0) }}</td>
                     <td>
                         {{ $paymentText }}
                         @if($splitText !== '')
@@ -145,6 +151,10 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
                 <td class="text-right">{{ number_format((float)($totals['product_discount'] ?? 0), 0) }}</td>
             </tr>
             <tr>
+                <td>Total VAT</td>
+                <td class="text-right">{{ number_format((float)($totals['vat'] ?? 0), 0) }}</td>
+            </tr>
+            <tr>
                 <td>Total Service Charge</td>
                 <td class="text-right">{{ number_format((float)($totals['service_charge'] ?? 0), 0) }}</td>
             </tr>
@@ -159,6 +169,10 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
             <tr>
                 <td>Total Change</td>
                 <td class="text-right">{{ number_format((float)($totals['change'] ?? 0), 0) }}</td>
+            </tr>
+            <tr>
+                <td>Total Due</td>
+                <td class="text-right text-danger">{{ number_format((float)($totals['due'] ?? 0), 0) }}</td>
             </tr>
             <tr>
                 <td><strong>Completed Revenue</strong></td>
@@ -180,19 +194,23 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
             'revenue' => 0,
             'discount' => 0,
             'product_discount' => 0,
+            'vat' => 0,
             'service_charge' => 0,
             'tips' => 0,
             'given' => 0,
             'change' => 0,
+            'due' => 0,
         ];
 
         foreach(($orders ?? []) as $order) {
             $discountAmount = max(0, (float)($order->discount_amount ?? 0));
             $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
+            $vatAmount = max(0, (float)($order->vat_tax ?? 0));
             $serviceCharge = max(0, (float)($order->service_charge ?? 0));
             $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
             $givenMoney = max(0, (float)($order->given_money ?? 0));
             $changeAmount = max(0, (float)($order->change_amount ?? 0));
+            $dueAmount = max(0, (float)($order->due ?? 0));
 
             if($order->status === 'Completed') {
                 $totals['subtotal'] += (float)($order->subtotal ?? 0);
@@ -201,10 +219,12 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
 
             $totals['discount'] += $discountAmount;
             $totals['product_discount'] += $productDiscountAmount;
+            $totals['vat'] += $vatAmount;
             $totals['service_charge'] += $serviceCharge;
             $totals['tips'] += $tipsAmount;
             $totals['given'] += $givenMoney;
             $totals['change'] += $changeAmount;
+            $totals['due'] += $dueAmount;
         }
     @endphp
 <!DOCTYPE html>
@@ -213,8 +233,22 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
     <meta charset="UTF-8">
     <title>Order Report</title>
     <style>{!! view('admin.order.pdf_report', ['mode' => 'styles'])->render() !!}</style>
+    @if($printMode ?? false)
+    <style>
+        @page { size: A4 landscape; margin: 8mm; }
+        .print-toolbar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:10px; }
+        .print-toolbar button { border:1px solid #cccccc; background:#ffffff; padding:7px 12px; border-radius:6px; cursor:pointer; font-weight:700; }
+        @media print { .print-toolbar { display:none !important; } }
+    </style>
+    @endif
 </head>
 <body>
+    @if($printMode ?? false)
+        <div class="print-toolbar">
+            <button type="button" onclick="window.print()">Print</button>
+            <button type="button" onclick="window.close()">Close</button>
+        </div>
+    @endif
     {!! view('admin.order.pdf_report', [
         'mode' => 'header',
         'restaurant' => $restaurant ?? null,
@@ -233,6 +267,14 @@ body { font-family: sans-serif; font-size: 9px; color: #333333; }
         'ordersCount' => $ordersCount,
         'totals' => $totals,
     ])->render() !!}
+
+    @if($printMode ?? false)
+    <script>
+        window.addEventListener('load', function () {
+            setTimeout(function () { window.print(); }, 200);
+        });
+    </script>
+    @endif
 </body>
 </html>
 @endif

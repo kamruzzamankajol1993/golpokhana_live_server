@@ -29,24 +29,47 @@
     const overlay    = document.querySelector('.progga-sidebar-overlay');
     if (!toggleBtn || !sidebar) return;
 
+    const drawerBreakpoint = 1024;
+    const navbar = document.querySelector('.progga-navbar');
+    const main = document.querySelector('.progga-main');
+
+    function isDrawerMode() {
+      return window.innerWidth <= drawerBreakpoint;
+    }
+
+    function closeDrawer() {
+      sidebar.classList.remove('open');
+      if (overlay) overlay.classList.remove('active');
+    }
+
     toggleBtn.addEventListener('click', function () {
-      const isMobile = window.innerWidth <= 768;
-      if (isMobile) {
+      if (isDrawerMode()) {
+        sidebar.classList.remove('progga-sidebar-collapsed');
+        if (navbar) navbar.classList.remove('progga-navbar-expanded');
+        if (main) main.classList.remove('progga-main-expanded');
         sidebar.classList.toggle('open');
-        if (overlay) overlay.classList.toggle('active');
+        if (overlay) overlay.classList.toggle('active', sidebar.classList.contains('open'));
       } else {
+        closeDrawer();
         sidebar.classList.toggle('progga-sidebar-collapsed');
-        document.querySelector('.progga-navbar').classList.toggle('progga-navbar-expanded');
-        document.querySelector('.progga-main').classList.toggle('progga-main-expanded');
+        if (navbar) navbar.classList.toggle('progga-navbar-expanded');
+        if (main) main.classList.toggle('progga-main-expanded');
       }
     });
 
     if (overlay) {
-      overlay.addEventListener('click', function () {
-        sidebar.classList.remove('open');
-        overlay.classList.remove('active');
-      });
+      overlay.addEventListener('click', closeDrawer);
     }
+
+    window.addEventListener('resize', function () {
+      if (isDrawerMode()) {
+        sidebar.classList.remove('progga-sidebar-collapsed');
+        if (navbar) navbar.classList.remove('progga-navbar-expanded');
+        if (main) main.classList.remove('progga-main-expanded');
+      } else {
+        closeDrawer();
+      }
+    });
   }
 
   /* ─── Active Nav Link ─── */

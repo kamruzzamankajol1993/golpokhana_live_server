@@ -364,7 +364,7 @@
                 @if($isDeliveryOrder)
                     <span><i class="bi bi-truck"></i> {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
                 @endif
-                <span><i class="bi bi-credit-card"></i> {{ $order->payment_type ?? 'N/A' }}</span>
+                <span><i class="bi bi-credit-card"></i> {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A') }}</span>
                 <span><i class="bi bi-clock"></i> {{ optional($order->created_at)->format('d M Y, h:i A') }}</span>
             </div>
         </div>
@@ -444,20 +444,42 @@
                                         $addons = json_decode($detail->addons ?? '[]', true);
                                         if (!is_array($addons)) $addons = [];
 
-                                        $addonTotal = 0;
-                                        foreach($addons as $addon) {
-                                            $addonTotal += (float) ($addon['price'] ?? 0);
-                                        }
-
-                                        $unitTotal = $lineSubtotal > 0
-                                            ? ($lineSubtotal / $oldQty)
-                                            : ((float) ($detail->price ?? 0) + $addonTotal);
-
                                         $isComplimentary = !empty($detail->is_complimentary)
                                             || ((float) ($detail->price ?? 0) <= 0 && $lineSubtotal <= 0);
-                                        $makeComplimentaryChecked = !$isComplimentary
-                                            && (bool) old('items.'.$detail->id.'.make_complimentary', false);
-                                        $previewComplimentary = $isComplimentary || $makeComplimentaryChecked;
+
+                                        $storedAddonTotal = 0;
+                                        foreach($addons as $addon) {
+                                            $storedAddonTotal += (float) ($addon['price'] ?? 0);
+                                        }
+
+                                        if ($isComplimentary) {
+                                            $food = $detail->foodItem;
+                                            $normalFoodPrice = $food
+                                                ? (float) ($food->discount_price ?? $food->base_price ?? 0)
+                                                : 0;
+                                            $currentAddons = $food ? $food->addons->keyBy('id') : collect();
+                                            $normalAddonTotal = 0;
+
+                                            foreach($addons as $addon) {
+                                                $addonId = (int) ($addon['id'] ?? 0);
+                                                if ($addonId > 0 && $currentAddons->has($addonId)) {
+                                                    $normalAddonTotal += (float) ($currentAddons->get($addonId)->price ?? 0);
+                                                } else {
+                                                    $normalAddonTotal += max(0, (float) ($addon['price'] ?? 0));
+                                                }
+                                            }
+
+                                            $unitTotal = $normalFoodPrice + $normalAddonTotal;
+                                        } else {
+                                            $unitTotal = $lineSubtotal > 0
+                                                ? ($lineSubtotal / $oldQty)
+                                                : ((float) ($detail->price ?? 0) + $storedAddonTotal);
+                                        }
+
+                                        $oldComplimentaryValue = old('items.'.$detail->id.'.make_complimentary', null);
+                                        $previewComplimentary = $oldComplimentaryValue === null
+                                            ? $isComplimentary
+                                            : filter_var($oldComplimentaryValue, FILTER_VALIDATE_BOOLEAN);
 
                                         $currentQty = max(1, (int) old('items.'.$detail->id.'.quantity', $oldQty));
                                         $productDiscountType = old('items.'.$detail->id.'.product_discount_type', $detail->product_discount_type ?: 'fixed');
@@ -467,8 +489,8 @@
                                         }
                                     @endphp
                                     <tr class="order-item-row {{ $previewComplimentary ? 'is-complimentary-preview' : '' }}"
-                                        data-unit="{{ $isComplimentary ? 0 : $unitTotal }}"
-                                        data-complimentary="{{ $isComplimentary ? 1 : 0 }}">
+                                        data-unit="{{ $unitTotal }}"
+                                        data-complimentary="{{ $previewComplimentary ? 1 : 0 }}">
                                         <td data-label="Item">
                                             <strong class="order-edit-item-name">{{ $detail->product_name }}</strong>
                                             <span class="complimentary-food-label js-complimentary-label"
@@ -511,19 +533,18 @@
                                                    class="js-order-qty"
                                                    value="{{ $currentQty }}">
                                         </td>
-                                        <td class="text-center" data-label="Convert">
-                                            @if($isComplimentary)
-                                                <span class="text-success fw-bold" style="font-size:11px;"><i class="bi bi-check-circle me-1"></i>Done</span>
-                                            @else
-                                                <label class="order-edit-complimentary-control">
-                                                    <input type="checkbox"
-                                                           name="items[{{ $detail->id }}][make_complimentary]"
-                                                           value="1"
-                                                           class="js-complimentary-toggle"
-                                                           {{ $makeComplimentaryChecked ? 'checked' : '' }}>
-                                                    <span><i class="bi bi-gift me-1"></i>Convert</span>
-                                                </label>
-                                            @endif
+                                        <td class="text-center" data-label="Complimentary">
+                                            <input type="hidden"
+                                                   name="items[{{ $detail->id }}][make_complimentary]"
+                                                   value="0">
+                                            <label class="order-edit-complimentary-control" title="Checked = complimentary, unchecked = normal food">
+                                                <input type="checkbox"
+                                                       name="items[{{ $detail->id }}][make_complimentary]"
+                                                       value="1"
+                                                       class="js-complimentary-toggle"
+                                                       {{ $previewComplimentary ? 'checked' : '' }}>
+                                                <span><i class="bi bi-gift me-1"></i>Complimentary</span>
+                                            </label>
                                         </td>
                                         <td data-label="Product Discount">
                                             <div class="order-product-discount-control">
@@ -636,7 +657,7 @@
                         <label class="form-label fw-bold" style="font-size:12px;">Payment Type</label>
                         <select name="payment_method" id="paymentMethod" class="form-control" onchange="window.syncOrderEditPaymentFields && window.syncOrderEditPaymentFields(); window.calculateOrderEditTotals && window.calculateOrderEditTotals();">
                             <option value="Cash" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Cash' ? 'selected' : '' }}>Cash</option>
-                            <option value="Card" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Card' ? 'selected' : '' }}>Card</option>
+                            <option value="Card" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Card' ? 'selected' : '' }}>Bank / Card</option>
                             <option value="Mobile Banking" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
                             <option value="Split" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Split' ? 'selected' : '' }}>Split</option>
                         </select>
@@ -651,7 +672,7 @@
                                value="{{ old('total_paid_amount', $order->total_paid_amount ?? 0) }}"
                                min="0"
                                step="0.01">
-                        <div class="payment-helper-text">Cash/Card/Mobile Banking will use this Total Paid input.</div>
+                        <div class="payment-helper-text">Cash / Bank / Card / Mobile Banking will use this Total Paid input.</div>
                     </div>
 
                     <div class="split-payment-box" id="splitPaymentBox">
@@ -661,7 +682,7 @@
                                 <input type="number" name="paid_in_cash" id="paidInCash" class="form-control split-input" value="{{ old('paid_in_cash', $order->paid_in_cash ?? 0) }}" min="0" step="0.01">
                             </div>
                             <div class="col-4">
-                                <label class="form-label fw-bold" style="font-size:11px;">Card</label>
+                                <label class="form-label fw-bold" style="font-size:11px;">Bank / Card</label>
                                 <input type="number" name="paid_in_card" id="paidInCard" class="form-control split-input" value="{{ old('paid_in_card', $order->paid_in_card ?? 0) }}" min="0" step="0.01">
                             </div>
                             <div class="col-4">
@@ -669,7 +690,7 @@
                                 <input type="number" name="paid_in_mfc" id="paidInMfc" class="form-control split-input" value="{{ old('paid_in_mfc', $order->paid_in_mfc ?? 0) }}" min="0" step="0.01">
                             </div>
                         </div>
-                        <div class="payment-helper-text">Split will use Cash + Card + Mobile Banking inputs. Total Paid will be auto-summed.</div>
+                        <div class="payment-helper-text">Split will use Cash + Bank / Card + Mobile Banking inputs. Total Paid will be auto-summed.</div>
                     </div>
 
                     <div class="mt-3 transaction-id-box" id="transactionIdBox">
@@ -679,8 +700,8 @@
                                id="transactionIdInput"
                                class="form-control"
                                value="{{ old('transaction_id', $order->transaction_id) }}"
-                               placeholder="Card auth / TXN / Reference no">
-                        <div class="payment-helper-text">This field shows only for Card or Mobile Banking payment.</div>
+                               placeholder="Bank / Card auth / TXN / Reference no">
+                        <div class="payment-helper-text">This field shows only for Bank / Card or Mobile Banking payment.</div>
                     </div>
 
                     <div class="row g-2 mt-3">
@@ -846,8 +867,7 @@
             const unit = Number(row.dataset.unit || 0);
             const qtyInput = row.querySelector('.js-order-qty');
             const complimentaryToggle = row.querySelector('.js-complimentary-toggle');
-            const isComplimentary = row.dataset.complimentary === '1'
-                || Boolean(complimentaryToggle && complimentaryToggle.checked);
+            const isComplimentary = Boolean(complimentaryToggle && complimentaryToggle.checked);
             let qty = parseInt(qtyInput.value || '1', 10);
 
             if (qty < 1 || isNaN(qty)) {

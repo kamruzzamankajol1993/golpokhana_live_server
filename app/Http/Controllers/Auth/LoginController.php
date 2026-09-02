@@ -7,8 +7,10 @@ use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\PosSession;
+use App\Models\Table;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class LoginController extends Controller
 {
@@ -22,7 +24,10 @@ class LoginController extends Controller
         $this->middleware('auth')->only('logout');
     }
 
-    // লগইনের পর রোল চেক করে POS সেশন অটোমেটিক ম্যানেজ করা হবে
+    /**
+     * Login no longer starts or replaces a POS session automatically.
+     * A user starts the work period explicitly from the POS header.
+     */
     protected function authenticated(Request $request, $user)
     {
         $employee = $user->employee;
@@ -36,41 +41,204 @@ class LoginController extends Controller
             ]);
         }
 
-        // ওয়েটার ছাড়া অন্য সব ইউজারের জন্য লগইনের সময় নতুন POS সেশন শুরু হবে
-        if (!$user->hasRole('waiter')) {
-            // আগের কোনো Open সেশন থাকলে আগে অটোমেটিক Closed করে দেওয়া হবে
+        // Login never starts a POS session. It only expires an unfinished POS
+        // session when its last activity is older than Laravel's session lifetime.
+        $this->closeTimedOutPosSessionsForUser((int) $user->id);
+
+        $unfinishedSession = PosSession::where('user_id', $user->id)
+            ->where('status', 'Open')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($unfinishedSession) {
+            // Force the choice after a fresh login even if this browser tab still
+            // happens to contain old sessionStorage from a previous page.
+            $request->session()->put('force_pos_unfinished_prompt', $unfinishedSession->id);
+        } else {
+            $request->session()->forget('force_pos_unfinished_prompt');
+        }
+
+        if ($user->hasRole('waiter')) {
+            return redirect()->route('pos.index');
+        }
+
+        return redirect()->route('home');
+    }
+
+    private function closeTimedOutPosSessionsForUser(int $userId): void
+    {
+        $now = Carbon::now('Asia/Dhaka');
+        $lifetimeMinutes = max(1, (int) config('session.lifetime', 180));
+
+        $openSessions = PosSession::where('user_id', $userId)
+            ->where('status', 'Open')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($openSessions as $session) {
+            $lastActivity = null;
+
+            if (Schema::hasColumn('pos_sessions', 'last_activity_at') && $session->last_activity_at) {
+                $lastActivity = Carbon::parse($session->last_activity_at, 'Asia/Dhaka');
+            } elseif ($session->updated_at) {
+                $lastActivity = Carbon::parse($session->updated_at, 'Asia/Dhaka');
+            } else {
+                $lastActivity = Carbon::parse($session->start_time, 'Asia/Dhaka');
+            }
+
+            $expiresAt = $lastActivity->copy()->addMinutes($lifetimeMinutes);
+            if ($now->greaterThanOrEqualTo($expiresAt)) {
+                // The close action happens at login, while the report window ends at
+                // the timeout point so hours after browser-close are not counted.
+                $this->closePosSession($session, $expiresAt);
+            }
+        }
+    }
+
+    /**
+     * Explicit logout closes the user's open POS work period(s).
+     * Closing a browser/tab is intentionally NOT treated as logout because that
+     * browser event is not reliable. In that case the open session can be resumed.
+     */
+    public function logout(Request $request)
+    {
+        $user = Auth::user();
+
+        if ($user) {
+            // Logout closes the POS work period. Only occupied tables block logout;
+            // unpaid/due bills do not block logout.
+            $blockers = $this->getPosLogoutBlockers();
+            if ($blockers['blocked']) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'logout_blocked_unsettled_pos',
+                        'message' => $blockers['message'],
+                        'occupied_table_count' => $blockers['occupied_table_count'],
+                        'pending_takeaway_delivery_count' => $blockers['pending_takeaway_delivery_count'],
+                        'pending_takeaway_delivery_order_ids' => $blockers['pending_takeaway_delivery_order_ids'],
+                        'unpaid_bill_count' => $blockers['unpaid_bill_count'],
+                    ], 409);
+                }
+
+                return back()->with('error', $blockers['message']);
+            }
+
             $openSessions = PosSession::where('user_id', $user->id)
                 ->where('status', 'Open')
                 ->orderBy('id', 'asc')
                 ->get();
 
             foreach ($openSessions as $session) {
-                $this->closePosSession($session);
+                $this->closePosSession($session, Carbon::now('Asia/Dhaka'));
             }
-
-            // তারপর নতুন সেশন শুরু হবে
-            PosSession::create([
-                'user_id' => $user->id,
-                'weekday' => Carbon::now()->format('l'),
-                'start_time' => Carbon::now(),
-                'status' => 'Open',
-            ]);
-
-            return redirect()->route('home');
         }
 
-        // ওয়েটার হলে সেশন শুরু হবে না, সরাসরি POS-এ যাবে
-        return redirect()->route('pos.index');
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/');
     }
 
-    private function closePosSession(PosSession $session): void
+    /**
+     * Prevent explicit logout only while the restaurant still has occupied tables.
+     * Unpaid/due bills are intentionally ignored. This remains server-side so a direct
+     * POST to /logout cannot bypass the occupied-table requirement.
+     */
+    private function getPosLogoutBlockers(): array
     {
-        $startTime = Carbon::parse($session->start_time);
-        $endTime = Carbon::now();
+        $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
 
-        $orders = Order::where('created_at', '>=', $startTime)
-            ->where('created_at', '<=', $endTime)
-            ->where('status', 'Completed')
+        // Existing rule: any occupied dine-in table blocks logout.
+        $activeOrderTableIds = Order::query()
+            ->whereNotNull('table_id')
+            ->whereIn('status', $activeStatuses)
+            ->pluck('table_id');
+
+        $persistedOccupiedTableIds = Table::query()
+            ->whereRaw('LOWER(TRIM(initial_status)) = ?', ['occupied'])
+            ->pluck('id');
+
+        $occupiedTableIds = $activeOrderTableIds
+            ->merge($persistedOccupiedTableIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $occupiedTables = $occupiedTableIds->isEmpty()
+            ? collect()
+            : Table::query()
+                ->whereIn('id', $occupiedTableIds->all())
+                ->orderBy('table_number')
+                ->get(['id', 'table_number']);
+
+        // New rule: today's Pending Takeaway/Delivery orders must be completed
+        // or cancelled before logout. Older orders and non-Pending statuses do not block.
+        $today = Carbon::now('Asia/Dhaka')->toDateString();
+        $pendingTakeawayDeliveryOrders = Order::query()
+            ->whereDate('order_time', $today)
+            ->whereRaw('LOWER(TRIM(status)) = ?', ['pending'])
+            ->whereRaw(
+                "LOWER(REPLACE(REPLACE(REPLACE(TRIM(order_type), '-', ''), ' ', ''), '_', '')) IN (?, ?)",
+                ['takeaway', 'delivery']
+            )
+            ->orderBy('id')
+            ->get(['id', 'order_number', 'order_type']);
+
+        $messages = [];
+
+        if ($occupiedTables->isNotEmpty()) {
+            $messages[] = 'Please clear all occupied tables before logout.';
+        }
+
+        if ($pendingTakeawayDeliveryOrders->isNotEmpty()) {
+            $orderLabels = $pendingTakeawayDeliveryOrders
+                ->take(6)
+                ->map(function ($order) {
+                    $number = trim((string) ($order->order_number ?? ''));
+                    return $number !== '' ? '#' . $number : 'Order #' . $order->id;
+                })
+                ->implode(', ');
+
+            $pendingText = $pendingTakeawayDeliveryOrders->count()
+                . ' pending Takeaway/Delivery order'
+                . ($pendingTakeawayDeliveryOrders->count() === 1 ? '' : 's');
+
+            if ($orderLabels !== '') {
+                $pendingText .= ' (' . $orderLabels
+                    . ($pendingTakeawayDeliveryOrders->count() > 6 ? ', ...' : '') . ')';
+            }
+
+            $messages[] = 'Please complete or cancel today\'s ' . $pendingText . ' before logout.';
+        }
+
+        return [
+            'blocked' => $occupiedTables->isNotEmpty() || $pendingTakeawayDeliveryOrders->isNotEmpty(),
+            'occupied_table_count' => $occupiedTables->count(),
+            'pending_takeaway_delivery_count' => $pendingTakeawayDeliveryOrders->count(),
+            'pending_takeaway_delivery_order_ids' => $pendingTakeawayDeliveryOrders
+                ->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+            // Kept for response compatibility with the existing frontend.
+            'unpaid_bill_count' => 0,
+            'message' => empty($messages) ? '' : 'Logout blocked. ' . implode(' ', $messages),
+        ];
+    }
+
+    private function closePosSession(PosSession $session, ?Carbon $endTime = null): void
+    {
+        $startTime = Carbon::parse($session->start_time, 'Asia/Dhaka');
+        $endTime = ($endTime ?: Carbon::now('Asia/Dhaka'))->copy();
+
+        if ($endTime->lt($startTime)) {
+            $endTime = $startTime->copy();
+        }
+
+        // Session reports use every non-cancelled order created inside the
+        // session start/end window; completion is not required.
+        $orders = Order::whereBetween('created_at', [$startTime, $endTime])
+            ->whereNotIn('status', ['Cancelled', 'cancelled'])
             ->get();
 
         $salesTotal = $orders->sum('subtotal');
@@ -91,11 +259,9 @@ class LoginController extends Controller
                 if ($order->payment_type == 'Cash') {
                     $cash += $order->total_paid_amount;
                 }
-
                 if ($order->payment_type == 'Card') {
                     $card += $order->total_paid_amount;
                 }
-
                 if ($order->payment_type == 'Mobile Banking') {
                     $mfc += $order->total_paid_amount;
                 }

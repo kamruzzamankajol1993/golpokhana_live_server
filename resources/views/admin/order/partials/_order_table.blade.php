@@ -7,10 +7,13 @@
         <th>Subtotal</th>
         <th>Honored</th>
         <th>Product Discount</th>
+        <th>VAT</th>
+        <th>Service Charge</th>
         <th>Tips</th>
         <th>Given</th>
         <th>Change</th>
         <th>Grand Total</th>
+        <th>Due</th>
         <th>Payment</th>
         <th>Status</th>
         <th>Date</th>
@@ -25,13 +28,7 @@
               $statusClass = strtolower($order->status);
               $badgeClass = 'neutral';
               $normalizedOrderType = strtolower(trim((string) ($order->order_type ?? '')));
-              $deliveryPartnerLabels = [
-                  'inhouse' => 'In-house Delivery',
-                  'foodpanda' => 'Foodpanda',
-                  'foodi' => 'Foodi',
-                  'pathao_food' => 'Pathao Food',
-              ];
-              $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+              $deliveryPartnerName = $order->delivery_partner_display_name ?: 'Not selected';
               $iconClass = 'clock-fill';
               if($order->status == 'Completed') { $badgeClass = 'primary'; $iconClass = 'check2-all'; }
               elseif($order->status == 'Pending') { $badgeClass = 'warning'; $iconClass = 'clock-fill'; }
@@ -49,7 +46,7 @@
                     <i class="bi bi-bag"></i> Takeaway
                   @elseif($normalizedOrderType === 'delivery')
                     <i class="bi bi-truck"></i> Delivery
-                    <span style="color:#997300;">— {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+                    <span style="color:#997300;">— {{ $deliveryPartnerName }}</span>
                   @else
                     <i class="bi bi-layout-wtf"></i> Table T-{{ $order->table->table_number ?? 'N/A' }}
                   @endif
@@ -66,6 +63,14 @@
               <strong class="text-danger">৳{{ number_format($productDiscountAmount, 0) }}</strong>
             </td>
             <td>
+              @php $vatAmount = max(0, (float)($order->vat_tax ?? 0)); @endphp
+              <strong>৳{{ number_format($vatAmount, 0) }}</strong>
+            </td>
+            <td>
+              @php $serviceCharge = max(0, (float)($order->service_charge ?? 0)); @endphp
+              <strong>৳{{ number_format($serviceCharge, 0) }}</strong>
+            </td>
+            <td>
               @php $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0)))); @endphp
               <strong class="text-success">৳{{ number_format($tipsAmount, 0) }}</strong>
             </td>
@@ -79,14 +84,18 @@
             </td>
             <td><strong style="color: var(--progga-primary);">৳{{ number_format($order->grand_total, 0) }}</strong></td>
             <td>
+              @php $dueAmount = max(0, (float)($order->due ?? 0)); @endphp
+              <strong class="{{ $dueAmount > 0 ? 'text-danger' : 'text-success' }}">৳{{ number_format($dueAmount, 0) }}</strong>
+            </td>
+            <td>
               <span class="progga-badge progga-badge-neutral" style="text-align: left; display: inline-block;">
                 <i class="bi {{ $order->payment_type == 'Cash' ? 'bi-cash' : ($order->payment_type == 'Card' ? 'bi-credit-card' : ($order->payment_type == 'Split' ? 'bi-diagram-3' : 'bi-phone')) }}"></i>
-                {{ $order->payment_type }}
+                {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : $order->payment_type }}
                 @if($order->payment_type == 'Split')
                     <br>
                     <span style="font-size: 10px; font-weight: normal; color: #555;">
                         @if($order->paid_in_cash > 0) Cash: {{ $order->paid_in_cash }} @endif
-                        @if($order->paid_in_card > 0) Card: {{ $order->paid_in_card }} @endif
+                        @if($order->paid_in_card > 0) Bank / Card: {{ $order->paid_in_card }} @endif
                         @if($order->paid_in_mfc > 0) MFS: {{ $order->paid_in_mfc }} @endif
                     </span>
                 @endif
@@ -99,55 +108,56 @@
             <td><span class="progga-order-time">{{ $order->created_at ? $order->created_at->format('h:i A') : '—' }}</span></td>
             <td><span class="progga-order-time">{{ is_null($order->kitchen_to_payment_minutes) ? '—' : $order->kitchen_to_payment_minutes . ' min' }}</span></td>
             <td>
-              <div class="progga-table-actions d-flex align-items-center gap-1">
-                <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                        title="View Order"
-                        onclick="viewOrder({{ $order->id }})">
-                    <i class="bi bi-eye"></i>
+              <div class="dropdown progga-order-action-menu">
+                <button type="button"
+                        class="progga-btn progga-btn-outline progga-btn-sm dropdown-toggle"
+                        data-bs-toggle="dropdown"
+                        data-bs-boundary="viewport"
+                        aria-expanded="false">
+                  <i class="bi bi-three-dots-vertical"></i> Actions
                 </button>
-@can('order-edit')
-                <a href="{{ route('order.edit', $order->id) }}"
-                   class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                   title="Edit Order"
-                   style="color: #fd7e14; border-color: #fd7e14;">
-                    <i class="bi bi-pencil-square"></i>
-                </a>
- @endcan
-                <a href="{{ route('pos.invoice', $order->id) }}"
-                   target="_blank"
-                   class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                   title="Print Receipt">
-                    <i class="bi bi-printer"></i>
-                </a>
-
-                <a href="{{ route('order.details', $order->id) }}"
-                   class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                   title="Show Full Details"
-                   style="color: var(--progga-primary); border-color: var(--progga-primary);">
-                    <i class="bi bi-card-list"></i>
-                </a>
-
-                <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                        title="Delete History"
-                        onclick="viewDeleteHistory({{ $order->id }})"
-                        style="color: #6f42c1; border-color: #6f42c1;">
-                    <i class="bi bi-clock-history"></i>
-                </button>
-
-                @can('order-delete')
-                    <button type="button"
-                            class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
-                            title="Delete Order"
-                            onclick="deleteOrder({{ $order->id }})"
-                            style="color: var(--progga-danger); border-color: var(--progga-danger);">
-                        <i class="bi bi-trash"></i>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                  <li>
+                    <button type="button" class="dropdown-item" onclick="viewOrder({{ $order->id }})">
+                      <i class="bi bi-eye"></i><span>View Order</span>
                     </button>
-                @endcan
+                  </li>
+                  @can('order-edit')
+                  <li>
+                    <a href="{{ route('order.edit', $order->id) }}" class="dropdown-item">
+                      <i class="bi bi-pencil-square"></i><span>Edit Order</span>
+                    </a>
+                  </li>
+                  @endcan
+                  <li>
+                    <a href="{{ route('pos.invoice', $order->id) }}" target="_blank" class="dropdown-item">
+                      <i class="bi bi-printer"></i><span>Print Receipt</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a href="{{ route('order.details', $order->id) }}" class="dropdown-item">
+                      <i class="bi bi-card-list"></i><span>Full Details</span>
+                    </a>
+                  </li>
+                  <li>
+                    <button type="button" class="dropdown-item" onclick="viewDeleteHistory({{ $order->id }})">
+                      <i class="bi bi-clock-history"></i><span>Delete History</span>
+                    </button>
+                  </li>
+                  @can('order-delete')
+                  <li><hr class="dropdown-divider"></li>
+                  <li>
+                    <button type="button" class="dropdown-item text-danger" onclick="deleteOrder({{ $order->id }})">
+                      <i class="bi bi-trash"></i><span>Delete Order</span>
+                    </button>
+                  </li>
+                  @endcan
+                </ul>
               </div>
             </td>
           </tr>
       @empty
-          <tr><td colspan="15" class="text-center py-4">No orders found.</td></tr>
+          <tr><td colspan="18" class="text-center py-4">No orders found.</td></tr>
       @endforelse
     </tbody>
   </table>

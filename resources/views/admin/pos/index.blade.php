@@ -1,10 +1,16 @@
 @extends('admin.pos.master')
+
 @section('title', 'POS System — ' . $restaurantSettingName)
 
 @section('css')
 <style>
     .modal-backdrop { display: none !important; }
     body.modal-open { overflow: auto !important; padding-right: 0 !important; }
+
+    /* Keep Select2 selections fixed inside POS modals: hide the clear (x) control. */
+    .modal .select2-selection__clear {
+        display: none !important;
+    }
 
     .swal2-container {
         z-index: 99999 !important;
@@ -127,6 +133,43 @@
       .progga-session-start-label {
         display: none;
       }
+
+      /* New Order modal: keep Dine-In / Takeaway / Delivery inside the screen. */
+      #newOrderModal .pos-type-wrap {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0 !important;
+        overflow: hidden;
+      }
+      #newOrderModal .pos-type-wrap label {
+        width: 100%;
+        min-width: 0;
+        padding: 11px 5px;
+        gap: 4px;
+        font-size: 12px;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      #newOrderModal .pos-type-wrap label + label {
+        border-left: 1px solid var(--progga-border-light);
+      }
+      #newOrderModal .pos-type-wrap label i {
+        flex: 0 0 auto;
+        font-size: 14px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      #newOrderModal .modal-body {
+        padding: 18px 14px !important;
+      }
+      #newOrderModal .pos-type-wrap label {
+        padding-left: 3px;
+        padding-right: 3px;
+        font-size: 11px;
+      }
     }
 </style>
 @endsection
@@ -154,7 +197,7 @@
         <div class="progga-pos-step" id="indStep2"><span class="progga-pos-step-num">2</span> Order</div>
       </div>
 
-      <div class="d-flex align-items-center" style="gap: 15px;">
+      <div class="d-flex align-items-center pos-header-desktop-actions" style="gap: 15px;">
         @if($randomHalfOrderButtonVisible ?? false)
             <form action="{{ route('pos.random_half_order.activate') }}" method="POST" class="m-0 p-0">
                 @csrf
@@ -163,26 +206,34 @@
                 </button>
             </form>
         @endif
+
+        @if($activeSession)
+            <div class="progga-session-status" title="Current POS session is running">
+                <span class="progga-session-dot"></span>
+                <span>Session Running</span>
+                <span class="progga-session-start-label">• Started {{ $activeSession->start_time->format('h:i A') }}</span>
+                <span>• <span id="posSessionTimer" data-pos-session-timer data-start="{{ $activeSession->start_time->format('Y-m-d H:i:s') }}">00h 00m</span></span>
+            </div>
+            <button type="button" class="progga-btn progga-btn-danger progga-btn-sm js-end-pos-session" data-session-id="{{ $activeSession->id }}">
+                <i class="bi bi-stop-circle-fill"></i> End Session
+            </button>
+        @else
+            <div class="progga-session-status no-session" title="Start a POS session before taking orders">
+                <span class="progga-session-dot"></span>
+                <span>No Active Session</span>
+            </div>
+            <button type="button" class="progga-btn progga-btn-primary progga-btn-sm js-start-pos-session">
+                <i class="bi bi-play-circle-fill"></i> Start Session
+            </button>
+        @endif
+
         @if(!auth()->user()->hasRole('waiter'))
-            @if($activeSession)
-                <div class="progga-session-status" title="Current POS session is running">
-                    <span class="progga-session-dot"></span>
-                    <span>Session Running</span>
-                    <span class="progga-session-start-label">• Started {{ $activeSession->start_time->format('h:i A') }}</span>
-                    <span>• <span id="posSessionTimer" data-start="{{ $activeSession->start_time->format('Y-m-d H:i:s') }}">00h 00m</span></span>
-                </div>
-            @else
-                <div class="progga-session-status no-session" title="No active POS session found">
-                    <span class="progga-session-dot"></span>
-                    <span>No Active Session</span>
-                </div>
-            @endif
             <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm text-decoration-none" data-bs-toggle="modal" data-bs-target="#sessionHistoryModal">
                 <i class="bi bi-history"></i> Session History
             </button>
             <a href="{{ route('home') }}" class="progga-pos-close m-0"><i class="bi bi-house"></i></a>
         @else
-            <form action="{{ route('logout') }}" method="POST" class="m-0 p-0">
+            <form action="{{ route('logout') }}" method="POST" class="m-0 p-0" data-pos-logout="1">
                 @csrf
                 <button type="submit" class="progga-btn progga-btn-danger progga-btn-sm" title="Logout from POS">
                     <i class="bi bi-box-arrow-right"></i> Logout
@@ -190,11 +241,81 @@
             </form>
         @endif
       </div>
+
+      <button type="button"
+              class="progga-pos-close pos-header-mobile-trigger m-0"
+              data-bs-toggle="offcanvas"
+              data-bs-target="#posMobileHeaderMenu"
+              aria-controls="posMobileHeaderMenu"
+              aria-label="Open POS menu">
+          <i class="bi bi-house"></i>
+      </button>
     </div>
 
     <div class="progga-pos-body">
         @include('admin.pos.step1_tables')
         @include('admin.pos.step2_order')
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end pos-mobile-header-offcanvas" tabindex="-1" id="posMobileHeaderMenu" aria-labelledby="posMobileHeaderMenuLabel">
+    <div class="offcanvas-header pos-mobile-header-offcanvas-head">
+        <div>
+            <div class="pos-mobile-menu-kicker">POS MENU</div>
+            <h5 class="offcanvas-title" id="posMobileHeaderMenuLabel">{{ $restaurantSettingName }}</h5>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body pos-mobile-header-offcanvas-body">
+        @if($randomHalfOrderButtonVisible ?? false)
+            <form action="{{ route('pos.random_half_order.activate') }}" method="POST" class="m-0">
+                @csrf
+                <button type="submit" class="progga-btn progga-btn-primary pos-mobile-menu-action w-100" title="Apply saved order hide percentage">
+                    <i class="bi bi-shuffle"></i> Go
+                </button>
+            </form>
+        @endif
+
+        @if($activeSession)
+            <div class="pos-mobile-session-card" title="Current POS session is running">
+                <div class="pos-mobile-session-title">
+                    <span class="progga-session-dot"></span>
+                    <span>Session Running</span>
+                </div>
+                <div class="pos-mobile-session-line">• Started {{ $activeSession->start_time->format('h:i A') }}</div>
+                <div class="pos-mobile-session-line">• <span id="posMobileSessionTimer" data-pos-session-timer data-start="{{ $activeSession->start_time->format('Y-m-d H:i:s') }}">00h 00m</span></div>
+            </div>
+            <button type="button" class="progga-btn progga-btn-danger pos-mobile-menu-action w-100 js-end-pos-session" data-session-id="{{ $activeSession->id }}">
+                <i class="bi bi-stop-circle-fill"></i> End Session
+            </button>
+        @else
+            <div class="pos-mobile-session-card no-session" title="Start a POS session before taking orders">
+                <div class="pos-mobile-session-title">
+                    <span class="progga-session-dot"></span>
+                    <span>No Active Session</span>
+                </div>
+            </div>
+            <button type="button" class="progga-btn progga-btn-primary pos-mobile-menu-action w-100 js-start-pos-session">
+                <i class="bi bi-play-circle-fill"></i> Start Session
+            </button>
+        @endif
+
+        @if(!auth()->user()->hasRole('waiter'))
+            <button type="button" class="progga-btn progga-btn-secondary pos-mobile-menu-action w-100 js-mobile-session-history">
+                <i class="bi bi-history"></i> Session History
+            </button>
+        @endif
+
+        <a href="{{ route('home') }}" class="progga-btn progga-btn-secondary pos-mobile-menu-action w-100 text-decoration-none">
+            <i class="bi bi-grid-1x2-fill"></i> Dashboard
+        </a>
+
+        <form action="{{ route('logout') }}" method="POST" class="m-0" data-pos-logout="1">
+            @csrf
+            <button type="submit" class="progga-btn progga-btn-danger pos-mobile-menu-action w-100">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </button>
+        </form>
     </div>
 </div>
 
@@ -239,7 +360,7 @@
                                         <td>{{ $sess->start_time->format('d M y - h:i A') }}</td>
                                         <td>{{ $sess->end_time ? $sess->end_time->format('d M y - h:i A') : '—' }}</td>
                                         <td>{{ $sess->duration ?? 'Running' }}</td>
-                                        <td><strong>৳{{ round($sess->grand_total) }}</strong></td>
+                                        <td><strong>৳{{ round($sess->report_grand_total ?? $sess->grand_total) }}</strong></td>
                                         <td>
                                             <span class="badge {{ $sess->status == 'Open' ? 'bg-success' : 'bg-danger' }}">
                                                 {{ $sess->status }}
@@ -336,33 +457,242 @@
 
     $.ajaxSetup({ headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') } });
 
+    const serverOpenPosSessionId = @json($activeSession ? $activeSession->id : null);
+    const serverOpenPosSessionStart = @json($activeSession && $activeSession->start_time ? $activeSession->start_time->format('Y-m-d H:i:s') : null);
+    const forceUnfinishedSessionPrompt = @json((bool) ($forceUnfinishedSessionPrompt ?? false));
+    const posSessionAckStorageKey = 'pos_acknowledged_session_id';
+
+    function getAcknowledgedPosSessionId() {
+        try {
+            return window.sessionStorage.getItem(posSessionAckStorageKey);
+        } catch (ignore) {
+            return null;
+        }
+    }
+
+    function acknowledgePosSession(sessionId) {
+        if (!sessionId) return;
+        try {
+            window.sessionStorage.setItem(posSessionAckStorageKey, String(sessionId));
+        } catch (ignore) {}
+    }
+
+    function clearAcknowledgedPosSession() {
+        try {
+            window.sessionStorage.removeItem(posSessionAckStorageKey);
+        } catch (ignore) {}
+    }
+
+    let hasActivePosSession = !!serverOpenPosSessionId
+        && !forceUnfinishedSessionPrompt
+        && String(getAcknowledgedPosSessionId() || '') === String(serverOpenPosSessionId);
+
+    function formatUnfinishedSessionStart(startText) {
+        if (!startText) return '';
+        const parsed = new Date(String(startText).replace(' ', 'T'));
+        if (Number.isNaN(parsed.getTime())) return startText;
+        return parsed.toLocaleString([], {
+            year: 'numeric', month: 'short', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    function showUnfinishedPosSessionPrompt(sessionInfo, tableIdAfterStart) {
+        sessionInfo = sessionInfo || {};
+        const sessionId = sessionInfo.session_id || serverOpenPosSessionId;
+        const startText = sessionInfo.start_time || serverOpenPosSessionStart;
+        const readableStart = formatUnfinishedSessionStart(startText);
+
+        return window.Swal.fire({
+            icon: 'warning',
+            title: 'Unfinished POS Session',
+            html: 'A previous POS session is still open.'
+                + (readableStart ? '<br><strong>Started:</strong> ' + readableStart : '')
+                + '<br><br>Do you want to continue it or start a new session?',
+            showCancelButton: false,
+            showDenyButton: true,
+            confirmButtonText: '<i class="bi bi-arrow-repeat"></i> Continue Previous Session',
+            denyButtonText: '<i class="bi bi-play-circle-fill"></i> Start New Session',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            reverseButtons: false
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                requestPosSessionStart({ action: 'continue', tableId: tableIdAfterStart || null });
+            } else if (result.isDenied) {
+                requestPosSessionStart({ action: 'new', tableId: tableIdAfterStart || null });
+            }
+        });
+    }
+
+    function requestPosSessionStart(options) {
+        options = options || {};
+        const tableIdAfterStart = options.tableId || null;
+        const action = options.action || 'start';
+        const $buttons = $('.js-start-pos-session');
+        const originalHtml = $buttons.first().html();
+
+        $buttons.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Starting...');
+
+        $.post(@json(route('pos.session.start')), { action: action })
+            .done(function(res) {
+                if (res && res.status === 'unfinished') {
+                    $buttons.prop('disabled', false).html(originalHtml);
+                    showUnfinishedPosSessionPrompt(res, tableIdAfterStart);
+                    return;
+                }
+
+                if (!res || res.status !== 'success') {
+                    window.Swal.fire('Error', (res && res.message) || 'Could not start the POS session.', 'error');
+                    $buttons.prop('disabled', false).html(originalHtml);
+                    return;
+                }
+
+                acknowledgePosSession(res.session_id);
+                hasActivePosSession = true;
+
+                if (tableIdAfterStart) {
+                    try {
+                        window.sessionStorage.setItem('pos_auto_open_table_after_session_start', String(tableIdAfterStart));
+                    } catch (ignore) {}
+                }
+
+                window.Swal.fire({
+                    icon: 'success',
+                    title: res.already_active ? 'Session Continued' : 'Session Started',
+                    text: res.message || 'POS session is ready.',
+                    timer: 900,
+                    showConfirmButton: false
+                }).then(function() {
+                    window.location.reload();
+                });
+            })
+            .fail(function(xhr) {
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Could not start the POS session.';
+                window.Swal.fire('Error', message, 'error');
+                $buttons.prop('disabled', false).html(originalHtml);
+            });
+    }
+
+    function promptToStartPosSession(tableId) {
+        window.Swal.fire({
+            icon: 'warning',
+            title: 'Start POS Session First',
+            text: 'Please start your POS session before taking an order.',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-play-circle-fill"></i> Start Session',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                requestPosSessionStart({ tableId: tableId || null });
+            }
+        });
+    }
+
+    $(document).on('click', '.js-start-pos-session', function(e) {
+        e.preventDefault();
+        requestPosSessionStart();
+    });
+
+    $(document).on('click', '.js-end-pos-session', function(e) {
+        e.preventDefault();
+        const sessionId = $(this).data('session-id');
+        if (!sessionId) return;
+
+        window.Swal.fire({
+            icon: 'question',
+            title: 'End POS Session?',
+            text: 'The current work period will be closed now.',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, End Session',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc3545'
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+
+            $('.js-end-pos-session').prop('disabled', true);
+            $.post(@json(route('pos.session.end')), { session_id: sessionId })
+                .done(function(res) {
+                    if (res && res.status === 'success') {
+                        clearAcknowledgedPosSession();
+                        hasActivePosSession = false;
+                        window.Swal.fire({
+                            icon: 'success',
+                            title: 'Session Ended',
+                            text: res.message || 'POS session ended successfully.',
+                            timer: 900,
+                            showConfirmButton: false
+                        }).then(function() {
+                            window.location.reload();
+                        });
+                        return;
+                    }
+
+                    $('.js-end-pos-session').prop('disabled', false);
+                    window.Swal.fire('Error', (res && res.message) || 'Could not end the POS session.', 'error');
+                })
+                .fail(function(xhr) {
+                    $('.js-end-pos-session').prop('disabled', false);
+                    const response = xhr.responseJSON || {};
+                    const message = response.message || 'Could not end the POS session.';
+
+                    if (response.code === 'session_close_blocked') {
+                        window.Swal.fire({
+                            icon: 'warning',
+                            title: 'Cannot End Session',
+                            text: message,
+                            confirmButtonText: 'OK'
+                        });
+                        return;
+                    }
+
+                    window.Swal.fire('Error', message, 'error');
+                });
+        });
+    });
+
+    // Takeaway/Delivery order creation also requires an explicit POS session.
+    $(document).on('click', '#modeTakeaway, #modeDelivery', function(e) {
+        if (hasActivePosSession) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        promptToStartPosSession(null);
+    });
+
     let currentOrder = {
         order_type: 'dine_in', table_id: null, table_name: '',
         waiter_id: null, waiter_name: '', customer_id: null, customer_name: '',
-        customer_phone: '', is_walk_in: 1, order_notes: '', delivery_partner: '', is_complimentary_order: 0
+        customer_phone: '', is_walk_in: 1, order_notes: '', delivery_partner: '', delivery_partner_name: '', is_complimentary_order: 0,
+        table_booking_id: null
     };
     window.currentOrder = currentOrder;
     let currentCat = '';
     let isComplimentaryMode = false;
+    let posComplimentaryActionPassword = '';
     let isWaiter = @json(auth()->user()->hasRole('waiter'));
 
     function updatePosSessionTimer() {
-        var timer = document.getElementById('posSessionTimer');
-        if (!timer) return;
+        var timers = document.querySelectorAll('[data-pos-session-timer]');
+        if (!timers.length) return;
 
-        var startText = timer.getAttribute('data-start');
-        if (!startText) return;
+        timers.forEach(function(timer) {
+            var startText = timer.getAttribute('data-start');
+            if (!startText) return;
 
-        var startTime = new Date(String(startText).replace(' ', 'T'));
-        var now = new Date();
-        var diffMs = now - startTime;
-        if (diffMs < 0) diffMs = 0;
+            var startTime = new Date(String(startText).replace(' ', 'T'));
+            var now = new Date();
+            var diffMs = now - startTime;
+            if (diffMs < 0) diffMs = 0;
 
-        var totalMinutes = Math.floor(diffMs / 60000);
-        var hours = Math.floor(totalMinutes / 60);
-        var minutes = totalMinutes % 60;
+            var totalMinutes = Math.floor(diffMs / 60000);
+            var hours = Math.floor(totalMinutes / 60);
+            var minutes = totalMinutes % 60;
 
-        timer.textContent = String(hours).padStart(2, '0') + 'h ' + String(minutes).padStart(2, '0') + 'm';
+            timer.textContent = String(hours).padStart(2, '0') + 'h ' + String(minutes).padStart(2, '0') + 'm';
+        });
     }
 
     if (document.readyState === 'loading') {
@@ -373,12 +703,73 @@
     setInterval(updatePosSessionTimer, 60000);
 
     $(document).ready(function() {
+        if (serverOpenPosSessionId && !hasActivePosSession) {
+            setTimeout(function() {
+                showUnfinishedPosSessionPrompt({
+                    session_id: serverOpenPosSessionId,
+                    start_time: serverOpenPosSessionStart
+                }, null);
+            }, 120);
+        }
+        @if(empty($selectedTableId))
+        if (hasActivePosSession) {
+            let autoOpenTableId = null;
+            try {
+                autoOpenTableId = window.sessionStorage.getItem('pos_auto_open_table_after_session_start');
+                if (autoOpenTableId) {
+                    window.sessionStorage.removeItem('pos_auto_open_table_after_session_start');
+                }
+            } catch (ignore) {}
+
+            if (autoOpenTableId) {
+                setTimeout(function() {
+                    const $tableCard = $('.progga-pos-table-card[data-table-id="' + autoOpenTableId + '"]');
+                    if ($tableCard.length) {
+                        $tableCard.first().trigger('click');
+                    }
+                }, 350);
+            }
+        }
+        @endif
+        $(document).on('click', '.js-mobile-session-history', function() {
+            var offcanvasEl = document.getElementById('posMobileHeaderMenu');
+            var modalEl = document.getElementById('sessionHistoryModal');
+            if (!modalEl) return;
+
+            var showSessionModal = function() {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            };
+
+            if (offcanvasEl && offcanvasEl.classList.contains('show')) {
+                offcanvasEl.addEventListener('hidden.bs.offcanvas', showSessionModal, { once: true });
+                bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl).hide();
+            } else {
+                showSessionModal();
+            }
+        });
+
         // POS workflow note.
         if(isWaiter) {
             $('#btnSendToKitchen').html('<i class="bi bi-send"></i> Send to Front Desk');
         }
 
         loadFoods('');
+        refreshLiveTableReservationStatuses();
+
+        // Open POS order modal automatically when coming from Table Booking,
+        // but only after the user explicitly starts/resumes a POS session.
+        @if(!empty($selectedTableId))
+        if (hasActivePosSession) {
+            openDineInTableModal(
+                {{ $selectedTableId }},
+                @json($selectedTable->table_number ?? 'Table'),
+                @json(request()->get('customer_id')),
+                @json($selectedBookingId)
+            );
+        } else {
+            promptToStartPosSession({{ $selectedTableId }});
+        }
+        @endif
     });
 
     function getCartParams() {
@@ -429,6 +820,39 @@
     }
 
 
+    function refreshLiveTableReservationStatuses() {
+        $.get("{{ route('pos.table_reservation_statuses') }}")
+            .done(function(response) {
+                if (!response || response.status !== 'success' || !Array.isArray(response.tables)) return;
+
+                response.tables.forEach(function(row) {
+                    const tableId = String(row.table_id || '');
+                    if (!tableId) return;
+
+                    const $card = $('.progga-pos-table-card[data-table-id="' + tableId + '"]');
+                    if (!$card.length) return;
+
+                    // Do not interrupt an order currently being opened/edited in the browser.
+                    if ($card.data('opening-order') === true) return;
+
+                    setPosTableStatus(tableId, row.status || 'available');
+
+                    if (String(row.status || '').toLowerCase() === 'reserved') {
+                        $card.attr('data-reserved-booking-id', row.booking_id || '');
+                        $card.attr('data-reserved-customer-id', row.customer_id || '');
+                    } else {
+                        $card.attr('data-reserved-booking-id', '');
+                        $card.attr('data-reserved-customer-id', '');
+                    }
+                });
+            });
+    }
+
+    // Server time is authoritative for reservation windows. Polling once per minute
+    // makes 3:00 PM -> Reserved and 5:00 PM/payment -> Available happen without reload.
+    setInterval(refreshLiveTableReservationStatuses, 60000);
+
+
     let newOrderModalMode = 'all';
     // POS workflow note.
     // POS workflow note.
@@ -440,9 +864,11 @@
         $('#posDeliveryPartnerSelect').val('');
         $('#deliveryPartnerSection').hide();
         currentOrder.delivery_partner = '';
+        currentOrder.delivery_partner_name = '';
         $('#posComplimentaryOrder').prop('checked', false);
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
+        posComplimentaryActionPassword = '';
         $('#newCustomerForm').hide();
         $('#customerSearchContainer').show();
         $('#new_cus_name, #new_cus_phone').val('');
@@ -455,12 +881,13 @@
         currentOrder.table_name = '';
         currentOrder.order_type = 'dine_in';
         currentOrder.order_id = null;
+        currentOrder.table_booking_id = null;
 
         $('#labelDineIn, #labelTakeaway, #labelDelivery').show();
         $('#posTypeDineIn, #posTypeTakeaway, #posTypeDelivery').prop('disabled', false);
         $('#posTypeDineIn').prop('checked', true);
         $('#posTypeTakeaway, #posTypeDelivery').prop('checked', false);
-        $('#modalTableSelect').val('').trigger('change');
+        $('#modalTableSelect').prop('selectedIndex', 0).val('').removeClass('is-invalid').trigger('change');
         $('#modalSelectedTableNum').text('T-00');
         $('#modalTableSelectSection').show();
         $('#modalTableDisplaySection').hide();
@@ -474,6 +901,7 @@
         currentOrder.table_name = '';
         currentOrder.order_type = 'dine_in';
         currentOrder.order_id = null;
+        currentOrder.table_booking_id = null;
 
         $('#labelDineIn, #labelTakeaway, #labelDelivery').show();
         $('#posTypeDineIn, #posTypeTakeaway, #posTypeDelivery').prop('disabled', false);
@@ -481,7 +909,7 @@
         $('#posTypeTakeaway, #posTypeDelivery').prop('checked', false);
 
         // POS workflow note.
-        $('#modalTableSelect').val('').trigger('change');
+        $('#modalTableSelect').prop('selectedIndex', 0).val('').removeClass('is-invalid').trigger('change');
         $('#modalSelectedTableNum').text('T-00');
         $('#modalTableSelectSection').show();
         $('#modalTableDisplaySection').hide();
@@ -499,12 +927,15 @@
         resetNewOrderModalAfterClose();
     });
 
-    function openDineInTableModal(tableId, tableName) {
+    function openDineInTableModal(tableId, tableName, customerId = null, bookingId = null) {
         newOrderModalMode = 'table';
         currentOrder.table_id = tableId;
         currentOrder.table_name = tableName;
         currentOrder.order_type = 'dine_in';
         currentOrder.order_id = null;
+        currentOrder.table_booking_id = bookingId || null;
+        currentOrder.customer_id = customerId || null;
+        currentOrder.is_walk_in = customerId ? 0 : 1;
 
         $('#labelDineIn').show();
         $('#labelTakeaway, #labelDelivery').hide();
@@ -515,6 +946,12 @@
         $('#modalSelectedTableNum').text(tableName);
         $('#modalTableDisplaySection').slideDown();
         resetNewOrderModalCommon();
+
+        if (customerId) {
+            $('#posWalkIn').prop('checked', false).trigger('change');
+            $('#posCustomerSelect').val(customerId).trigger('change');
+        }
+
         bootstrap.Modal.getOrCreateInstance(document.getElementById('newOrderModal')).show();
     }
 
@@ -527,10 +964,12 @@
         if(step === 2) {
             let tableMetaHtml = currentOrder.table_name;
             if(currentOrder.order_type === 'takeaway') tableMetaHtml = '<span class="text-danger">Takeaway</span>';
+            let deliveryPartnerText = '';
             if(currentOrder.order_type === 'delivery') {
-                let partnerText = $('#posDeliveryPartnerSelect option[value="' + (currentOrder.delivery_partner || '') + '"]').text();
-                if(!partnerText || partnerText.indexOf('Select Delivery Partner') !== -1) partnerText = 'Delivery';
-                tableMetaHtml = '<span class="text-warning">Delivery - ' + $('<div>').text(partnerText).html() + '</span>';
+                deliveryPartnerText = currentOrder.delivery_partner_name || $('#posDeliveryPartnerSelect option[value="' + (currentOrder.delivery_partner || '') + '"]').text();
+                if(!deliveryPartnerText || deliveryPartnerText.indexOf('Select Delivery Partner') !== -1) deliveryPartnerText = 'Not selected';
+                currentOrder.delivery_partner_name = deliveryPartnerText;
+                tableMetaHtml = '<span class="text-warning">Delivery - ' + $('<div>').text(deliveryPartnerText).html() + '</span>';
             }
             $('#posSelectedTableMeta').html(tableMetaHtml);
 
@@ -538,6 +977,14 @@
             if(currentOrder.order_type === 'takeaway') typeText = 'Takeaway';
             if(currentOrder.order_type === 'delivery') typeText = 'Delivery';
             $('#metaType').text(typeText);
+
+            if(currentOrder.order_type === 'delivery') {
+                $('#metaDeliveryPartnerName').text(deliveryPartnerText || currentOrder.delivery_partner_name || 'Not selected');
+                $('#metaDeliveryPartner').show();
+            } else {
+                $('#metaDeliveryPartnerName').text('—');
+                $('#metaDeliveryPartner').hide();
+            }
 
             let customerText = currentOrder.is_walk_in === 1 ? 'Walk-in Customer' : (currentOrder.customer_name ? currentOrder.customer_name : 'Registered Customer');
             $('#metaCustomer').text(customerText);
@@ -555,6 +1002,57 @@
     }
 
     $('#posBackToTables').click(function() { showStep(1); });
+
+
+    function cleanupActiveOrderMetaModal() {
+        const modalEl = document.getElementById('activeOrderMetaModal');
+        if (!modalEl) return;
+
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) {
+            modalInstance.dispose();
+        }
+
+        $(modalEl).find('.js-oc-select2').each(function() {
+            const $select = $(this);
+            if ($select.hasClass('select2-hidden-accessible') && $.fn.select2) {
+                $select.select2('destroy');
+            }
+        });
+
+        const wasShown = $(modalEl).hasClass('show');
+        $(modalEl).remove();
+        $('.select2-container--open').remove();
+
+        if (wasShown && !document.querySelector('.modal.show')) {
+            $('body').removeClass('modal-open').css('padding-right', '');
+        }
+    }
+
+    function mountActiveOrderMetaModal() {
+        const $modal = $('#ocBody').find('#activeOrderMetaModal');
+        if (!$modal.length) return;
+
+        $modal.appendTo(document.body);
+
+        if ($.fn.select2) {
+            $modal.find('.js-oc-select2').each(function() {
+                const $select = $(this);
+                if ($select.hasClass('select2-hidden-accessible')) {
+                    $select.select2('destroy');
+                }
+
+                const searchEnabled = String($select.attr('data-search') || 'true') !== 'false';
+                $select.select2({
+                    width: '100%',
+                    dropdownParent: $modal,
+                    allowClear: false,
+                    placeholder: $select.attr('data-placeholder') || undefined,
+                    minimumResultsForSearch: searchEnabled ? 0 : Infinity
+                });
+            });
+        }
+    }
 
     function reloadActiveOrderOffcanvas(orderId, tableId, orderType) {
         const normalizedType = String(orderType || '')
@@ -579,7 +1077,9 @@
                 }
             }
 
+            cleanupActiveOrderMetaModal();
             $('#ocBody').html(res);
+            mountActiveOrderMetaModal();
             bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('tableOrderOffcanvas')).show();
         });
     }
@@ -591,8 +1091,15 @@
         const $card = $(this);
         const tId = $card.attr('data-table-id');
         const tNum = $card.attr('data-table-num');
+        const reservedCustomerId = $card.attr('data-reserved-customer-id') || null;
+        const reservedBookingId = $card.attr('data-reserved-booking-id') || null;
 
         if(!tId || $card.data('opening-order') === true) {
+            return;
+        }
+
+        if (!hasActivePosSession) {
+            promptToStartPosSession(tId);
             return;
         }
 
@@ -612,8 +1119,12 @@
                 }
 
                 if(res.status === 'error') {
-                    setPosTableStatus(tId, 'available');
-                    openDineInTableModal(tId, tNum);
+                    // Keep an active reservation visibly Reserved until an order is submitted.
+                    // Non-reserved stale cards can safely fall back to Available.
+                    if (!reservedBookingId) {
+                        setPosTableStatus(tId, 'available');
+                    }
+                    openDineInTableModal(tId, tNum, reservedCustomerId, reservedBookingId);
                     return;
                 }
             }
@@ -621,7 +1132,9 @@
             // HTML response means active order exists, so only offcanvas should open.
             bootstrap.Modal.getInstance(document.getElementById('newOrderModal'))?.hide();
             setPosTableStatus(tId, 'occupied');
+            cleanupActiveOrderMetaModal();
             $('#ocBody').html(res);
+            mountActiveOrderMetaModal();
             bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('tableOrderOffcanvas')).show();
         }).fail(function() {
             $card.data('opening-order', false);
@@ -632,7 +1145,7 @@
                 return;
             }
 
-            openDineInTableModal(tId, tNum);
+            openDineInTableModal(tId, tNum, reservedCustomerId, reservedBookingId);
         });
     });
 
@@ -722,7 +1235,9 @@
             } else if(res.status === 'error') {
                 Swal.fire('Notice', res.message, 'info');
             } else {
+                cleanupActiveOrderMetaModal();
                 $('#ocBody').html(res);
+                mountActiveOrderMetaModal();
                 bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('tableOrderOffcanvas')).show();
             }
         });
@@ -736,7 +1251,7 @@
         if(type === 'takeaway' || type === 'delivery') {
             $('#modalTableSelectSection').slideUp();
             $('#modalTableDisplaySection').slideUp();
-            $('#modalTableSelect').val('').trigger('change');
+            $('#modalTableSelect').prop('selectedIndex', 0).val('').removeClass('is-invalid').trigger('change');
             currentOrder.table_id = null;
             currentOrder.table_name = type === 'takeaway' ? 'Takeaway' : 'Delivery';
 
@@ -767,6 +1282,7 @@
 
     $('#modalTableSelect').on('change', function() {
         let selectedOption = $(this).find('option:selected');
+        $(this).removeClass('is-invalid');
         currentOrder.table_id = $(this).val() || null;
         currentOrder.table_name = currentOrder.table_id ? (selectedOption.data('table-name') || selectedOption.text()) : '';
         if(currentOrder.table_id) {
@@ -794,21 +1310,85 @@
         }
     });
 
-    $('#posStartOrderBtn').click(function() {
+    $('#posComplimentaryOrder').on('change', function() {
+        const $toggle = $(this);
+
+        if (!$toggle.is(':checked')) {
+            posComplimentaryActionPassword = '';
+            return;
+        }
+
+        // Keep the option off until the server confirms the action password.
+        $toggle.prop('checked', false);
+        getPosActionPassword(function(pass) {
+            posComplimentaryActionPassword = pass;
+            $toggle.prop('checked', true);
+        }, function() {
+            posComplimentaryActionPassword = '';
+            $toggle.prop('checked', false);
+        });
+    });
+
+    function getValidDineInTableSelection() {
+        // When the order modal was opened from a table card, that table is already the explicit selection.
+        if(newOrderModalMode === 'table') {
+            if(!currentOrder.table_id) return null;
+            return {
+                id: String(currentOrder.table_id),
+                name: currentOrder.table_name || ''
+            };
+        }
+
+        // For New Order -> Dine-In, always validate the table currently selected in the modal.
+        // Never rely on a stale currentOrder.table_id from a previous order.
+        const $tableSelect = $('#modalTableSelect');
+        const tableId = String($tableSelect.val() || '').trim();
+        const $selectedOption = $tableSelect.find('option:selected');
+        const tableStatus = String($selectedOption.data('status') || '').trim().toLowerCase();
+
+        if(
+            !tableId ||
+            !$selectedOption.length ||
+            $selectedOption.prop('disabled') ||
+            tableStatus === 'occupied' ||
+            tableStatus === 'reserved'
+        ) {
+            return null;
+        }
+
+        return {
+            id: tableId,
+            name: $selectedOption.data('table-name') || $selectedOption.text().trim()
+        };
+    }
+
+    $('#posStartOrderBtn').click(function(e) {
+        // This is the only path that may move the New Order modal to the food screen.
+        // Stop any other click handler/default action from bypassing the validation below.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
         let selectedOrderType = $('input[name="orderType"]:checked').val() || 'dine_in';
         currentOrder.order_type = selectedOrderType;
 
         if(selectedOrderType === 'dine_in') {
-            if(newOrderModalMode === 'all') {
-                let selectedOption = $('#modalTableSelect option:selected');
-                currentOrder.table_id = $('#modalTableSelect').val() || null;
-                currentOrder.table_name = currentOrder.table_id ? (selectedOption.data('table-name') || selectedOption.text()) : '';
+            const selectedTable = getValidDineInTableSelection();
+
+            if(!selectedTable) {
+                currentOrder.table_id = null;
+                currentOrder.table_name = '';
+
+                if(newOrderModalMode === 'all') {
+                    $('#modalTableSelect').addClass('is-invalid').focus();
+                }
+
+                Swal.fire('Table Required', 'Please select an available table before starting a Dine-In order.', 'warning');
+                return false;
             }
 
-            if(!currentOrder.table_id) {
-                Swal.fire('Notice', 'Please select an available table for Dine-In order.', 'info');
-                return;
-            }
+            currentOrder.table_id = selectedTable.id;
+            currentOrder.table_name = selectedTable.name;
+            $('#modalTableSelect').removeClass('is-invalid');
         } else {
             currentOrder.table_id = null;
             currentOrder.table_name = selectedOrderType === 'takeaway' ? 'Takeaway' : 'Delivery';
@@ -816,12 +1396,14 @@
 
         if(selectedOrderType === 'delivery') {
             currentOrder.delivery_partner = $('#posDeliveryPartnerSelect').val() || '';
+            currentOrder.delivery_partner_name = $('#posDeliveryPartnerSelect option:selected').text().trim();
             if(!currentOrder.delivery_partner) {
                 Swal.fire('Notice', 'Please select a delivery partner.', 'info');
                 return;
             }
         } else {
             currentOrder.delivery_partner = '';
+            currentOrder.delivery_partner_name = '';
         }
 
         currentOrder.waiter_id = $('#posWaiterSelect').val();
@@ -893,18 +1475,30 @@
     });
 
     function addToCart(foodId, addons) {
+        if (isComplimentaryMode && !posComplimentaryActionPassword) {
+            getPosActionPassword(function(pass) {
+                posComplimentaryActionPassword = pass;
+                addToCart(foodId, addons);
+            });
+            return;
+        }
+
         let payload = getCartParams();
         payload.food_id = foodId;
         payload.addons = addons;
         payload.qty = 1;
         payload.is_complimentary = isComplimentaryMode ? 1 : 0;
+        if (isComplimentaryMode) {
+            payload.action_password = posComplimentaryActionPassword;
+        }
+
         $.post("{{ route('pos.cart.add') }}", payload, function(res) {
             if(res.status === 'success') loadCart();
         }).fail(function(xhr) {
             const message = xhr.responseJSON && xhr.responseJSON.message
                 ? xhr.responseJSON.message
                 : 'The restaurant is currently closed. Orders will be accepted from 12:01 PM.';
-            window.Swal.fire('POS Closed', message, 'warning');
+            window.Swal.fire('Error', message, 'warning');
         });
     }
 
@@ -956,11 +1550,18 @@
         currentOrder.is_walk_in = parseInt(typeof data.is_walk_in !== 'undefined' ? data.is_walk_in : (data.customer_id ? 0 : 1));
         currentOrder.order_notes = data.notes || '';
         currentOrder.delivery_partner = data.delivery_partner || (currentOrder.order_type === 'delivery' ? 'inhouse' : '');
+        currentOrder.delivery_partner_name = data.delivery_partner_name || '';
         if(currentOrder.order_type === 'delivery') {
             $('#posDeliveryPartnerSelect').val(currentOrder.delivery_partner);
+            if(!currentOrder.delivery_partner_name) {
+                currentOrder.delivery_partner_name = $('#posDeliveryPartnerSelect option:selected').text().trim();
+            }
+        } else {
+            currentOrder.delivery_partner_name = '';
         }
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
+        posComplimentaryActionPassword = '';
 
         if(currentOrder.order_type === 'dine_in' && currentOrder.table_id) {
             let tableCard = $('.progga-pos-table-card[data-table-id="' + currentOrder.table_id + '"]');
@@ -1002,9 +1603,20 @@
 
 
     window.removeCartItem = function(cartId) {
+        // Unsaved/new food in the POS cart can be removed directly.
+        // Password protection remains only for deleting food that is already saved on an order.
         let payload = getCartParams();
         payload.cart_id = cartId;
-        $.post("{{ route('pos.cart.remove') }}", payload, function() { loadCart(true); });
+
+        $.post("{{ route('pos.cart.remove') }}", payload, function(res) {
+            if (res.status === 'success') {
+                loadCart(true);
+            } else {
+                Swal.fire('Error', res.message || 'Food could not be deleted.', 'error');
+            }
+        }).fail(function(xhr) {
+            Swal.fire('Error', xhr.responseJSON?.message || 'Food could not be deleted.', 'error');
+        });
     }
 
     window.updateQty = function(cartId, action) {
@@ -1090,6 +1702,7 @@
             order_id: currentOrder.order_id || null,
             order_type: currentOrder.order_type,
             table_id: currentOrder.table_id,
+            table_booking_id: currentOrder.table_booking_id || null,
             waiter_id: currentOrder.waiter_id,
             is_walk_in: currentOrder.is_walk_in,
             customer_id: currentOrder.customer_id,
@@ -1098,6 +1711,7 @@
             order_notes: currentOrder.order_notes,
             delivery_partner: currentOrder.delivery_partner || '',
             is_complimentary_order: currentOrder.is_complimentary_order || 0,
+            action_password: currentOrder.is_complimentary_order ? posComplimentaryActionPassword : '',
             discount_type: discType,
             discount_value: discVal,
             preparation_time: $('#cart_prep_time').val() || 20,
@@ -1232,8 +1846,8 @@
             .prop('required', showReferenceField);
 
         if (method === 'Card') {
-            $('#transactionReferenceLabel').html('Card Reference Number <span class="text-danger">*</span>');
-            transactionInput.attr('placeholder', 'Card Reference Number');
+            $('#transactionReferenceLabel').html('Bank / Card Reference Number <span class="text-danger">*</span>');
+            transactionInput.attr('placeholder', 'Bank / Card Reference Number');
         } else if (method === 'Mobile Banking') {
             $('#transactionReferenceLabel').html('MFS Reference Number <span class="text-danger">*</span>');
             transactionInput.attr('placeholder', 'MFS Reference Number');
@@ -1245,31 +1859,45 @@
     };
 
     window.getFinalPaymentBillPaid = function() {
+        let grand = posPaymentNumber($('#payTotalAmount').text());
+        let advance = Math.min(grand, posPaymentNumber($('#payAdvanceAmount').val()));
         let method = $('input[name="payment_method"]:checked').val() || 'Cash';
 
         if (method === 'Split') {
             let cash = posPaymentNumber($('#splitCash').val());
             let card = posPaymentNumber($('#splitCard').val());
             let mfc = posPaymentNumber($('#splitMfc').val());
-            let splitTotal = cash + card + mfc;
-            $('#payTotalPaidAmount').val(splitTotal.toFixed(2));
+            let splitTotal = Math.min(Math.max(0, grand - advance), cash + card + mfc);
+            let totalPaid = Math.min(grand, advance + splitTotal);
+            $('#payTotalPaidAmount').val(totalPaid.toFixed(2));
             $('#payPaidDisplay').text('৳' + posMoney(splitTotal));
-            return splitTotal;
+            return totalPaid;
         }
 
-        return posPaymentNumber($('#payTotalPaidAmount').val());
+        let enteredTotal = posPaymentNumber($('#payTotalPaidAmount').val());
+        return Math.min(grand, Math.max(advance, enteredTotal));
+    };
+
+    window.getCurrentPaymentAmount = function() {
+        let grand = posPaymentNumber($('#payTotalAmount').text());
+        let advance = Math.min(grand, posPaymentNumber($('#payAdvanceAmount').val()));
+        let totalPaid = window.getFinalPaymentBillPaid();
+        return Math.max(0, Math.min(grand - advance, totalPaid - advance));
     };
 
     window.updateDueAmount = function() {
         let grand = posPaymentNumber($('#payTotalAmount').text());
-        let paid = window.getFinalPaymentBillPaid();
+        let totalPaid = window.getFinalPaymentBillPaid();
+        let currentPayment = window.getCurrentPaymentAmount();
         let tips = posPaymentNumber($('#payTipsAmount').val());
-        let givenMoney = posPaymentNumber($('#payGivenMoney').val());
+        let givenMoneyRaw = $.trim($('#payGivenMoney').val());
+        let givenMoney = posPaymentNumber(givenMoneyRaw);
 
-        // Due is controlled by Total Paid. Given Money is only used to show cash change/shortage.
-        // Therefore a shortage remains visible as a negative Change until the user corrects it.
-        let due = Math.max(0, grand - paid);
-        let changeAmount = givenMoney - paid - tips;
+        // Total Paid is the combined bill payment, including reservation advance.
+        // Given Money must be entered manually by the client/operator.
+        // Keep Change at 0 until an amount is actually typed or pasted.
+        let due = Math.max(0, grand - totalPaid);
+        let changeAmount = givenMoneyRaw === '' ? 0 : (givenMoney - currentPayment - tips);
         let isNegativeChange = changeAmount < 0;
 
         $('#payDueAmount').text('৳' + posMoney(due));
@@ -1287,7 +1915,8 @@
         $('#splitCash, #splitCard, #splitMfc').val(0);
         $('#payTotalPaidAmount').prop('disabled', false).val(grand);
         $('#payTipsAmount').val(0);
-        $('#payGivenMoney').val(grand);
+        // Given Money is intentionally blank; it must be typed or pasted manually.
+        $('#payGivenMoney').val('');
         $('#payChangeAmount').val(0);
         $('#transactionDiv').find('input[name="transaction_id"]').val('');
         $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
@@ -1310,6 +1939,9 @@
 
         $('#paymentModal').data('subtotal', parseFloat(data.subtotal || 0));
         $('#paySubtotal').text('৳' + Math.round(data.subtotal || 0));
+        let hasTableBooking = parseInt(data.table_booking_id || 0, 10) > 0;
+        $('#payAdvanceAmount').val(posMoney(hasTableBooking ? (data.booking_advance || 0) : 0));
+        $('#bookingAdvanceRow').css('display', hasTableBooking ? 'flex' : 'none');
 
         $('#modal_discount_type').val('fixed');
         $('#modal_discount_value').val('');
@@ -1377,10 +2009,11 @@
     }
 
     window.calculateModalTotal = function() {
-        // Keep track of the previous auto-filled payable amount. If Given Money
-        // is still following that default value, discounts should reduce it too.
+        // Track whether Total Paid is still on its automatic full-payment default.
+        // Given Money is always manual and is never recalculated here.
         let previousGrand = posPaymentNumber($('#payTotalAmount').text());
-        let previousGivenMoney = posPaymentNumber($('#payGivenMoney').val());
+        let previousAdvance = Math.min(previousGrand, posPaymentNumber($('#payAdvanceAmount').val()));
+        let previousTotalPaid = posPaymentNumber($('#payTotalPaidAmount').val());
 
         let subtotal = parseFloat($('#paymentModal').data('subtotal')) || 0;
         let vat_rate = parseFloat("{{ $taxSettingVatRate ?? 0 }}");
@@ -1400,6 +2033,7 @@
             : 0;
 
         let grand = Math.max(0, Math.round((subtotal + vat + service) - discount_amount - product_discount_amount));
+        let advance = Math.min(grand, posPaymentNumber($('#payAdvanceAmount').val()));
 
         $('#payProductDiscount').text('−৳' + product_discount_amount);
         $('#payDiscount').text('−৳' + discount_amount);
@@ -1414,15 +2048,13 @@
         $('#payVatRow').css('display', vat_rate > 0 ? 'flex' : 'none');
 
         if ($('input[name="payment_method"]:checked').val() !== 'Split') {
-            $('#payTotalPaidAmount').val(grand);
-
-            // When Given Money is still auto-filled from the previous grand total,
-            // reduce it together with product-wise/order discounts so Change stays 0.
-            // A manually entered cash amount remains untouched.
-            let givenWasAutoFilled = previousGivenMoney === 0 || Math.abs(previousGivenMoney - previousGrand) < 0.01;
-            if (givenWasAutoFilled) {
-                $('#payGivenMoney').val(grand);
+            let totalWasAutoFilled = previousTotalPaid === 0 || Math.abs(previousTotalPaid - previousGrand) < 0.01;
+            if (totalWasAutoFilled) {
+                $('#payTotalPaidAmount').val(grand);
+            } else {
+                $('#payTotalPaidAmount').val(Math.min(grand, Math.max(advance, previousTotalPaid)));
             }
+
         }
 
         if(typeof window.syncFinalPaymentFields === 'function') {
@@ -1476,7 +2108,7 @@
 
         if (requiresReference && !$.trim(referenceInput.val())) {
             referenceInput.addClass('is-invalid').trigger('focus');
-            let referenceName = paymentMethod === 'Card' ? 'Card Reference Number' : 'MFS Reference Number';
+            let referenceName = paymentMethod === 'Card' ? 'Bank / Card Reference Number' : 'MFS Reference Number';
             Swal.fire(
                 'Reference Required',
                 'Please enter the ' + referenceName + ' before completing payment.',
@@ -1495,7 +2127,7 @@
 
             if (splitCardAmount > 0 && !$.trim(splitCardReference.val())) {
                 splitCardReference.addClass('is-invalid').trigger('focus');
-                Swal.fire('Card Reference Required', 'Please enter the Card Reference Number for the Card amount.', 'warning');
+                Swal.fire('Bank / Card Reference Required', 'Please enter the Bank / Card Reference Number for the Bank / Card amount.', 'warning');
                 return;
             }
 
@@ -1511,9 +2143,10 @@
         }
 
         let totalPaid = window.getFinalPaymentBillPaid();
+        let currentPayment = window.getCurrentPaymentAmount();
         let tipsAmount = posPaymentNumber($('#payTipsAmount').val());
         let givenMoney = posPaymentNumber($('#payGivenMoney').val());
-        let requiredGivenMoney = totalPaid + tipsAmount;
+        let requiredGivenMoney = currentPayment + tipsAmount;
         let saveAsDueOrder = $(this).data('saveAsDueOrder') === true;
         $(this).removeData('saveAsDueOrder');
 
@@ -1584,6 +2217,109 @@
         });
     });
 
+    function suspendPosBootstrapFocusTraps() {
+        const suspended = [];
+
+        document.querySelectorAll('.modal.show, .offcanvas.show').forEach(function(el) {
+            let instance = null;
+
+            if (el.classList.contains('modal')) {
+                instance = bootstrap.Modal.getInstance(el);
+            } else if (el.classList.contains('offcanvas')) {
+                instance = bootstrap.Offcanvas.getInstance(el);
+            }
+
+            if (instance && instance._focustrap && typeof instance._focustrap.deactivate === 'function') {
+                instance._focustrap.deactivate();
+                suspended.push({ instance: instance, element: el });
+            }
+        });
+
+        return function() {
+            setTimeout(function() {
+                suspended.forEach(function(item) {
+                    if (item.element.classList.contains('show') && item.instance._focustrap && typeof item.instance._focustrap.activate === 'function') {
+                        item.instance._focustrap.activate();
+                    }
+                });
+            }, 50);
+        };
+    }
+
+    function getPosActionPassword(callback, cancelCallback){
+        const restoreFocusTraps = suspendPosBootstrapFocusTraps();
+
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
+
+        Swal.fire({
+            title: 'POS Action Password',
+            text: 'Enter the password saved in Settings to continue.',
+            input: 'password',
+            inputPlaceholder: 'Enter password',
+            inputAttributes: {
+                autocomplete: 'new-password',
+                autocapitalize: 'off',
+                spellcheck: 'false'
+            },
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showCancelButton: true,
+            confirmButtonText: 'Verify & Continue',
+            showLoaderOnConfirm: true,
+            didOpen: function() {
+                setTimeout(function() {
+                    const input = Swal.getInput();
+                    if (input) {
+                        input.removeAttribute('readonly');
+                        input.disabled = false;
+                        input.focus();
+                    }
+                }, 50);
+            },
+            preConfirm: function(password) {
+                password = String(password || '');
+
+                if (!password) {
+                    Swal.showValidationMessage('Password is required.');
+                    return false;
+                }
+
+                return $.ajax({
+                    url: "{{ route('pos.action.verify') }}",
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        password: password,
+                        _token: $('meta[name="csrf-token"]').attr('content')
+                    }
+                }).then(function(res) {
+                    if (!res || res.status !== 'success') {
+                        Swal.showValidationMessage(res?.message || 'Wrong POS Action Password.');
+                        return false;
+                    }
+
+                    return password;
+                }, function(xhr) {
+                    const message = xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : 'Password verification failed. Please try again.';
+                    Swal.showValidationMessage(message);
+                    return false;
+                });
+            }
+        }).then(function(result) {
+            restoreFocusTraps();
+
+            if (result.isConfirmed && result.value) {
+                callback(result.value);
+            } else if (typeof cancelCallback === 'function') {
+                cancelCallback();
+            }
+        });
+    }
+
     window.openOrderItemDeleteModal = function(orderId, orderDetailId, itemName, maxQty) {
         $('#deleteOrderId').val(orderId);
         $('#deleteOrderDetailId').val(orderDetailId);
@@ -1609,6 +2345,13 @@
             return;
         }
 
+        // Every item visible here has already been sent/saved on the order, so deletion
+        // requires the POS action password. Unsent cart items use removeCartItem() instead.
+        getPosActionPassword(function(pass){ proceedDeleteWithPassword(pass); });
+        return;
+    });
+
+    function proceedDeleteWithPassword(pass){
         let btn = $('#btnConfirmOrderItemDelete');
         let originalHtml = btn.html();
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Deleting...');
@@ -1616,7 +2359,7 @@
         $.ajax({
             url: "{{ route('pos.order_item.remove') }}",
             type: "POST",
-            data: $(this).serialize() + '&_token=' + $('meta[name="csrf-token"]').attr('content'),
+            data: $('#orderItemDeleteForm').serialize() + '&action_password=' + encodeURIComponent(pass) + '&_token=' + $('meta[name="csrf-token"]').attr('content'),
             success: function(res) {
                 btn.prop('disabled', false).html(originalHtml);
 
@@ -1631,7 +2374,9 @@
                             if(typeof html === 'object' && html.status === 'error') {
                                 location.reload();
                             } else {
+                                cleanupActiveOrderMetaModal();
                                 $('#ocBody').html(html);
+                                mountActiveOrderMetaModal();
                             }
                         });
                     } else if(orderId) {
@@ -1639,7 +2384,9 @@
                             if(typeof html === 'object' && html.status === 'error') {
                                 location.reload();
                             } else {
+                                cleanupActiveOrderMetaModal();
                                 $('#ocBody').html(html);
+                                mountActiveOrderMetaModal();
                             }
                         });
                     } else {
@@ -1653,6 +2400,269 @@
                 btn.prop('disabled', false).html(originalHtml);
                 let msg = xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : 'Server error. Please try again.';
                 Swal.fire('Error', msg, 'error');
+            }
+        });
+    }
+
+    $('#tableOrderOffcanvas').on('hidden.bs.offcanvas', function() {
+        cleanupActiveOrderMetaModal();
+    });
+
+    $(document).on('change', 'input[name="oc_customer_mode"]', function() {
+        const $form = $(this).closest('#ocCustomerUpdateForm');
+        const isNew = $(this).val() === 'new';
+
+        $form.find('.progga-oc-choice').removeClass('active-choice');
+        $(this).closest('.progga-oc-choice').addClass('active-choice');
+        $form.find('.oc-existing-customer-wrap').toggle(!isNew);
+        $form.find('.oc-new-customer-wrap').toggle(isNew);
+    });
+
+    $(document).on('submit', '#ocCustomerUpdateForm', function(e) {
+        e.preventDefault();
+
+        const $form = $(this);
+        const orderId = $form.attr('data-order-id');
+        const tableId = $form.attr('data-table-id') || null;
+        const orderType = $form.attr('data-order-type') || 'dine_in';
+        const mode = $form.find('input[name="oc_customer_mode"]:checked').val() || 'existing';
+        const payload = {
+            order_id: orderId,
+            update_type: 'customer',
+            customer_mode: mode
+        };
+
+        if (mode === 'new') {
+            payload.customer_name = $.trim($form.find('[name="customer_name"]').val() || '');
+            payload.customer_phone = $.trim($form.find('[name="customer_phone"]').val() || '');
+
+            if (!payload.customer_name || !payload.customer_phone) {
+                Swal.fire('Customer Info', 'Please enter customer name and phone number.', 'warning');
+                return;
+            }
+        } else {
+            payload.customer_id = $form.find('[name="customer_id"]').val();
+            if (!payload.customer_id) {
+                Swal.fire('Select Customer', 'Please select an existing customer.', 'warning');
+                return;
+            }
+        }
+
+        const $btn = $form.find('.js-oc-customer-save');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
+
+        $.ajax({
+            url: "{{ route('pos.active_order.update_meta') }}",
+            type: 'POST',
+            data: payload,
+            success: function(res) {
+                if (res.status !== 'success') {
+                    Swal.fire('Error', res.message || 'Customer update failed.', 'error');
+                    return;
+                }
+
+                reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                    .done(function() {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Customer Added',
+                            text: res.message || 'Customer added to the order successfully.',
+                            timer: 1200,
+                            showConfirmButton: false
+                        });
+                    })
+                    .fail(function() {
+                        window.location.reload();
+                    });
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Customer update failed. Please try again.';
+                Swal.fire('Error', msg, 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html(originalHtml);
+            }
+        });
+    });
+
+    $(document).on('submit', '#ocCustomerWalkInForm', function(e) {
+        e.preventDefault();
+
+        const $form = $(this);
+        const orderId = $form.attr('data-order-id');
+        const tableId = $form.attr('data-table-id') || null;
+        const orderType = $form.attr('data-order-type') || 'dine_in';
+        const $btn = $form.find('.js-oc-customer-walkin');
+        const originalHtml = $btn.html();
+
+        Swal.fire({
+            title: 'Make Walk-in Customer?',
+            text: 'The customer will be removed from this order. The customer record itself will not be deleted.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Make Walk-in',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Updating...');
+
+            $.ajax({
+                url: "{{ route('pos.active_order.update_meta') }}",
+                type: 'POST',
+                data: {
+                    order_id: orderId,
+                    update_type: 'customer',
+                    customer_mode: 'walk_in'
+                },
+                success: function(res) {
+                    if (res.status !== 'success') {
+                        Swal.fire('Error', res.message || 'Could not change customer to Walk-in.', 'error');
+                        return;
+                    }
+
+                    reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                        .done(function() {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Walk-in Customer',
+                                text: res.message || 'Order changed back to Walk-in Customer.',
+                                timer: 1200,
+                                showConfirmButton: false
+                            });
+                        })
+                        .fail(function() {
+                            window.location.reload();
+                        });
+                },
+                error: function(xhr) {
+                    const msg = xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : 'Could not change customer to Walk-in. Please try again.';
+                    Swal.fire('Error', msg, 'error');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).html(originalHtml);
+                }
+            });
+        });
+    });
+
+    $(document).on('submit', '#ocWaiterUpdateForm', function(e) {
+        e.preventDefault();
+
+        const $form = $(this);
+        const orderId = $form.attr('data-order-id');
+        const tableId = $form.attr('data-table-id') || null;
+        const orderType = $form.attr('data-order-type') || 'dine_in';
+        const waiterId = $form.find('[name="waiter_id"]').val();
+
+        if (!waiterId) {
+            Swal.fire('Select Waiter', 'Please select a waiter.', 'warning');
+            return;
+        }
+
+        const $btn = $form.find('.js-oc-waiter-save');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>Updating...');
+
+        $.ajax({
+            url: "{{ route('pos.active_order.update_meta') }}",
+            type: 'POST',
+            data: {
+                order_id: orderId,
+                update_type: 'waiter',
+                waiter_id: waiterId
+            },
+            success: function(res) {
+                if (res.status !== 'success') {
+                    Swal.fire('Error', res.message || 'Waiter update failed.', 'error');
+                    return;
+                }
+
+                reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                    .done(function() {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Waiter Updated',
+                            text: res.message || 'Waiter updated successfully.',
+                            timer: 1100,
+                            showConfirmButton: false
+                        });
+                    })
+                    .fail(function() {
+                        window.location.reload();
+                    });
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Waiter update failed. Please try again.';
+                Swal.fire('Error', msg, 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html(originalHtml);
+            }
+        });
+    });
+
+    $(document).on('submit', '#ocDeliveryPartnerUpdateForm', function(e) {
+        e.preventDefault();
+
+        const $form = $(this);
+        const orderId = $form.attr('data-order-id');
+        const tableId = $form.attr('data-table-id') || null;
+        const orderType = $form.attr('data-order-type') || 'delivery';
+        const deliveryPartner = $form.find('[name="delivery_partner"]').val();
+
+        if (!deliveryPartner) {
+            Swal.fire('Delivery Partner', 'Please select a delivery partner.', 'warning');
+            return;
+        }
+
+        const $btn = $form.find('.js-oc-partner-save');
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        $.ajax({
+            url: "{{ route('pos.active_order.update_meta') }}",
+            type: 'POST',
+            data: {
+                order_id: orderId,
+                update_type: 'delivery_partner',
+                delivery_partner: deliveryPartner
+            },
+            success: function(res) {
+                if (res.status !== 'success') {
+                    Swal.fire('Error', res.message || 'Delivery partner update failed.', 'error');
+                    return;
+                }
+
+                reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                    .done(function() {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Delivery Partner Updated',
+                            text: res.message || 'Delivery partner updated successfully.',
+                            timer: 1100,
+                            showConfirmButton: false
+                        });
+                    })
+                    .fail(function() {
+                        window.location.reload();
+                    });
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Delivery partner update failed. Please try again.';
+                Swal.fire('Error', msg, 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html(originalHtml);
             }
         });
     });
@@ -1734,57 +2744,64 @@
     });
 
     $(document).on('click', '#btnAddComplimentary', function() {
-        const tId = $(this).data('table-id');
-        const orderId = $(this).data('order-id');
-        const waiterId = $(this).data('waiter-id');
-        const waiterName = $(this).data('waiter-name');
-        const customerId = $(this).data('customer-id');
-        const customerName = $(this).data('customer-name');
-        const orderType = $(this).data('order-type') || 'dine_in';
-        const orderLabel = $(this).data('order-label') || $('#ocTableNum').text();
-        const deliveryPartner = $(this).data('delivery-partner') || '';
+        const $sourceButton = $(this);
 
-        currentOrder.table_id = tId || null;
-        currentOrder.table_name = orderLabel;
-        currentOrder.order_id = orderId;
-        currentOrder.order_type = orderType;
-        currentOrder.delivery_partner = deliveryPartner || (orderType === 'delivery' ? 'inhouse' : '');
-        currentOrder.waiter_id = waiterId ? waiterId : null;
-        currentOrder.waiter_name = waiterName ? waiterName : '';
+        getPosActionPassword(function(pass) {
+            const tId = $sourceButton.data('table-id');
+            const orderId = $sourceButton.data('order-id');
+            const waiterId = $sourceButton.data('waiter-id');
+            const waiterName = $sourceButton.data('waiter-name');
+            const customerId = $sourceButton.data('customer-id');
+            const customerName = $sourceButton.data('customer-name');
+            const orderType = $sourceButton.data('order-type') || 'dine_in';
+            const orderLabel = $sourceButton.data('order-label') || $('#ocTableNum').text();
+            const deliveryPartner = $sourceButton.data('delivery-partner') || '';
+            const deliveryPartnerName = $sourceButton.data('delivery-partner-name') || '';
 
-        if(customerId) {
-            currentOrder.is_walk_in = 0;
-            currentOrder.customer_id = customerId;
-            currentOrder.customer_name = customerName;
-        } else {
-            currentOrder.is_walk_in = 1;
-            currentOrder.customer_id = null;
-            currentOrder.customer_name = '';
-        }
+            currentOrder.table_id = tId || null;
+            currentOrder.table_name = orderLabel;
+            currentOrder.order_id = orderId;
+            currentOrder.order_type = orderType;
+            currentOrder.delivery_partner = deliveryPartner || (orderType === 'delivery' ? 'inhouse' : '');
+            currentOrder.delivery_partner_name = orderType === 'delivery' ? deliveryPartnerName : '';
+            currentOrder.waiter_id = waiterId ? waiterId : null;
+            currentOrder.waiter_name = waiterName ? waiterName : '';
 
-        currentOrder.is_complimentary_order = 0;
-        isComplimentaryMode = true;
+            if(customerId) {
+                currentOrder.is_walk_in = 0;
+                currentOrder.customer_id = customerId;
+                currentOrder.customer_name = customerName;
+            } else {
+                currentOrder.is_walk_in = 1;
+                currentOrder.customer_id = null;
+                currentOrder.customer_name = '';
+            }
 
-        var ocElement = document.getElementById('tableOrderOffcanvas');
-        if (ocElement) {
-            var ocInstance = bootstrap.Offcanvas.getInstance(ocElement);
-            if (ocInstance) ocInstance.hide();
-        }
+            currentOrder.is_complimentary_order = 0;
+            isComplimentaryMode = true;
+            posComplimentaryActionPassword = pass;
 
-        showStep(2);
-        loadCart();
-        if(window.Swal) {
-            Swal.fire({
-                icon: 'info',
-                title: 'Complimentary Mode On',
-                text: 'Now select food items. They will be added with 0 value.',
-                timer: 1600,
-                showConfirmButton: false
-            });
-        }
+            var ocElement = document.getElementById('tableOrderOffcanvas');
+            if (ocElement) {
+                var ocInstance = bootstrap.Offcanvas.getInstance(ocElement);
+                if (ocInstance) ocInstance.hide();
+            }
+
+            showStep(2);
+            loadCart();
+            if(window.Swal) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Complimentary Mode On',
+                    text: 'Password verified. Now select food items; they will be added with 0 value.',
+                    timer: 1600,
+                    showConfirmButton: false
+                });
+            }
+        });
     });
 
-    $(document).on('click', '.js-make-order-item-complimentary', function(e) {
+    $(document).on('click', '.js-toggle-order-item-complimentary', function(e) {
         e.preventDefault();
         e.stopPropagation();
 
@@ -1794,28 +2811,36 @@
         const tableId = $btn.data('table-id');
         const orderType = $btn.data('order-type') || 'dine_in';
         const productName = $btn.data('product-name') || 'this food';
+        const isCurrentlyComplimentary = Number($btn.data('is-complimentary')) === 1;
+        const makeComplimentary = !isCurrentlyComplimentary;
 
         Swal.fire({
-            title: 'Make Complimentary?',
-            text: productName + ' will become complimentary and its food/addon value will be changed to 0.',
+            title: makeComplimentary ? 'Make Complimentary?' : 'Return to Normal?',
+            text: makeComplimentary
+                ? productName + ' will become complimentary and its food/addon value will be changed to 0.'
+                : productName + ' will return to normal using its current food/addon price.',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: 'Yes, make complimentary',
+            confirmButtonText: makeComplimentary ? 'Yes, make complimentary' : 'Yes, make normal',
             cancelButtonText: 'Cancel',
-            confirmButtonColor: '#198754'
+            confirmButtonColor: makeComplimentary ? '#198754' : '#6c757d'
         }).then(function(result) {
             if (!result.isConfirmed) return;
 
             const originalHtml = $btn.html();
-            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-            $.post("{{ route('pos.order_item.complimentary') }}", {
+            getPosActionPassword(function(pass){
+                $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+                $.post("{{ route('pos.order_item.complimentary') }}", {
                 order_id: orderId,
-                order_detail_id: orderDetailId
+                order_detail_id: orderDetailId,
+                is_complimentary: makeComplimentary ? 1 : 0,
+                action_password: pass
             }).done(function(res) {
                 if (res.status !== 'success') {
                     $btn.prop('disabled', false).html(originalHtml);
-                    Swal.fire('Error', res.message || 'Complimentary conversion failed.', 'error');
+                    Swal.fire('Error', res.message || 'Food status update failed.', 'error');
                     return;
                 }
 
@@ -1823,8 +2848,10 @@
                     .done(function() {
                         Swal.fire({
                             icon: 'success',
-                            title: 'Complimentary',
-                            text: res.message || 'Food converted to complimentary successfully.',
+                            title: makeComplimentary ? 'Complimentary' : 'Normal Food',
+                            text: res.message || (makeComplimentary
+                                ? 'Food converted to complimentary successfully.'
+                                : 'Food returned to normal successfully.'),
                             timer: 1100,
                             showConfirmButton: false
                         });
@@ -1834,10 +2861,12 @@
                     });
             }).fail(function(xhr) {
                 $btn.prop('disabled', false).html(originalHtml);
-                Swal.fire('Error', xhr.responseJSON?.message || 'Complimentary conversion failed.', 'error');
+                Swal.fire('Error', xhr.responseJSON?.message || 'Food status update failed.', 'error');
+            });
             });
         });
     });
+
 
     $(document).on('click', '#btnContinueOrdering', function() {
         const tId = $(this).data('table-id');
@@ -1850,14 +2879,17 @@
         const orderType = $(this).data('order-type') || 'dine_in';
         const orderLabel = $(this).data('order-label') || $('#ocTableNum').text();
         const deliveryPartner = $(this).data('delivery-partner') || '';
+        const deliveryPartnerName = $(this).data('delivery-partner-name') || '';
 
         currentOrder.table_id = tId || null;
         currentOrder.table_name = orderLabel;
         currentOrder.order_id = orderId;
         currentOrder.order_type = orderType;
         currentOrder.delivery_partner = deliveryPartner || (orderType === 'delivery' ? 'inhouse' : '');
+        currentOrder.delivery_partner_name = orderType === 'delivery' ? deliveryPartnerName : '';
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
+        posComplimentaryActionPassword = '';
 
         currentOrder.waiter_id = waiterId ? waiterId : null;
         currentOrder.waiter_name = waiterName ? waiterName : '';
@@ -1950,8 +2982,11 @@
                     location.reload();
                 });
             }
-        }).fail(function() {
-            Swal.fire('Error', 'Something went wrong!', 'error');
+        }).fail(function(xhr) {
+            const response = xhr.responseJSON || {};
+            const title = response.code === 'session_close_blocked' ? 'Cannot End Session' : 'Error';
+            const message = response.message || 'Something went wrong!';
+            Swal.fire(title, message, 'error');
             btn.prop('disabled', false).html(originalHtml);
         });
     });
@@ -1977,10 +3012,90 @@
         \Carbon\Carbon::createFromFormat('H:i', $posClosingTime ?? '06:00')->format('h:i A')
     );
     const dashboardUrl = @json(route('home'));
+    const openSessionId = @json($activeSession->id ?? null);
+    const openSessionStart = @json(optional($activeSession)->start_time ? $activeSession->start_time->format('Y-m-d H:i:s') : null);
+    const forceUnfinishedPrompt = @json((bool) ($forceUnfinishedSessionPrompt ?? false));
+    const ackKey = 'pos_acknowledged_session_id';
+
+    function acknowledgedSessionId() {
+        try { return window.sessionStorage.getItem(ackKey); } catch (ignore) { return null; }
+    }
+
+    function acknowledge(sessionId) {
+        try { window.sessionStorage.setItem(ackKey, String(sessionId)); } catch (ignore) {}
+    }
+
+    function formatStart(startText) {
+        if (!startText) return '';
+        const parsed = new Date(String(startText).replace(' ', 'T'));
+        if (Number.isNaN(parsed.getTime())) return startText;
+        return parsed.toLocaleString([], {
+            year: 'numeric', month: 'short', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    function resolveUnfinished(action) {
+        $.post(@json(route('pos.session.start')), { action: action })
+            .done(function(res) {
+                if (res && res.status === 'success') {
+                    acknowledge(res.session_id);
+                    window.Swal.fire({
+                        icon: 'success',
+                        title: action === 'continue' ? 'Session Continued' : 'New Session Started',
+                        text: res.message || 'POS session is ready.',
+                        timer: 800,
+                        showConfirmButton: false
+                    }).then(function() {
+                        window.location.reload();
+                    });
+                    return;
+                }
+
+                window.Swal.fire('Error', (res && res.message) || 'Could not update the POS session.', 'error');
+            })
+            .fail(function(xhr) {
+                const message = xhr.responseJSON && xhr.responseJSON.message
+                    ? xhr.responseJSON.message
+                    : 'Could not update the POS session.';
+                window.Swal.fire('Error', message, 'error');
+            });
+    }
+
+    function openUnfinishedPrompt() {
+        const readableStart = formatStart(openSessionStart);
+        window.Swal.fire({
+            icon: 'warning',
+            title: 'Unfinished POS Session',
+            html: 'A previous POS session is still open.'
+                + (readableStart ? '<br><strong>Started:</strong> ' + readableStart : '')
+                + '<br><br>Do you want to continue it or start a new session?',
+            showCancelButton: false,
+            showDenyButton: true,
+            confirmButtonText: '<i class="bi bi-arrow-repeat"></i> Continue Previous Session',
+            denyButtonText: '<i class="bi bi-play-circle-fill"></i> Start New Session',
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                resolveUnfinished('continue');
+            } else if (result.isDenied) {
+                resolveUnfinished('new');
+            }
+        });
+    }
 
     function openClosedNotification() {
         if (!window.Swal) {
             setTimeout(openClosedNotification, 50);
+            return;
+        }
+
+        const needsUnfinishedChoice = !!openSessionId
+            && (forceUnfinishedPrompt || String(acknowledgedSessionId() || '') !== String(openSessionId));
+
+        if (needsUnfinishedChoice) {
+            openUnfinishedPrompt();
             return;
         }
 

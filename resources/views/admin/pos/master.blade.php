@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
   <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/progga-style.css">
+  <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/pos-responsive-custom.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css">
 <style>
   /* New Web Order modal height/dropdown fix */
@@ -461,6 +462,40 @@ let isMasterWaiter = @json(auth()->check() && auth()->user()->hasRole('waiter'))
     });
 });
 </script>
+
+@if(auth()->check())
+    @include('admin.include.logout_guard')
+@endif
+
+@if(auth()->check())
+<script>
+(function keepOpenPosSessionActivityCurrent() {
+    const activityUrl = @json(route('pos.session.activity'));
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (!activityUrl || !csrf || !window.fetch) return;
+
+    function pingOpenPosSession() {
+        fetch(activityUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: '_token=' + encodeURIComponent(csrf)
+        }).catch(function() {});
+    }
+
+    // No cron/scheduler: while the authenticated browser is alive, remember the
+    // last POS-session activity. Closing the tab/browser stops these requests.
+    setTimeout(pingOpenPosSession, 30000);
+    setInterval(pingOpenPosSession, 60000);
+})();
+</script>
+@endif
+
     @yield('script')
 
 </body>

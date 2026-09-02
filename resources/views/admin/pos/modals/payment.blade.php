@@ -84,7 +84,7 @@
                 <input type="radio" id="payCard" name="payment_method" value="Card" style="display: none;">
                 <label for="payCard" class="progga-pay-method-btn" style="border: 2px solid var(--progga-border); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer;">
                   <i class="bi bi-credit-card d-block" style="font-size: 18px; color: var(--progga-primary);"></i>
-                  <span style="font-size: 11px; font-weight: 700;">Card</span>
+                  <span style="font-size: 11px; font-weight: 700;">Bank / Card</span>
                 </label>
 
                 <input type="radio" id="payBkash" name="payment_method" value="Mobile Banking" style="display: none;">
@@ -107,7 +107,7 @@
                           <input type="number" name="paid_in_cash" id="splitCash" class="form-control split-input p-1 text-center" value="0" min="0" step="0.01">
                       </div>
                       <div class="col-4">
-                          <label style="font-size: 11px; font-weight: 700; color: #555;">Card</label>
+                          <label style="font-size: 11px; font-weight: 700; color: #555;">Bank / Card</label>
                           <input type="number" name="paid_in_card" id="splitCard" class="form-control split-input p-1 text-center" value="0" min="0" step="0.01">
                       </div>
                       <div class="col-4">
@@ -117,8 +117,8 @@
                   </div>
                   <div class="row g-2 mt-1" id="splitReferenceFields">
                       <div class="col-6">
-                          <label style="font-size: 11px; font-weight: 700; color: #555;">Card Reference Number <span id="splitCardReferenceRequired" class="text-danger" style="display:none;">*</span></label>
-                          <input type="text" name="split_card_reference" id="splitCardReference" class="form-control" maxlength="255" placeholder="Card Reference Number">
+                          <label style="font-size: 11px; font-weight: 700; color: #555;">Bank / Card Reference Number <span id="splitCardReferenceRequired" class="text-danger" style="display:none;">*</span></label>
+                          <input type="text" name="split_card_reference" id="splitCardReference" class="form-control" maxlength="255" placeholder="Bank / Card Reference Number">
                       </div>
                       <div class="col-6">
                           <label style="font-size: 11px; font-weight: 700; color: #555;">MFS Reference Number <span id="splitMfsReferenceRequired" class="text-danger" style="display:none;">*</span></label>
@@ -128,8 +128,8 @@
               </div>
 
               <div class="progga-pm-ref" id="transactionDiv" style="display: none; margin-bottom: 15px;">
-                  <label id="transactionReferenceLabel" style="font-size: 12px; font-weight: 700; color: #555;">Card Reference Number <span class="text-danger">*</span></label>
-                  <input type="text" name="transaction_id" class="form-control" placeholder="Card Reference Number" style="border: 1.5px solid var(--progga-border); border-radius: 8px;">
+                  <label id="transactionReferenceLabel" style="font-size: 12px; font-weight: 700; color: #555;">Bank / Card Reference Number <span class="text-danger">*</span></label>
+                  <input type="text" name="transaction_id" class="form-control" placeholder="Bank / Card Reference Number" style="border: 1.5px solid var(--progga-border); border-radius: 8px;">
               </div>
 
               <div class="progga-form-label" style="font-weight:700; margin:16px 0 10px; font-size: 14px; color: var(--progga-primary);">
@@ -142,8 +142,12 @@
                   <input type="number" id="payTotalPaidAmount" name="total_paid_amount" class="form-control form-control-sm text-end" style="width: 140px; font-weight:bold; border: 1.5px solid var(--progga-border);" value="0" min="0" step="0.01">
                 </div>
 
+                <div class="progga-pos-total-row" id="bookingAdvanceRow" style="display:none;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                  <span>Advance</span><input type="number" name="booking_advance" id="payAdvanceAmount" class="form-control form-control-sm text-end" value="0" min="0" step="0.01" readonly style="width:140px;">
+                </div>
+
                 <div class="progga-pos-total-row" id="splitPaidDisplayRow" style="display: none; justify-content: space-between; font-size: 14px; font-weight: 800; color: #333; margin-bottom:10px;">
-                  <span>Split Total Paid</span><span id="payPaidDisplay">৳0</span>
+                  <span>Split Payment</span><span id="payPaidDisplay">৳0</span>
                 </div>
 
                 <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; color: #333; margin-bottom:10px;">
@@ -153,7 +157,7 @@
 
                 <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; color: #333; margin-bottom:10px;">
                   <span>Given Money</span>
-                  <input type="number" id="payGivenMoney" name="given_money" class="form-control form-control-sm text-end" style="width: 140px; font-weight:bold; border: 1.5px solid var(--progga-border);" value="0" min="0" step="0.01">
+                  <input type="number" id="payGivenMoney" name="given_money" class="form-control form-control-sm text-end" style="width: 140px; font-weight:bold; border: 1.5px solid var(--progga-border);" value="" placeholder="Enter amount" autocomplete="off" min="0" step="0.01">
                 </div>
 
                 <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 900; color: #198754; margin-bottom:10px;">
@@ -238,162 +242,12 @@ function posMoney(value) {
     return Math.round(posPaymentNumber(value));
 }
 
-window.syncFinalPaymentFields = function() {
-    let method = $('input[name="payment_method"]:checked').val() || 'Cash';
-    let isSplit = method === 'Split';
-    let showReferenceField = method === 'Mobile Banking' || method === 'Card';
-
-    $('#normalPaidRow').css('display', isSplit ? 'none' : 'flex');
-    $('#splitPaidDisplayRow').css('display', isSplit ? 'flex' : 'none');
-    $('#splitPaymentDiv').toggle(isSplit);
-    $('#payTotalPaidAmount').prop('disabled', isSplit);
-    $('#splitCash, #splitCard, #splitMfc').prop('disabled', !isSplit);
-    let splitCardAmount = isSplit ? posPaymentNumber($('#splitCard').val()) : 0;
-    let splitMfsAmount = isSplit ? posPaymentNumber($('#splitMfc').val()) : 0;
-    let requireSplitCardReference = isSplit && splitCardAmount > 0;
-    let requireSplitMfsReference = isSplit && splitMfsAmount > 0;
-
-    $('#splitCardReference')
-        .prop('disabled', !isSplit)
-        .prop('required', requireSplitCardReference);
-    $('#splitMfsReference')
-        .prop('disabled', !isSplit)
-        .prop('required', requireSplitMfsReference);
-    $('#splitCardReferenceRequired').toggle(requireSplitCardReference);
-    $('#splitMfsReferenceRequired').toggle(requireSplitMfsReference);
-
-    if (!isSplit) {
-        $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
-    } else {
-        if (!requireSplitCardReference) $('#splitCardReference').removeClass('is-invalid');
-        if (!requireSplitMfsReference) $('#splitMfsReference').removeClass('is-invalid');
-    }
-
-    let transactionInput = $('#transactionDiv').find('input[name="transaction_id"]');
-    $('#transactionDiv').toggle(showReferenceField);
-    transactionInput
-        .prop('disabled', !showReferenceField)
-        .prop('required', showReferenceField);
-
-    if (method === 'Card') {
-        $('#transactionReferenceLabel').html('Card Reference Number <span class="text-danger">*</span>');
-        transactionInput.attr('placeholder', 'Card Reference Number');
-    } else if (method === 'Mobile Banking') {
-        $('#transactionReferenceLabel').html('MFS Reference Number <span class="text-danger">*</span>');
-        transactionInput.attr('placeholder', 'MFS Reference Number');
-    }
-
-    if (!showReferenceField) {
-        transactionInput.val('').removeClass('is-invalid');
-    }
-};
-
-window.getFinalPaymentBillPaid = function() {
-    let method = $('input[name="payment_method"]:checked').val() || 'Cash';
-
-    if (method === 'Split') {
-        let cash = posPaymentNumber($('#splitCash').val());
-        let card = posPaymentNumber($('#splitCard').val());
-        let mfc = posPaymentNumber($('#splitMfc').val());
-        let splitTotal = cash + card + mfc;
-        $('#payTotalPaidAmount').val(splitTotal.toFixed(2));
-        $('#payPaidDisplay').text('৳' + posMoney(splitTotal));
-        return splitTotal;
-    }
-
-    return posPaymentNumber($('#payTotalPaidAmount').val());
-};
-
-window.updateDueAmount = function() {
-    let grand = posPaymentNumber($('#payTotalAmount').text());
-    let paid = window.getFinalPaymentBillPaid();
-    let tips = posPaymentNumber($('#payTipsAmount').val());
-    let givenMoney = posPaymentNumber($('#payGivenMoney').val());
-
-    // Keep shortage visible as a negative Change; Due is based only on Total Paid.
-    let due = Math.max(0, grand - paid);
-    let changeAmount = givenMoney - paid - tips;
-    let isNegativeChange = changeAmount < 0;
-
-    $('#payDueAmount').text('৳' + posMoney(due));
-    $('#payChangeAmount')
-        .val(posMoney(changeAmount))
-        .css({
-            'border-color': isNegativeChange ? '#dc3545' : '#198754',
-            'color': isNegativeChange ? '#dc3545' : '#198754'
-        });
-};
-
-window.resetFinalPaymentDefaults = function(grand) {
-    grand = posMoney(grand);
-    $('#payCash').prop('checked', true);
-    $('#splitCash, #splitCard, #splitMfc').val(0);
-    $('#payTotalPaidAmount').prop('disabled', false).val(grand);
-    $('#payTipsAmount').val(0);
-    $('#payGivenMoney').val(grand);
-    $('#payChangeAmount').val(0);
-    $('#transactionDiv').find('input[name="transaction_id"]').val('');
-    $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
-    $('#paymentRemark').val('').removeClass('is-invalid');
-    if (typeof window.syncPaymentRemarkRequirement === 'function') window.syncPaymentRemarkRequirement();
-    window.syncFinalPaymentFields();
-    window.updateDueAmount();
-};
-
-window.openPaymentModal = function(data) {
-    let oc = document.getElementById('tableOrderOffcanvas');
-    if(oc) bootstrap.Offcanvas.getInstance(oc)?.hide();
-
-    $('#payOrderId').val(data.order_id || '');
-    $('#payOrderType').val(data.order_type || 'takeaway');
-    $('#payIsComplimentaryOrder').val(data.is_complimentary_order ? 1 : 0);
-
-    let defaultLabel = data.order_type === 'delivery' ? 'Delivery' : 'Takeaway';
-    $('#payTableLabel').text(data.table_no || defaultLabel);
-
-    $('#paymentModal').data('subtotal', parseFloat(data.subtotal || 0));
-    $('#paySubtotal').text('৳' + Math.round(data.subtotal || 0));
-
-    $('#modal_discount_type').val('fixed');
-    $('#modal_discount_value').val('');
-
-    let itemsHtml = '';
-    if(data.items && data.items.length > 0) {
-        data.items.forEach(item => {
-            itemsHtml += `
-            <div class="progga-pay-summary-item" style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;">
-                <span class="text-muted">${item.name} ×${item.qty}</span>
-                <span style="font-weight: 600;">৳${Math.round(item.total)}</span>
-            </div>`;
-        });
-    } else {
-        itemsHtml = '<div class="text-muted text-center" style="font-size:12px;">No items</div>';
-    }
-    $('#payModalItemsArea').html(itemsHtml);
-
-    calculateModalTotal();
-    window.resetFinalPaymentDefaults(posPaymentNumber($('#payTotalAmount').text()));
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentModal')).show();
-}
-
-$(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
-    if ($(this).hasClass('split-input')) window.syncFinalPaymentFields();
-    window.updateDueAmount();
-});
-
-$(document).on('change', 'input[name="payment_method"]', function() {
-    let grand = posMoney($('#payTotalAmount').text());
-    if ($(this).val() !== 'Split') {
-        $('#payTotalPaidAmount').val(grand);
-    }
-    window.syncFinalPaymentFields();
-    window.updateDueAmount();
-});
-
+// Payment state/calculation is owned by the POS page script. Keep only the
+// pre-invoice action here because this modal partial owns that button.
 $(document).on('click', '#btnPreInvoice', function() {
     let orderId = $('#payOrderId').val();
     if(!orderId) {
-        Swal.fire('Info', 'For Takeaway or Delivery without table, please place the order first to generate a pre-invoice.', 'info');
+        Swal.fire('Info', 'Please send the order to kitchen first to generate a pre-invoice.', 'info');
         return;
     }
 
@@ -417,5 +271,4 @@ $(document).on('click', '#btnPreInvoice', function() {
     let url = "{{ url('/pos/pre-invoice') }}/" + orderId + "?" + params.toString();
     window.open(url, '_blank');
 });
-
 </script>

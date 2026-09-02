@@ -24,15 +24,15 @@
         <div class="col-md-5">
             <div class="progga-card">
                 <div class="progga-card-header">
-                    <div class="progga-card-title">Select Zone</div>
+                    <div class="progga-card-title">Select Floor / Zone</div>
                 </div>
                 <div class="progga-card-body">
                     <div class="progga-form-group">
                         <label class="progga-form-label">Floor / Zone</label>
-                        <select class="progga-select" id="zoneSelect">
+                        <select class="progga-select" id="floorZoneSelect">
                             <option value="">-- Select a Zone --</option>
-                            @foreach($zones as $zone)
-                                <option value="{{ $zone->id }}">{{ $zone->name }}</option>
+                            @foreach($floorZones as $floorZone)
+                                <option value="{{ $floorZone->id }}">{{ $floorZone->name }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -79,7 +79,7 @@
 @section('script')
 <script>
 $(document).ready(function() {
-    $('#zoneSelect').on('change', function() {
+    $('#floorZoneSelect').on('change', function() {
         let zoneId = $(this).val();
         let grid = $('#tablesGrid');
         let emptyState = $('#emptyState');

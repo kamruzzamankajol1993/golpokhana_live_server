@@ -52,6 +52,7 @@
             <div class="attendance-report-actions">
                 <a href="{{ route('hr.attendance.index') }}" class="progga-btn progga-btn-outline"><i class="bi bi-arrow-left"></i> Attendance</a>
                 <button type="button" id="attendancePdfBtn" class="progga-btn progga-btn-primary"><i class="bi bi-file-earmark-pdf"></i> Open PDF</button>
+                <button type="button" id="attendanceExcelBtn" class="progga-btn progga-btn-outline"><i class="bi bi-file-earmark-excel"></i> Excel</button>
             </div>
         </div>
 
@@ -138,6 +139,13 @@
             const params = new URLSearchParams(currentParams(1));
             params.delete('page');
             window.open("{{ route('hr.attendance.reports.pdf') }}?" + params.toString(), '_blank', 'noopener');
+        });
+
+        $('#attendanceExcelBtn').on('click', function(){
+            if (!validateFilters()) return;
+            const params = new URLSearchParams(currentParams(1));
+            params.delete('page');
+            window.location.href = "{{ route('hr.attendance.reports.excel') }}?" + params.toString();
         });
 
         toggleFilters();

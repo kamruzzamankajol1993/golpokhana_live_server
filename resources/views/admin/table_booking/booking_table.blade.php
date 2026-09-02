@@ -10,7 +10,7 @@
                 <th>Occasion</th>
                 <th>Special Requests</th>
                 <th>Status</th>
-                <th style="width:100px;">Actions</th>
+                <th style="width:150px;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -61,11 +61,23 @@
                 </td>
                 <td>
                     <div class="progga-table-actions">
+                        <a class="progga-btn progga-btn-outline progga-btn-sm" href="{{ route("pos.index", ["table_id" => $booking->table_id, "customer_id" => $booking->customer_id, "table_booking_id" => $booking->id]) }}" title="Go to POS"><i class="bi bi-cart-plus"></i> POS</a>
                         @can('table-booking-edit')
-                        <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" onclick="editBookingData({{ $booking->id }}, '{{ $booking->customer_id }}', '{{ $booking->customer->name ?? '' }}', '{{ $booking->customer->phone ?? '' }}', '{{ $booking->customer->email ?? '' }}', '{{ $booking->table_id }}', '{{ $booking->booking_date }}', '{{ $booking->booking_start_time ?: $booking->booking_time }}', '{{ $booking->booking_end_time }}', '{{ $booking->number_of_guests }}', '{{ $booking->occasion_id }}', '{{ $booking->special_request }}', '{{ $booking->status }}')">
-                            <i class="bi bi-pencil"></i>
-                        </button>
+                        <a class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" href="{{ route("table-booking.edit", $booking->id) }}"><i class="bi bi-pencil"></i></a>
                         @endcan
+                        @if(in_array($booking->status, ['upcoming','confirmed']))
+                        <form method="POST" action="{{ route('table-booking.update', $booking->id) }}" style="display:inline;">
+                            @csrf @method('PUT')
+                            <input type="hidden" name="table_id" value="{{ $booking->table_id }}">
+                            <input type="hidden" name="customer_id" value="{{ $booking->customer_id }}">
+                            <input type="hidden" name="number_of_guests" value="{{ $booking->number_of_guests }}">
+                            <input type="hidden" name="booking_date" value="{{ $booking->booking_date->format('Y-m-d') }}">
+                            <input type="hidden" name="booking_start_time" value="{{ $booking->booking_start_time ? $booking->booking_start_time->format('H:i') : $booking->booking_time }}">
+                            <input type="hidden" name="booking_end_time" value="{{ $booking->booking_end_time ? $booking->booking_end_time->format('H:i') : '' }}">
+                            <input type="hidden" name="status" value="completed">
+                            <button class="progga-btn progga-btn-outline progga-btn-sm" title="Complete Booking">Complete</button>
+                        </form>
+                        @endif
                         @can('table-booking-delete')
                         <button type="button" class="progga-btn progga-btn-danger progga-btn-icon progga-btn-sm" onclick="deleteBooking({{ $booking->id }}, '{{ $booking->booking_id }}')" title="Cancel/Delete">
                             <i class="bi bi-trash"></i>
@@ -84,6 +96,6 @@
 <div class="progga-card-footer d-flex justify-content-between align-items-center">
     <span class="progga-page-info">Showing {{ $bookings->firstItem() ?? 0 }} to {{ $bookings->lastItem() ?? 0 }} of {{ $bookings->total() }} bookings</span>
     <div class="booking-pagination">
-        {{ $bookings->links('pagination::bootstrap-4') }}
+        
     </div>
 </div>

@@ -2,6 +2,9 @@
     <div class="progga-form-group">
         <label class="progga-form-label">Filter Type</label>
         <select name="filter_type" id="filterType" class="progga-select">
+            @if(isset($showAllFilterType) && $showAllFilterType)
+                <option value="all" {{ $filterType == 'all' ? 'selected' : '' }}>All</option>
+            @endif
             <option value="year" {{ $filterType == 'year' ? 'selected' : '' }}>Year Wise</option>
             <option value="month" {{ $filterType == 'month' ? 'selected' : '' }}>Month Wise</option>
             <option value="date" {{ $filterType == 'date' ? 'selected' : '' }}>Date Range</option>
@@ -37,13 +40,32 @@
         </div>
     </div>
 
+    @if(isset($showDeliveryPartnerFilter) && $showDeliveryPartnerFilter)
+    <div class="progga-form-group">
+        <label class="progga-form-label">{{ isset($deliveryPartners) ? 'Delivery Partner' : 'Order Channel' }}</label>
+        <select name="delivery_partner" id="deliveryPartnerFilter" class="progga-select">
+            @if(isset($deliveryPartners))
+                <option value="all" {{ ($selectedDeliveryPartnerId ?? 'all') === 'all' ? 'selected' : '' }}>ALL</option>
+                @foreach($deliveryPartners as $partner)
+                    <option value="{{ $partner->id }}" {{ (string)($selectedDeliveryPartnerId ?? 'all') === (string)$partner->id ? 'selected' : '' }}>{{ $partner->name }}</option>
+                @endforeach
+            @else
+                <option value="" {{ empty($deliveryPartner ?? '') ? 'selected' : '' }}>All</option>
+                @foreach(($deliveryPartnerOptions ?? []) as $partnerValue => $partnerLabel)
+                    <option value="{{ $partnerValue }}" {{ ($deliveryPartner ?? '') === $partnerValue ? 'selected' : '' }}>{{ $partnerLabel }}</option>
+                @endforeach
+            @endif
+        </select>
+    </div>
+    @endif
+
     @if(isset($showPaymentFilter) && $showPaymentFilter)
     <div class="progga-form-group">
         <label class="progga-form-label">Payment Type</label>
         <select name="payment_method" id="paymentMethod" class="progga-select">
             <option value="">All Payments</option>
             <option value="Cash" {{ ($paymentMethod ?? '') == 'Cash' ? 'selected' : '' }}>Cash</option>
-            <option value="Card" {{ ($paymentMethod ?? '') == 'Card' ? 'selected' : '' }}>Card</option>
+            <option value="Card" {{ ($paymentMethod ?? '') == 'Card' ? 'selected' : '' }}>Bank / Card</option>
             <option value="Mobile Banking" {{ ($paymentMethod ?? '') == 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
             <option value="Split" {{ ($paymentMethod ?? '') == 'Split' ? 'selected' : '' }}>Split</option>
         </select>
@@ -79,7 +101,11 @@ $(document).ready(function() {
     function toggleFields() {
         const val = $filterType.val();
 
-        if (val === 'year') {
+        if (val === 'all') {
+            $yearField.hide();
+            $monthField.hide();
+            $dateRange.hide();
+        } else if (val === 'year') {
             $yearField.show();
             $monthField.hide();
             $dateRange.hide();
@@ -126,7 +152,7 @@ $(document).ready(function() {
         window.triggerReportFetch();
     });
 
-    $('#filterYear, #filterMonth, #paymentMethod').on('change', function() {
+    $('#filterYear, #filterMonth, #paymentMethod, #deliveryPartnerFilter').on('change', function() {
         window.triggerReportFetch();
     });
 

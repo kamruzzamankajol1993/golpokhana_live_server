@@ -35,8 +35,12 @@
   <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
 
   <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/progga-style.css?v={{ time() }}">
+  <link rel="stylesheet" href="{{ asset('/') }}public/admin/assets/css/admin-responsive-custom.css?v={{ time() }}">
  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
+    .select2-selection__clear {
+        display: none !important;
+    }
     /* New Web Order Alert modal height/dropdown fix */
     #newQrOrderModal {
       z-index: 99990;
@@ -689,7 +693,7 @@ $('#btnHoldQrOrder').on('click', function() {
 <script>
 // Dynamic Export Script for Ajax Filters
 function exportReport(type, reportName) {
-    let baseUrl = "{{ route('reports.export.csv') }}";
+    let baseUrl = "{{ route('reports.export.excel') }}";
 
     if (type === 'pdf') {
         baseUrl = "{{ route('reports.export.pdf') }}";
@@ -702,6 +706,40 @@ function exportReport(type, reportName) {
     window.open(exportUrl, '_blank');
 }
 </script>
+
+@if(auth()->check())
+    @include('admin.include.logout_guard')
+@endif
+
+@if(auth()->check())
+<script>
+(function keepOpenPosSessionActivityCurrent() {
+    const activityUrl = @json(route('pos.session.activity'));
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (!activityUrl || !csrf || !window.fetch) return;
+
+    function pingOpenPosSession() {
+        fetch(activityUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: '_token=' + encodeURIComponent(csrf)
+        }).catch(function() {});
+    }
+
+    // No cron/scheduler: while the authenticated browser is alive, remember the
+    // last POS-session activity. Closing the tab/browser stops these requests.
+    setTimeout(pingOpenPosSession, 30000);
+    setInterval(pingOpenPosSession, 60000);
+})();
+</script>
+@endif
+
   @yield('script')
 </body>
 </html>

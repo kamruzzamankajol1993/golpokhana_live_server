@@ -306,7 +306,37 @@ public function printSessionReport($id)
         $session = PosSession::with('user')->findOrFail($id);
         $restaurant = \App\Models\RestaurantSetting::first();
         $taxSetting = DB::table('tax_settings')->first();
-        return view('admin.pos.session_report', compact('session', 'restaurant', 'taxSetting'));
+
+        $sessionOrders = Order::with('deliveryPartner')->whereBetween('created_at', [
+            $session->start_time,
+            $session->end_time ?? now()
+        ])->get();
+
+        $waiterSummary = $sessionOrders->groupBy('waiter_id')->map(function($orders){
+            $waiter = Waiter::find($orders->first()->waiter_id);
+            return [
+                'name' => $waiter->name ?? 'N/A',
+                'amount' => $orders->sum('grand_total')
+            ];
+        })->values();
+
+        // Additional Sales Summary: সব Delivery Partner দেখাবে, order না থাকলে 0
+        $deliveryPartnerIncome = \App\Models\DeliveryPartner::query()
+            ->where('status', 1)
+            ->orderBy('name')
+            ->get()
+            ->map(function($partner) use ($sessionOrders){
+                $amount = $sessionOrders
+                    ->where('delivery_partner_id', $partner->id)
+                    ->sum('grand_total');
+
+                return [
+                    'name' => $partner->name,
+                    'amount' => $amount
+                ];
+            })->values();
+
+        return view('admin.pos.session_report', compact('session', 'restaurant', 'taxSetting', 'deliveryPartnerIncome'));
     }
 
     public function updateSession(Request $request)
@@ -1542,7 +1572,7 @@ public function placeOrder(Request $request)
         if (in_array($selectedPaymentMethod, ['Card', 'Mobile Banking'], true)
             && trim((string) $request->input('transaction_id')) === '') {
             $referenceLabel = $selectedPaymentMethod === 'Card'
-                ? 'Card Reference Number'
+                ? 'Bank / Card Reference Number'
                 : 'MFS Reference Number';
 
             return response()->json([
@@ -1558,7 +1588,7 @@ public function placeOrder(Request $request)
             if ($splitCardAmount > 0 && trim((string) $request->input('split_card_reference')) === '') {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Card Reference Number is required when a Card amount is entered.'
+                    'message' => 'Bank / Card Reference Number is required when a Bank / Card amount is entered.'
                 ], 422);
             }
 
@@ -1651,6 +1681,7 @@ public function placeOrder(Request $request)
                 $mfc  = ($paymentMethod == 'Mobile Banking') ? $totalPaid : 0;
             }
 
+            $advanceAmount = max(0, round((float) ($order->booking_advance ?? 0), 2));
             $tipsAmount = max(0, round((float) ($request->tips_amount ?? 0), 2));
             $givenMoney = max(0, round((float) ($request->given_money ?? 0), 2));
             $maxAllowedTips = max(0, round($givenMoney - $totalPaid, 2));
@@ -1698,6 +1729,9 @@ public function placeOrder(Request $request)
             $order->status            = 'Completed'; // স্ট্যাটাস ১০০% আপডেট হবে
             $order->due               = $due;
             $order->total_paid_amount = $totalPaid;
+            if (Schema::hasColumn('orders', 'booking_advance')) {
+                $order->booking_advance = $advanceAmount;
+            }
             if (Schema::hasColumn('orders', 'tips_amount')) {
                 $order->tips_amount = $tipsAmount;
             }

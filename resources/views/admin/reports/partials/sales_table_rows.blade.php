@@ -9,11 +9,11 @@
         $orderType = strtolower((string) $order->order_type);
         $tableText = in_array($orderType, ['takeaway', 'delivery'], true) ? ucfirst($orderType) : 'Table T-' . (optional($order->table)->table_number ?? 'N/A');
 
-        $paymentText = $order->payment_type ?? 'N/A';
+        $paymentText = ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A');
         if ($paymentText === 'Split') {
             $splits = [];
             if((float)$order->paid_in_cash > 0) $splits[] = 'Cash: ' . number_format($order->paid_in_cash, 0);
-            if((float)$order->paid_in_card > 0) $splits[] = 'Card: ' . number_format($order->paid_in_card, 0);
+            if((float)$order->paid_in_card > 0) $splits[] = 'Bank / Card: ' . number_format($order->paid_in_card, 0);
             if((float)$order->paid_in_mfc > 0) $splits[] = 'MFS: ' . number_format($order->paid_in_mfc, 0);
             $paymentText .= count($splits) ? '<br><span style="font-size:10px;color:#666;">' . implode(', ', $splits) . '</span>' : '';
         }

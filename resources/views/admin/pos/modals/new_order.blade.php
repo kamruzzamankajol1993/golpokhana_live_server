@@ -10,14 +10,14 @@
 
             <div class="pos-modal-section">
               <div class="pos-modal-label">Order Type</div>
-              <div class="pos-type-wrap d-flex" style="gap: 5px;">
+              <div class="pos-type-wrap d-flex">
                 <input type="radio" id="posTypeDineIn" name="orderType" value="dine_in" checked>
                 <input type="radio" id="posTypeTakeaway" name="orderType" value="takeaway">
                 <input type="radio" id="posTypeDelivery" name="orderType" value="delivery">
 
-                <label for="posTypeDineIn" id="labelDineIn" style="flex: 1; text-align: center;"><i class="bi bi-layout-wtf"></i> Dine-In</label>
-                <label for="posTypeTakeaway" id="labelTakeaway" style="flex: 1; text-align: center;"><i class="bi bi-bag-fill"></i> Takeaway</label>
-                <label for="posTypeDelivery" id="labelDelivery" style="flex: 1; text-align: center;"><i class="bi bi-truck"></i> Delivery</label>
+                <label for="posTypeDineIn" id="labelDineIn"><i class="bi bi-layout-wtf"></i><span>Dine-In</span></label>
+                <label for="posTypeTakeaway" id="labelTakeaway"><i class="bi bi-bag-fill"></i><span>Takeaway</span></label>
+                <label for="posTypeDelivery" id="labelDelivery"><i class="bi bi-truck"></i><span>Delivery</span></label>
               </div>
             </div>
 
@@ -25,10 +25,7 @@
               <div class="pos-modal-label">Delivery Partner <span class="text-danger">*</span></div>
               <select id="posDeliveryPartnerSelect" class="progga-select w-100">
                 <option value="">-- Select Delivery Partner --</option>
-                <option value="inhouse">In-house Delivery</option>
-                <option value="foodpanda">Foodpanda</option>
-                <option value="foodi">Foodi</option>
-                <option value="pathao_food">Pathao Food</option>
+                @foreach($deliveryPartners ?? [] as $partner)<option value="{{ $partner->id }}">{{ $partner->name }}</option>@endforeach
               </select>
             </div>
 

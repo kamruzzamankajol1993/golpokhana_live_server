@@ -52,7 +52,7 @@
                     <th class="text-right">Product Discount</th>
                     <th>Payment Type</th>
                     <th class="text-right">Cash</th>
-                    <th class="text-right">Card</th>
+                    <th class="text-right">Bank / Card</th>
                     <th class="text-right">MFS</th>
                     <th class="text-right">Total Paid</th>
                 </tr>
@@ -67,7 +67,7 @@
                     <td>{{ $row['table'] }}</td>
                     <td class="text-right">৳{{ number_format($row['other_discount'] ?? 0, 2) }}</td>
                     <td class="text-right">৳{{ number_format($row['product_discount'] ?? 0, 2) }}</td>
-                    <td>{{ $row['payment_type'] }}</td>
+                    <td>{{ str_replace(['Mobile Banking / MFC', 'Mobile Banking / MFS', 'Mobile Banking'], 'MFS', $row['payment_type']) }}</td>
                     <td class="text-right">৳{{ number_format($row['cash'], 2) }}</td>
                     <td class="text-right">৳{{ number_format($row['card'], 2) }}</td>
                     <td class="text-right">৳{{ number_format($row['mfc'], 2) }}</td>
@@ -168,7 +168,7 @@
                     $tableText = in_array($orderType, ['takeaway', 'delivery'], true)
                         ? ucfirst($orderType)
                         : 'Table T-' . (optional($order->table)->table_number ?? 'N/A');
-                    $paymentText = $order->payment_type ?? 'N/A';
+                    $paymentText = ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A');
                 @endphp
                 <tr>
                     <td>{{ $key + 1 }}</td>
@@ -237,11 +237,11 @@
                     $orderType = strtolower((string) $order->order_type);
                     $tableText = in_array($orderType, ['takeaway', 'delivery'], true) ? ucfirst($orderType) : 'Table T-' . (optional($order->table)->table_number ?? 'N/A');
 
-                    $paymentText = $order->payment_type ?? 'N/A';
+                    $paymentText = ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A');
                     if ($paymentText === 'Split') {
                         $splits = [];
                         if((float)$order->paid_in_cash > 0) $splits[] = 'Cash: ' . number_format($order->paid_in_cash, 0);
-                        if((float)$order->paid_in_card > 0) $splits[] = 'Card: ' . number_format($order->paid_in_card, 0);
+                        if((float)$order->paid_in_card > 0) $splits[] = 'Bank / Card: ' . number_format($order->paid_in_card, 0);
                         if((float)$order->paid_in_mfc > 0) $splits[] = 'MFS: ' . number_format($order->paid_in_mfc, 0);
                         $paymentText .= count($splits) ? '<br><span style="font-size:8px;color:#555;">' . implode(', ', $splits) . '</span>' : '';
                     }

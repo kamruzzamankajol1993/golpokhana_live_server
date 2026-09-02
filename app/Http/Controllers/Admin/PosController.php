@@ -15,36 +15,108 @@ use App\Models\OrderDetail;
 use App\Models\PointHistory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
-use App\Models\PosSession; // ফাইলের উপরে এটি যুক্ত করতে ভুলবেন না
+use App\Models\PosSession;
+use App\Models\DeliveryPartner; // ফাইলের উপরে এটি যুক্ত করতে ভুলবেন না
+use App\Models\TableBooking;
 use App\Models\PosSetting;
 use App\Models\RestaurantSetting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
+use App\Exports\ArrayReportExport;
+use Maatwebsite\Excel\Facades\Excel;
+use Mpdf\Mpdf;
 class PosController extends Controller
 {
-  public function index()
+public function index(\Illuminate\Http\Request $request)
 {
+    if (auth()->check()) {
+        $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
+    }
+
+    // An unfinished POS session is independent from restaurant order hours.
+    // It can be continued/replaced even when the restaurant is currently closed.
+    $activeSession = PosSession::where('user_id', auth()->id())
+        ->where('status', 'Open')
+        ->orderByDesc('id')
+        ->first();
+
+    $forceUnfinishedSessionPrompt = $activeSession
+        && (int) session('force_pos_unfinished_prompt', 0) === (int) $activeSession->id;
+
+    if (!$activeSession) {
+        session()->forget('force_pos_unfinished_prompt');
+    }
+
     $posOrderWindow = $this->getPosOrderWindowStatus();
     $isPosOrderTimeOpen = $posOrderWindow['is_open'];
     $posOpeningTime = $posOrderWindow['opening_time'];
     $posClosingTime = $posOrderWindow['closing_time'];
     $posClosedMessage = $this->getPosClosedMessage($posOpeningTime);
+    $posSessionLifetimeMinutes = max(1, (int) config('session.lifetime', 180));
 
-    // বন্ধ সময় POS-এর order interface load হবে না।
     if (!$isPosOrderTimeOpen) {
         return view('admin.pos.index', compact(
             'isPosOrderTimeOpen',
             'posOpeningTime',
             'posClosingTime',
-            'posClosedMessage'
+            'posClosedMessage',
+            'activeSession',
+            'forceUnfinishedSessionPrompt',
+            'posSessionLifetimeMinutes'
         ));
     }
 
     $posSetting = DB::table('pos_settings')->first();
     $categories = FoodCategory::whereNull('parent_category_id')->where('status', 1)->orderBy('sort_order', 'asc')->get();
     $tables = Table::with('zone')->get();
+
+    // Reservation is a live POS state. A future booking must not reserve the table early.
+    $bdNow = Carbon::now('Asia/Dhaka');
+    $today = $bdNow->toDateString();
+    $currentTime = $bdNow->format('H:i:s');
+
+    $currentBookingsByTable = TableBooking::with('customer')
+        ->whereIn('status', ['upcoming', 'confirmed'])
+        ->whereDate('booking_date', $today)
+        ->where(function ($query) use ($currentTime) {
+            $query->whereNull('booking_start_time')
+                ->orWhereTime('booking_start_time', '<=', $currentTime);
+        })
+        ->where(function ($query) use ($currentTime) {
+            $query->whereNull('booking_end_time')
+                ->orWhereTime('booking_end_time', '>=', $currentTime);
+        })
+        ->orderBy('booking_start_time')
+        ->get()
+        ->groupBy('table_id')
+        ->map(fn ($bookings) => $bookings->first());
+
+    foreach ($tables as $table) {
+        if (strtolower((string) $table->initial_status) === 'occupied') {
+            continue;
+        }
+
+        if ($currentBookingsByTable->has($table->id)) {
+            $booking = $currentBookingsByTable->get($table->id);
+            $table->initial_status = 'reserved';
+            $table->reserved_customer_id = $booking->customer_id;
+            $table->reserved_booking_id = $booking->id;
+        } else {
+            if (strtolower((string) $table->initial_status) === 'reserved') {
+                $table->initial_status = 'available';
+            }
+            $table->reserved_customer_id = null;
+            $table->reserved_booking_id = null;
+        }
+    }
+
     $waiters = Waiter::where('status', 1)->get();
     $customers = Customer::orderBy('name', 'asc')->get();
+    $deliveryPartners = DeliveryPartner::where('status',1)->orderBy('name')->get();
+    $tableId = request()->get('table_id');
+    $selectedTableId = $tableId;
+    $selectedTable = $tableId ? Table::with('zone')->find($tableId) : null;
+    $selectedBookingId = $request->get('table_booking_id');
 
     $isManagerRole = $this->userHasRoleCaseInsensitive(auth()->user(), 'manager');
     $randomHalfOrderButtonVisible = $isManagerRole
@@ -56,35 +128,44 @@ class PosController extends Controller
     $occCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'occupied'; })->count();
     $resCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'reserved'; })->count();
 
-    $activeSession = PosSession::where('user_id', auth()->id())->where('status', 'Open')->first();
-
-    $activeTakeawayDeliveryOrders = Order::with(['customer', 'waiter', 'orderDetails'])
+    $activeTakeawayDeliveryOrders = Order::with(['customer', 'waiter', 'orderDetails', 'deliveryPartner'])
         ->whereIn('order_type', ['Takeaway', 'Delivery', 'takeaway', 'delivery', 'Take Away'])
         ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
         ->orderBy('id', 'desc')
         ->get();
 
     $requirePreviousSessionClose = false;
-
-    if ($activeSession) {
-        if ($activeSession->start_time->format('Y-m-d') !== Carbon::now()->format('Y-m-d')) {
-            $requirePreviousSessionClose = true;
-        }
+    if ($activeSession && $activeSession->start_time->format('Y-m-d') !== Carbon::now()->format('Y-m-d')) {
+        $requirePreviousSessionClose = true;
     }
 
-    // সেশন হিস্ট্রি টেবিলের জন্য সব সেশন ডেটা নিয়ে আসা হলো
-    $sessions = PosSession::with('user')->orderBy('id', 'desc')->get();
+    // Operational session dropdown follows the restaurant business day, not calendar date.
+    $businessDayWindow = $this->getPosBusinessDayWindow();
+    $sessions = PosSession::with('user')
+        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
+        ->orderBy('id', 'desc')
+        ->get();
+
+    $sessions->transform(function ($session) {
+        $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
+            Carbon::parse($session->start_time),
+            Carbon::parse($session->end_time ?: now())
+        )->sum('grand_total');
+        return $session;
+    });
 
     return view('admin.pos.index', compact(
         'categories',
         'tables',
         'waiters',
         'customers',
+        'deliveryPartners',
         'posSetting',
         'availCount',
         'occCount',
         'resCount',
         'activeSession',
+        'forceUnfinishedSessionPrompt',
         'requirePreviousSessionClose',
         'sessions',
         'activeTakeawayDeliveryOrders',
@@ -93,9 +174,208 @@ class PosController extends Controller
         'isPosOrderTimeOpen',
         'posOpeningTime',
         'posClosingTime',
-        'posClosedMessage'
+        'posClosedMessage',
+        'selectedTableId',
+        'selectedTable',
+        'selectedBookingId',
+        'posSessionLifetimeMinutes'
     ));
 }
+
+    /**
+     * Standalone POS session history page with AJAX pagination.
+     * This mirrors the session list previously shown inside the POS header modal.
+     */
+public function sessionList(Request $request)
+{
+    $businessDayWindow = $this->getPosBusinessDayWindow();
+    $sessions = PosSession::with('user')
+        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
+        ->orderByDesc('id')
+        ->paginate(15)
+        ->appends($request->query());
+
+    $sessions->getCollection()->transform(function ($session) {
+        $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
+            Carbon::parse($session->start_time),
+            Carbon::parse($session->end_time ?: now())
+        )->sum('grand_total');
+        return $session;
+    });
+
+    if ($request->ajax()) {
+        return response()->json([
+            'html' => view('admin.pos.sessions.partials.rows', compact('sessions'))->render(),
+            'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $sessions])->render(),
+        ]);
+    }
+
+    return view('admin.pos.sessions.index', compact('sessions'));
+}
+
+    /**
+     * Active/running KOT list. Completed/cancelled orders disappear automatically.
+     */
+public function kotList(Request $request)
+{
+    $businessDayWindow = $this->getPosBusinessDayWindow();
+    $kots = OrderKot::with([
+            'order.table',
+            'order.waiter',
+            'orderDetails',
+        ])
+        ->whereBetween('created_at', [$businessDayWindow['start'], $businessDayWindow['end']])
+        ->where('kitchen_status', '!=', 'Hold')
+        ->whereHas('order', function ($query) {
+            $query->whereNotIn('status', [
+                'Completed', 'completed',
+                'Cancelled', 'cancelled',
+                'Delivered', 'delivered',
+            ]);
+        })
+        ->orderByDesc('id')
+        ->paginate(15)
+        ->appends($request->query());
+
+    if ($request->ajax()) {
+        return response()->json([
+            'html' => view('admin.pos.kots.partials.rows', compact('kots'))->render(),
+            'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $kots])->render(),
+        ]);
+    }
+
+    return view('admin.pos.kots.index', compact('kots'));
+}
+
+
+
+    /** Export the same current business-day KOT rows shown in POS > KOT List. */
+    public function kotListPdf(Request $request)
+    {
+        [$businessDayWindow, $kots] = $this->currentPosKotsForExport();
+        [$headings, $rows] = $this->buildPosKotExportRows($kots);
+        return $this->posListPdfResponse(
+            'POS KOT List', $headings, $rows,
+            $this->businessDayExportLabel($businessDayWindow),
+            'pos-kot-list-' . now()->format('Y-m-d-His') . '.pdf'
+        );
+    }
+
+    public function kotListExcel(Request $request)
+    {
+        [, $kots] = $this->currentPosKotsForExport();
+        [$headings, $rows] = $this->buildPosKotExportRows($kots);
+        return Excel::download(new ArrayReportExport($headings, $rows, 'POS KOT List'), 'pos-kot-list-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
+    /** Export the same current business-day session rows shown in POS > Session List. */
+    public function sessionListPdf(Request $request)
+    {
+        [$businessDayWindow, $sessions] = $this->currentPosSessionsForExport();
+        [$headings, $rows] = $this->buildPosSessionExportRows($sessions);
+        return $this->posListPdfResponse(
+            'POS Session List', $headings, $rows,
+            $this->businessDayExportLabel($businessDayWindow),
+            'pos-session-list-' . now()->format('Y-m-d-His') . '.pdf'
+        );
+    }
+
+    public function sessionListExcel(Request $request)
+    {
+        [, $sessions] = $this->currentPosSessionsForExport();
+        [$headings, $rows] = $this->buildPosSessionExportRows($sessions);
+        return Excel::download(new ArrayReportExport($headings, $rows, 'POS Sessions'), 'pos-session-list-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
+    private function currentPosKotsForExport(): array
+    {
+        $businessDayWindow = $this->getPosBusinessDayWindow();
+        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
+            ->whereBetween('created_at', [$businessDayWindow['start'], $businessDayWindow['end']])
+            ->where('kitchen_status', '!=', 'Hold')
+            ->whereHas('order', function ($query) {
+                $query->whereNotIn('status', ['Completed', 'completed', 'Cancelled', 'cancelled', 'Delivered', 'delivered']);
+            })
+            ->orderByDesc('id')->get();
+        return [$businessDayWindow, $kots];
+    }
+
+    private function currentPosSessionsForExport(): array
+    {
+        $businessDayWindow = $this->getPosBusinessDayWindow();
+        $sessions = PosSession::with('user')
+            ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
+            ->orderByDesc('id')->get();
+        $sessions->transform(function ($session) {
+            $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
+                Carbon::parse($session->start_time),
+                Carbon::parse($session->end_time ?: now())
+            )->sum('grand_total');
+            return $session;
+        });
+        return [$businessDayWindow, $sessions];
+    }
+
+    private function buildPosKotExportRows($kots): array
+    {
+        $headings = ['ID', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
+        $rows = $kots->map(function ($kot) {
+            $order = $kot->order;
+            $type = strtolower((string) optional($order)->order_type);
+            $location = in_array($type, ['dine-in', 'dine_in'], true)
+                ? 'Table ' . (optional(optional($order)->table)->table_number ?? 'N/A')
+                : ucfirst(str_replace('_', ' ', (string) optional($order)->order_type));
+            $activeQty = $kot->orderDetails->filter(fn ($item) => (int) ($item->is_unavailable ?? 0) !== 1)->sum('quantity');
+            return [
+                $kot->id, $kot->kot_number ?? 'N/A', '#' . (optional($order)->order_number ?? 'N/A'),
+                $location ?: 'N/A', optional(optional($order)->waiter)->name ?? 'Unassigned', (int) $activeQty,
+                $kot->created_at ? $kot->created_at->format('d M Y, h:i A') : 'N/A',
+                $kot->kitchen_status ?? 'N/A', optional($order)->status ?? 'N/A',
+            ];
+        })->values()->all();
+        return [$headings, $rows];
+    }
+
+    private function buildPosSessionExportRows($sessions): array
+    {
+        $headings = ['ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Grand Total', 'Status'];
+        $rows = $sessions->map(function ($session) {
+            $start = Carbon::parse($session->start_time);
+            return [
+                $session->id, optional($session->user)->name ?? 'N/A', $session->weekday ?? $start->format('l'),
+                $session->start_time ? Carbon::parse($session->start_time)->format('d M Y, h:i A') : 'N/A',
+                $session->end_time ? Carbon::parse($session->end_time)->format('d M Y, h:i A') : 'Running',
+                $session->duration ?? 'Running', (float) ($session->report_grand_total ?? 0), $session->status ?? 'N/A',
+            ];
+        })->values()->all();
+        return [$headings, $rows];
+    }
+
+    private function businessDayExportLabel(array $businessDayWindow): string
+    {
+        return 'Business day: ' . $businessDayWindow['start']->format('d M Y, h:i A') . ' - ' . $businessDayWindow['end']->format('d M Y, h:i A');
+    }
+
+    private function posListPdfResponse(string $title, array $headings, array $rows, string $subtitle, string $fileName)
+    {
+        @ini_set('pcre.backtrack_limit', '10000000');
+        @ini_set('memory_limit', '512M');
+        $tempDir = storage_path('app/mpdf');
+        if (!is_dir($tempDir)) @mkdir($tempDir, 0775, true);
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8', 'format' => 'A4', 'orientation' => 'L',
+            'margin_left' => 8, 'margin_right' => 8, 'margin_top' => 10, 'margin_bottom' => 10,
+            'tempDir' => $tempDir,
+        ]);
+        $mpdf->SetTitle($title);
+        $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
+        $mpdf->WriteHTML(view('admin.pos.list_export_pdf', compact('title', 'subtitle', 'headings', 'rows'))->render());
+        while (ob_get_level() > 0) ob_end_clean();
+        return response($mpdf->Output($fileName, 'S'), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+        ]);
+    }
 
     /**
      * Restaurant Settings-এর opening/closing time অনুযায়ী POS order নেওয়া যাবে কি না।
@@ -132,6 +412,46 @@ class PosController extends Controller
             'closing_time' => $closingTime,
             'current_time' => $currentTime,
         ];
+    }
+
+    private function getPosBusinessDayWindow(?Carbon $moment = null): array
+    {
+        $restaurantSetting = RestaurantSetting::first();
+        $opening = $this->normalizePosTimeToMinute($restaurantSetting ? $restaurantSetting->opening_time : null, '12:01');
+        $closing = $this->normalizePosTimeToMinute($restaurantSetting ? $restaurantSetting->closing_time : null, '06:00');
+    
+        $now = ($moment ?: Carbon::now('Asia/Dhaka'))->copy()->setTimezone('Asia/Dhaka');
+        $today = $now->copy()->startOfDay();
+        $time = $now->format('H:i');
+    
+        $buildWindow = static function (Carbon $businessDate) use ($opening, $closing): array {
+            $start = $businessDate->copy()->startOfDay()->setTimeFromTimeString($opening . ':00');
+            $end = $businessDate->copy()->startOfDay()->setTimeFromTimeString($closing . ':00');
+            if ($closing <= $opening) {
+                $end->addDay();
+            }
+            return [
+                'business_date' => $businessDate->copy()->startOfDay(),
+                'start' => $start,
+                'end' => $end,
+                'opening_time' => $opening,
+                'closing_time' => $closing,
+            ];
+        };
+    
+        if ($opening === $closing) {
+            return $buildWindow($time >= $opening ? $today : $today->copy()->subDay());
+        }
+    
+        if ($opening < $closing) {
+            return $buildWindow($time < $opening ? $today->copy()->subDay() : $today);
+        }
+    
+        if ($time >= $opening) {
+            return $buildWindow($today);
+        }
+    
+        return $buildWindow($today->copy()->subDay());
     }
 
     private function normalizePosTimeToMinute($time, string $fallback): string
@@ -223,147 +543,531 @@ public function activateRandomHalfOrderList(Request $request)
         });
     }
 
-public function startSession(Request $request)
-    {
-        PosSession::create([
-            'user_id' => auth()->id(),
-            'weekday' => Carbon::now()->format('l'), // Monday, Tuesday ইত্যাদি
-            'start_time' => Carbon::now(),
-            'status' => 'Open'
-        ]);
+private function reportableOrdersForSessionWindow(Carbon $start, Carbon $end)
+{
+    return Order::query()
+        ->whereNotIn('status', ['Cancelled', 'cancelled'])
+        ->whereBetween('created_at', [$start, $end]);
+}
 
-        return response()->json(['status' => 'success', 'message' => 'Work period started successfully!']);
+private function closePosSessionAt(PosSession $session, Carbon $endTime): PosSession
+{
+    $startTime = Carbon::parse($session->start_time, 'Asia/Dhaka');
+    $endTime = $endTime->copy()->setTimezone('Asia/Dhaka');
+
+    if ($endTime->lt($startTime)) {
+        $endTime = $startTime->copy();
     }
 
-   public function endSession(Request $request)
-    {
-        $session = PosSession::where('id', $request->session_id)
-                             ->where('status', 'Open')
-                             ->firstOrFail();
+    $orders = $this->reportableOrdersForSessionWindow($startTime, $endTime)->get();
 
-        $endTime = Carbon::now();
+    $salesTotal = $orders->sum('subtotal');
+    $serviceCharge = $orders->sum('service_charge');
+    $vatTotal = $orders->sum('vat_tax');
+    $grandTotal = $orders->sum('grand_total');
 
-        // শুধু কমপ্লিট হওয়া অর্ডারগুলোর হিসাব বের করা হবে
-        $orders = Order::where('created_at', '>=', $session->start_time)
-                       ->where('created_at', '<=', $endTime)
-                       ->where('status', 'Completed')
-                       ->get();
+    $cash = 0;
+    $card = 0;
+    $mfc = 0;
 
-        $sales_total = $orders->sum('subtotal');
-        $service_charge = $orders->sum('service_charge');
-        $vat_total = $orders->sum('vat_tax');
-        $grand_total = $orders->sum('grand_total');
+    foreach ($orders as $order) {
+        if ($order->payment_type === 'Split') {
+            $cash += $order->paid_in_cash;
+            $card += $order->paid_in_card;
+            $mfc += $order->paid_in_mfc;
+        } else {
+            if ($order->payment_type === 'Cash') {
+                $cash += $order->total_paid_amount;
+            }
+            if ($order->payment_type === 'Card') {
+                $card += $order->total_paid_amount;
+            }
+            if ($order->payment_type === 'Mobile Banking') {
+                $mfc += $order->total_paid_amount;
+            }
+        }
+    }
 
-        // ==========================================
-        // পেমেন্ট মেথড অনুযায়ী Cash, Card এবং MFC হিসাব
-        // ==========================================
-        $cash = 0; $card = 0; $mfc = 0;
+    $duration = $endTime
+        ->diffAsCarbonInterval($startTime)
+        ->cascade()
+        ->forHumans(['short' => true]);
 
-        foreach($orders as $order) {
-            if ($order->payment_type == 'Split') {
-                $cash += $order->paid_in_cash;
-                $card += $order->paid_in_card;
-                $mfc += $order->paid_in_mfc;
+    $session->update([
+        'end_time' => $endTime,
+        'duration' => $duration,
+        'status' => 'Closed',
+        'sales_total' => $salesTotal,
+        'service_charge' => $serviceCharge,
+        'vat_total' => $vatTotal,
+        'grand_total' => $grandTotal,
+        'incomes_summary' => [
+            'Cash' => $cash,
+            'Card' => $card,
+            'MFC' => $mfc,
+        ],
+    ]);
+
+    return $session->fresh();
+}
+
+private function closeTimedOutOpenSessionsForUser(int $userId): void
+{
+    $now = Carbon::now('Asia/Dhaka');
+    $lifetimeMinutes = max(1, (int) config('session.lifetime', 180));
+
+    $openSessions = PosSession::where('user_id', $userId)
+        ->where('status', 'Open')
+        ->orderBy('id')
+        ->get();
+
+    foreach ($openSessions as $session) {
+        if (Schema::hasColumn('pos_sessions', 'last_activity_at') && $session->last_activity_at) {
+            $lastActivity = Carbon::parse($session->last_activity_at, 'Asia/Dhaka');
+        } elseif ($session->updated_at) {
+            $lastActivity = Carbon::parse($session->updated_at, 'Asia/Dhaka');
+        } else {
+            $lastActivity = Carbon::parse($session->start_time, 'Asia/Dhaka');
+        }
+
+        $expiresAt = $lastActivity->copy()->addMinutes($lifetimeMinutes);
+        if ($now->greaterThanOrEqualTo($expiresAt)) {
+            $this->closePosSessionAt($session, $expiresAt);
+        }
+    }
+}
+
+private function touchOpenPosSessionActivity(int $userId): void
+{
+    if (!Schema::hasColumn('pos_sessions', 'last_activity_at')) {
+        return;
+    }
+
+    DB::table('pos_sessions')
+        ->where('user_id', $userId)
+        ->where('status', 'Open')
+        ->update(['last_activity_at' => Carbon::now('Asia/Dhaka')]);
+}
+
+public function touchSessionActivity(Request $request)
+{
+    $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
+    $this->touchOpenPosSessionActivity((int) auth()->id());
+
+    return response()->json(['status' => 'success']);
+}
+
+private function getPosSessionCloseBlockers(PosSession $session, ?Carbon $checkTime = null): array
+{
+    $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
+
+    // Existing rule: ending/replacing/edit-closing a POS session is blocked while
+    // any dine-in table is occupied. Unpaid/due bills are intentionally ignored.
+    $activeOrderTableIds = Order::query()
+        ->whereNotNull('table_id')
+        ->whereIn('status', $activeStatuses)
+        ->pluck('table_id');
+
+    $persistedOccupiedTableIds = Table::query()
+        ->whereRaw('LOWER(TRIM(initial_status)) = ?', ['occupied'])
+        ->pluck('id');
+
+    $occupiedTableIds = $activeOrderTableIds
+        ->merge($persistedOccupiedTableIds)
+        ->map(fn ($id) => (int) $id)
+        ->filter()
+        ->unique()
+        ->values();
+
+    $occupiedTables = $occupiedTableIds->isEmpty()
+        ? collect()
+        : Table::query()
+            ->whereIn('id', $occupiedTableIds->all())
+            ->orderBy('table_number')
+            ->get(['id', 'table_number']);
+
+    // New rule: today's Pending Takeaway/Delivery orders also block Session End,
+    // Session Edit -> Closed, and replacing an unfinished session with a new one.
+    $today = ($checkTime ?: Carbon::now('Asia/Dhaka'))
+        ->copy()
+        ->timezone('Asia/Dhaka')
+        ->toDateString();
+
+    $pendingTakeawayDeliveryOrders = Order::query()
+        ->whereDate('order_time', $today)
+        ->whereRaw('LOWER(TRIM(status)) = ?', ['pending'])
+        ->whereRaw(
+            "LOWER(REPLACE(REPLACE(REPLACE(TRIM(order_type), '-', ''), ' ', ''), '_', '')) IN (?, ?)",
+            ['takeaway', 'delivery']
+        )
+        ->orderBy('id')
+        ->get(['id', 'order_number', 'order_type']);
+
+    $messages = [];
+
+    if ($occupiedTables->isNotEmpty()) {
+        $tableNames = $occupiedTables
+            ->pluck('table_number')
+            ->filter(fn ($number) => trim((string) $number) !== '')
+            ->take(6)
+            ->map(fn ($number) => 'Table ' . $number)
+            ->implode(', ');
+
+        $occupiedText = $occupiedTables->count() . ' occupied table' . ($occupiedTables->count() === 1 ? '' : 's');
+        if ($tableNames !== '') {
+            $occupiedText .= ' (' . $tableNames . ($occupiedTables->count() > 6 ? ', ...' : '') . ')';
+        }
+
+        $messages[] = 'Please clear ' . $occupiedText . ' first.';
+    }
+
+    if ($pendingTakeawayDeliveryOrders->isNotEmpty()) {
+        $orderLabels = $pendingTakeawayDeliveryOrders
+            ->take(6)
+            ->map(function ($order) {
+                $number = trim((string) ($order->order_number ?? ''));
+                return $number !== '' ? '#' . $number : 'Order #' . $order->id;
+            })
+            ->implode(', ');
+
+        $pendingText = $pendingTakeawayDeliveryOrders->count()
+            . ' pending Takeaway/Delivery order'
+            . ($pendingTakeawayDeliveryOrders->count() === 1 ? '' : 's');
+
+        if ($orderLabels !== '') {
+            $pendingText .= ' (' . $orderLabels
+                . ($pendingTakeawayDeliveryOrders->count() > 6 ? ', ...' : '') . ')';
+        }
+
+        $messages[] = 'Please complete or cancel today\'s ' . $pendingText . ' first.';
+    }
+
+    return [
+        'blocked' => $occupiedTables->isNotEmpty() || $pendingTakeawayDeliveryOrders->isNotEmpty(),
+        'occupied_table_count' => $occupiedTables->count(),
+        'occupied_table_ids' => $occupiedTables->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+        'pending_takeaway_delivery_count' => $pendingTakeawayDeliveryOrders->count(),
+        'pending_takeaway_delivery_order_ids' => $pendingTakeawayDeliveryOrders
+            ->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+        // Kept for response compatibility with the existing frontend.
+        'unpaid_bill_count' => 0,
+        'unpaid_order_ids' => [],
+        'message' => empty($messages) ? '' : 'Session cannot be ended. ' . implode(' ', $messages),
+    ];
+}
+
+private function sessionCloseBlockedResponse(array $blockers)
+{
+    return response()->json([
+        'status' => 'error',
+        'code' => 'session_close_blocked',
+        'message' => $blockers['message'],
+        'occupied_table_count' => $blockers['occupied_table_count'],
+        'occupied_table_ids' => $blockers['occupied_table_ids'],
+        'pending_takeaway_delivery_count' => $blockers['pending_takeaway_delivery_count'],
+        'pending_takeaway_delivery_order_ids' => $blockers['pending_takeaway_delivery_order_ids'],
+        'unpaid_bill_count' => $blockers['unpaid_bill_count'],
+        'unpaid_order_ids' => $blockers['unpaid_order_ids'],
+    ], 409);
+}
+
+public function startSession(Request $request)
+{
+    $userId = (int) auth()->id();
+    $this->closeTimedOutOpenSessionsForUser($userId);
+    $action = strtolower((string) $request->input('action', 'start'));
+
+    return DB::transaction(function () use ($userId, $action) {
+        // Prevent duplicate sessions from two tabs clicking at the same time.
+        DB::table('users')->where('id', $userId)->lockForUpdate()->first();
+
+        $activeSession = PosSession::where('user_id', $userId)
+            ->where('status', 'Open')
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->first();
+
+        if ($activeSession) {
+            if ($action === 'continue') {
+                $this->touchOpenPosSessionActivity($userId);
+                session()->forget('force_pos_unfinished_prompt');
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Previous unfinished POS session continued.',
+                    'session_id' => $activeSession->id,
+                    'start_time' => optional($activeSession->start_time)->format('Y-m-d H:i:s'),
+                    'already_active' => true,
+                ]);
+            }
+
+            if ($action === 'new') {
+                $blockers = $this->getPosSessionCloseBlockers($activeSession);
+                if ($blockers['blocked']) {
+                    return $this->sessionCloseBlockedResponse($blockers);
+                }
+
+                $this->closePosSessionAt($activeSession, Carbon::now('Asia/Dhaka'));
+                $activeSession = null;
             } else {
-                if ($order->payment_type == 'Cash') $cash += $order->total_paid_amount;
-                if ($order->payment_type == 'Card') $card += $order->total_paid_amount;
-                // মোডালে ভ্যালু "Mobile Banking" দেওয়া আছে, কিন্তু আমরা MFC হিসেবে কাউন্ট করছি
-                if ($order->payment_type == 'Mobile Banking') $mfc += $order->total_paid_amount;
+                return response()->json([
+                    'status' => 'unfinished',
+                    'code' => 'unfinished_pos_session',
+                    'message' => 'An unfinished POS session was found.',
+                    'session_id' => $activeSession->id,
+                    'start_time' => optional($activeSession->start_time)->format('Y-m-d H:i:s'),
+                ]);
             }
         }
 
-        // JSON এ সেভ করার জন্য Array তৈরি (একদম আপনার রিকোয়ারমেন্ট অনুযায়ী)
-        $incomes = [
-            'Cash' => $cash,
-            'Card' => $card,
-            'MFC'  => $mfc
+        $now = Carbon::now('Asia/Dhaka');
+        $payload = [
+            'user_id' => $userId,
+            'weekday' => $now->format('l'),
+            'start_time' => $now,
+            'status' => 'Open',
         ];
 
-        // ডিউরেশন ক্যালকুলেশন
-        $durationDiff = $endTime->diffAsCarbonInterval($session->start_time);
-        $duration = $durationDiff->cascade()->forHumans(['short' => true]); // যেমন: 10h 49m
+        if (Schema::hasColumn('pos_sessions', 'last_activity_at')) {
+            $payload['last_activity_at'] = $now;
+        }
 
-        $session->update([
-            'end_time' => $endTime,
-            'duration' => $duration,
-            'status' => 'Closed',
-            'sales_total' => $sales_total,
-            'service_charge' => $service_charge,
-            'vat_total' => $vat_total,
-            'grand_total' => $grand_total,
-            'incomes_summary' => $incomes // এখানে JSON আপডেট হলো
-        ]);
+        $session = PosSession::create($payload);
+        session()->forget('force_pos_unfinished_prompt');
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Work period ended successfully!',
-            'session_id' => $session->id // প্রিন্টের জন্য
+            'message' => $action === 'new'
+                ? 'Previous session closed and a new POS session started.'
+                : 'POS session started successfully!',
+            'session_id' => $session->id,
+            'start_time' => $now->format('Y-m-d H:i:s'),
+            'already_active' => false,
         ]);
+    });
+}
+
+public function endSession(Request $request)
+{
+    $session = PosSession::where('id', $request->session_id)
+        ->where('user_id', auth()->id())
+        ->where('status', 'Open')
+        ->firstOrFail();
+
+    $blockers = $this->getPosSessionCloseBlockers($session);
+    if ($blockers['blocked']) {
+        return $this->sessionCloseBlockedResponse($blockers);
     }
 
+    $session = $this->closePosSessionAt($session, Carbon::now('Asia/Dhaka'));
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Work period ended successfully!',
+        'session_id' => $session->id,
+    ]);
+}
+
 public function printSessionReport($id)
-    {
-        $session = PosSession::with('user')->findOrFail($id);
-        $restaurant = \App\Models\RestaurantSetting::first();
-        $taxSetting = DB::table('tax_settings')->first();
+{
+    $session = PosSession::with('user')->findOrFail($id);
+    $restaurant = \App\Models\RestaurantSetting::first();
+    $taxSetting = DB::table('tax_settings')->first();
 
-        $reportEnd = $session->end_time ?: now();
-        $orders = Order::where('created_at', '>=', $session->start_time)
-            ->where('created_at', '<=', $reportEnd)
-            ->where('status', 'Completed')
-            ->get();
+    $sessionStart = Carbon::parse($session->start_time);
+    $reportEnd = Carbon::parse($session->end_time ?: now());
 
-        $productDiscount = $orders->sum(function ($order) {
-            return (float) ($order->product_discount_amount ?? 0);
-        });
-        $honored = $orders->sum(function ($order) {
-            return (float) ($order->discount_amount ?? 0);
-        });
+    // Only the order creation time decides whether an order belongs to this session.
+    // Completed is NOT required; Pending/Cooking/Ready orders are included too.
+    $orders = $this->reportableOrdersForSessionWindow($sessionStart, $reportEnd)
+        ->with(['orderDetails.foodItem.addons'])
+        ->get();
 
-        $salesSummary = [
-            'sales_total' => (float) $orders->sum('subtotal'),
-            'product_discount' => (float) $productDiscount,
-            'honored' => (float) $honored,
-            'discount_total' => (float) ($productDiscount + $honored),
-            'service_charge' => (float) $orders->sum('service_charge'),
-            'vat_total' => (float) $orders->sum('vat_tax'),
-            'grand_total' => (float) $orders->sum('grand_total'),
+    $productDiscount = $orders->sum(function ($order) {
+        return (float) ($order->product_discount_amount ?? 0);
+    });
+    $honored = $orders->sum(function ($order) {
+        return (float) ($order->discount_amount ?? 0);
+    });
+
+    $salesSummary = [
+        'sales_total' => (float) $orders->sum('subtotal'),
+        'product_discount' => (float) $productDiscount,
+        'honored' => (float) $honored,
+        'discount_total' => (float) ($productDiscount + $honored),
+        'service_charge' => (float) $orders->sum('service_charge'),
+        'vat_total' => (float) $orders->sum('vat_tax'),
+        'grand_total' => (float) $orders->sum('grand_total'),
+    ];
+
+    $reportIncomes = ['Cash' => 0, 'Card' => 0, 'MFC' => 0];
+    $departmentIncome = ['dine_in' => 0, 'delivery' => 0, 'takeaway' => 0];
+    $closingExtraSummary = [
+        'complimentary' => 0,
+        'due' => 0,
+    ];
+
+    $deliveryPartnerDue = [];
+    $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get();
+    foreach ($deliveryPartners as $partner) {
+        $deliveryPartnerDue[$partner->id] = [
+            'name' => $partner->name,
+            'due' => 0,
         ];
+    }
 
-        $reportIncomes = ['Cash' => 0, 'Card' => 0, 'MFC' => 0];
-        $departmentIncome = ['dine_in' => 0, 'delivery' => 0, 'takeaway' => 0];
+    $deliveryPartnerIncome = [];
+    foreach ($deliveryPartners as $partner) {
+        $deliveryPartnerIncome[$partner->id] = [
+            'name' => $partner->name,
+            'amount' => 0,
+        ];
+    }
 
-        foreach ($orders as $order) {
-            if ($order->payment_type === 'Split') {
-                $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0);
-                $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0);
-                $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0);
-            } else {
-                $paid = (float) ($order->total_paid_amount ?? 0);
-                if ($order->payment_type === 'Cash') {
-                    $reportIncomes['Cash'] += $paid;
-                } elseif ($order->payment_type === 'Card') {
-                    $reportIncomes['Card'] += $paid;
-                } elseif ($order->payment_type === 'Mobile Banking') {
-                    $reportIncomes['MFC'] += $paid;
+    foreach ($orders as $order) {
+        $closingExtraSummary['due'] += max(0, (float) ($order->due ?? 0));
+
+        if (!empty($order->delivery_partner_id) && isset($deliveryPartnerDue[$order->delivery_partner_id])) {
+            $deliveryPartnerDue[$order->delivery_partner_id]['due'] += max(0, (float) ($order->due ?? 0));
+        }
+
+        if (!empty($order->delivery_partner_id) && isset($deliveryPartnerIncome[$order->delivery_partner_id])) {
+            $deliveryPartnerIncome[$order->delivery_partner_id]['amount'] += (float) ($order->grand_total ?? 0);
+        }
+
+        foreach ($order->orderDetails as $detail) {
+            if (!empty($detail->is_unavailable)) {
+                continue;
+            }
+
+            $isComplimentary = !empty($order->is_complimentary_order)
+                || !empty($detail->is_complimentary)
+                || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+
+            if (!$isComplimentary) {
+                continue;
+            }
+
+            $food = $detail->foodItem;
+            $foodPrice = $food ? (float) ($food->discount_price ?? $food->base_price ?? 0) : 0;
+            $addonTotal = 0;
+            $savedAddons = json_decode($detail->addons ?? '[]', true);
+
+            if (is_array($savedAddons)) {
+                $currentAddons = $food ? $food->addons->keyBy('id') : collect();
+                foreach ($savedAddons as $addon) {
+                    if (!is_array($addon)) {
+                        continue;
+                    }
+
+                    $addonId = (int) ($addon['id'] ?? 0);
+                    if ($addonId > 0 && $currentAddons->has($addonId)) {
+                        $addonTotal += (float) ($currentAddons->get($addonId)->price ?? 0);
+                    } else {
+                        $addonTotal += max(0, (float) ($addon['price'] ?? 0));
+                    }
                 }
             }
 
-            $departmentKey = $this->normalizePosOrderType($order->order_type ?? 'dine_in');
-            if (array_key_exists($departmentKey, $departmentIncome)) {
-                $departmentIncome[$departmentKey] += (float) ($order->grand_total ?? 0);
+            $quantity = max(1, (int) ($detail->quantity ?? 1));
+            $closingExtraSummary['complimentary'] += ($foodPrice + $addonTotal) * $quantity;
+        }
+
+        // total_paid_amount may include booking advance. Method-wise fields are the money paid now.
+        if ($order->payment_type === 'Split') {
+            $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0);
+            $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0);
+            $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0);
+        } else {
+            $advance = max(0, (float) ($order->booking_advance ?? 0));
+            $fallbackPaid = max(0, (float) ($order->total_paid_amount ?? 0) - $advance);
+
+            if ($order->payment_type === 'Cash') {
+                $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0) > 0
+                    ? (float) $order->paid_in_cash
+                    : $fallbackPaid;
+            } elseif ($order->payment_type === 'Card') {
+                $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0) > 0
+                    ? (float) $order->paid_in_card
+                    : $fallbackPaid;
+            } elseif ($order->payment_type === 'Mobile Banking') {
+                $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0) > 0
+                    ? (float) $order->paid_in_mfc
+                    : $fallbackPaid;
             }
         }
 
-        return view('admin.pos.session_report', compact(
-            'session',
-            'restaurant',
-            'taxSetting',
-            'salesSummary',
-            'reportIncomes',
-            'departmentIncome'
-        ));
+        $departmentKey = $this->normalizePosOrderType($order->order_type ?? 'dine_in');
+        if (array_key_exists($departmentKey, $departmentIncome)) {
+            $departmentIncome[$departmentKey] += (float) ($order->grand_total ?? 0);
+        }
     }
+
+    // Booking time (booking_date + booking_start_time), not booking record creation time,
+    // decides which session owns the customer advance section.
+    $bookingCandidates = TableBooking::where('advance_amount', '>', 0)
+        ->whereBetween('booking_date', [$sessionStart->toDateString(), $reportEnd->toDateString()])
+        ->get();
+
+    $sessionBookings = $bookingCandidates->filter(function ($booking) use ($sessionStart, $reportEnd) {
+        try {
+            $date = $booking->booking_date instanceof \Carbon\CarbonInterface
+                ? $booking->booking_date->format('Y-m-d')
+                : Carbon::parse($booking->booking_date)->format('Y-m-d');
+
+            $timeValue = $booking->booking_start_time ?: $booking->booking_time ?: '00:00:00';
+            $time = $timeValue instanceof \Carbon\CarbonInterface
+                ? $timeValue->format('H:i:s')
+                : Carbon::parse((string) $timeValue)->format('H:i:s');
+
+            $bookingAt = Carbon::parse($date . ' ' . $time);
+            return $bookingAt->between($sessionStart, $reportEnd, true);
+        } catch (\Throwable $exception) {
+            return false;
+        }
+    });
+
+    // Booking advance keeps its original payment method in the session income summary.
+    foreach ($sessionBookings as $booking) {
+        $advance = max(0, (float) ($booking->advance_amount ?? 0));
+        $method = strtolower(trim((string) ($booking->advance_payment_method ?? '')));
+        if ($method === 'cash') {
+            $reportIncomes['Cash'] += $advance;
+        } elseif ($method === 'card') {
+            $reportIncomes['Card'] += $advance;
+        } elseif (in_array($method, ['mfs', 'mobile banking', 'mobile_banking'], true)) {
+            $reportIncomes['MFC'] += $advance;
+        }
+    }
+
+    // Do NOT reduce table_bookings.advance_amount. Only Session Report's outstanding
+    // Customer Advance is reduced when that booking is consumed by a completed POS order.
+    $bookingIds = $sessionBookings->pluck('id');
+    $consumed = $bookingIds->isEmpty() ? collect() : Order::query()
+        ->whereIn('table_booking_id', $bookingIds)
+        ->whereIn('status', ['Completed', 'completed'])
+        ->where('booking_advance', '>', 0)
+        ->selectRaw('table_booking_id, SUM(booking_advance) as used_advance')
+        ->groupBy('table_booking_id')
+        ->pluck('used_advance', 'table_booking_id');
+
+    $customerAdvance = (float) $sessionBookings->sum(function ($booking) use ($consumed) {
+        return max(0, (float) $booking->advance_amount - (float) ($consumed[$booking->id] ?? 0));
+    });
+
+    return view('admin.pos.session_report', compact(
+        'session',
+        'restaurant',
+        'taxSetting',
+        'salesSummary',
+        'reportIncomes',
+        'departmentIncome',
+        'closingExtraSummary',
+        'customerAdvance',
+        'deliveryPartnerDue',
+        'deliveryPartnerIncome'
+    ));
+}
 
     public function updateSession(Request $request)
     {
@@ -379,6 +1083,23 @@ public function printSessionReport($id)
             $session = PosSession::lockForUpdate()->findOrFail($request->session_id);
             $previousStatus = $session->status;
             $sessionUserId = $session->user_id;
+
+            // Session Edit protection: an Open session cannot be changed to Closed
+            // while any POS table is occupied. This server-side guard applies to every
+            // edit UI that posts to pos.session.update, so it cannot be bypassed from
+            // the POS inline editor, Session List modal, or Work Period Sessions modal.
+            $previousStatusNormalized = strtolower(trim((string) $previousStatus));
+            $requestedStatusNormalized = strtolower(trim((string) $request->status));
+            $isClosingFromSessionEdit = $previousStatusNormalized !== 'closed'
+                && $requestedStatusNormalized === 'closed';
+
+            if ($isClosingFromSessionEdit) {
+                $blockers = $this->getPosSessionCloseBlockers($session);
+                if ($blockers['blocked']) {
+                    DB::rollBack();
+                    return $this->sessionCloseBlockedResponse($blockers);
+                }
+            }
 
             $startTime = Carbon::parse($request->start_time);
             $endTime = $request->end_time ? Carbon::parse($request->end_time) : null;
@@ -397,11 +1118,9 @@ public function printSessionReport($id)
                 $durationDiff = $endTime->diffAsCarbonInterval($startTime);
                 $duration = $durationDiff->cascade()->forHumans(['short' => true]);
 
-                // নতুন এডিট করা সময় সীমার ভেতরের Completed অর্ডারগুলো নেওয়া হচ্ছে
-                $orders = Order::where('created_at', '>=', $startTime)
-                               ->where('created_at', '<=', $endTime)
-                               ->where('status', 'Completed')
-                               ->get();
+                // নতুন এডিট করা সময় সীমার ভেতরের সব non-cancelled order নেওয়া হচ্ছে।
+                // Completed হওয়া বাধ্যতামূলক নয়।
+                $orders = $this->reportableOrdersForSessionWindow($startTime, $endTime)->get();
 
                 $sales_total = $orders->sum('subtotal');
                 $service_charge = $orders->sum('service_charge');
@@ -443,33 +1162,13 @@ public function printSessionReport($id)
                 'incomes_summary' => $request->status == 'Closed' ? $incomes : null
             ]);
 
-            // Session History edit থেকে Open session Closed করলে অটোমেটিক নতুন session শুরু হবে
-            $shouldStartNewSession = $previousStatus == 'Open'
-                && $request->status == 'Closed'
-                && $endTime;
-
-            if ($shouldStartNewSession) {
-                $hasOpenSession = PosSession::where('user_id', $sessionUserId)
-                    ->where('status', 'Open')
-                    ->exists();
-
-                if (!$hasOpenSession) {
-                    PosSession::create([
-                        'user_id' => $sessionUserId,
-                        'weekday' => Carbon::now()->format('l'),
-                        'start_time' => Carbon::now(),
-                        'status' => 'Open'
-                    ]);
-                }
-            }
-
+            // Closing/editing a session must never auto-start another one.
+            // The next work period is started explicitly from the POS Start Session button.
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => $shouldStartNewSession
-                    ? 'Session closed, report recalculated, and a new session started successfully!'
-                    : 'Session updated and report recalculated successfully!'
+                'message' => 'Session updated and report recalculated successfully!'
             ]);
 
         } catch (\Exception $e) {
@@ -586,6 +1285,10 @@ public function printSessionReport($id)
     $food = FoodItem::findOrFail($request->food_id);
 
     $isComplimentary = $request->boolean('is_complimentary');
+    if ($isComplimentary && ($passwordError = $this->validatePosActionPassword($request->input('action_password')))) {
+        return $passwordError;
+    }
+
     $price = $isComplimentary ? 0 : ($food->discount_price ?? $food->base_price);
     $addonTotal = 0;
     $addons = [];
@@ -688,10 +1391,80 @@ public function printSessionReport($id)
         return 'KOT-' . (((int) $lastKotNumber) + 1);
     }
 
+    /**
+     * Resolve the advance already collected for a dine-in table booking.
+     * The booking amount remains on the booking record for audit/reporting;
+     * the order stores the applied amount so it is deducted only from the bill due.
+     */
+private function resolveTableBookingForOrder(Request $request, $tableId, $customerId): ?TableBooking
+{
+    if (!$tableId || !Schema::hasColumn('table_bookings', 'advance_amount')) {
+        return null;
+    }
+
+    $bookingId = (int) $request->input('table_booking_id', 0);
+    $bdNow = Carbon::now('Asia/Dhaka');
+    $currentTime = $bdNow->format('H:i:s');
+
+    // Booking association is automatic from the selected table and is valid only
+    // while the reservation window is active. No visible Table Booking selector is needed.
+    $query = TableBooking::where('table_id', $tableId)
+        ->whereIn('status', ['upcoming', 'confirmed'])
+        ->whereDate('booking_date', $bdNow->toDateString())
+        ->where(function ($time) use ($currentTime) {
+            $time->whereNull('booking_start_time')
+                ->orWhereTime('booking_start_time', '<=', $currentTime);
+        })
+        ->where(function ($time) use ($currentTime) {
+            $time->whereNull('booking_end_time')
+                ->orWhereTime('booking_end_time', '>=', $currentTime);
+        });
+
+    // A Go-to-POS booking id is only an extra safety constraint; the active time window is authoritative.
+    if ($bookingId > 0) {
+        $query->where('id', $bookingId);
+    }
+
+    $booking = $query->orderBy('booking_start_time')->first();
+    if (!$booking) {
+        return null;
+    }
+
+    // Never apply the same booking advance to another live/completed non-cancelled order.
+    if (Schema::hasColumn('orders', 'table_booking_id') && Schema::hasColumn('orders', 'booking_advance')) {
+        $usedBookingQuery = Order::where('table_booking_id', $booking->id)
+            ->where('booking_advance', '>', 0)
+            ->whereNotIn('status', ['Cancelled', 'cancelled']);
+
+        if ($request->filled('order_id')) {
+            $usedBookingQuery->where('id', '!=', (int) $request->input('order_id'));
+        }
+
+        if ($usedBookingQuery->exists()) {
+            return null;
+        }
+    }
+
+    return $booking;
+}
+
 public function placeOrder(Request $request)
     {
         if (!$this->getPosOrderWindowStatus()['is_open']) {
             return $this->posOrderClosedResponse();
+        }
+
+        $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
+        $activeSession = PosSession::where('user_id', auth()->id())
+            ->where('status', 'Open')
+            ->exists();
+
+        if (!$activeSession) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'pos_session_required',
+                'message' => 'Please start the POS session before creating an order.',
+            ], 409);
         }
 
         $cartKey = $this->getCartKey($request);
@@ -705,9 +1478,17 @@ public function placeOrder(Request $request)
         // Offcanvas-এর Add Complimentary আগের মতো individual complimentary item হিসেবেই থাকবে।
         $isComplimentaryOrder = $request->boolean('is_complimentary_order');
         if ($isComplimentaryOrder) {
+            if ($passwordError = $this->validatePosActionPassword($request->input('action_password'))) {
+                return $passwordError;
+            }
+
             $cart = $this->makeCartComplimentary($cart);
             Session::put($cartKey, $cart);
         }
+
+        // Track whether this submission is adding food to an already-running order.
+        // KOTs created from Add More are allowed to delete their items without the POS action password.
+        $isAddMoreFlow = false;
 
         DB::beginTransaction();
         try {
@@ -732,12 +1513,9 @@ public function placeOrder(Request $request)
             if($requestOrderType == 'takeaway') $order_type_val = 'Takeaway';
             if($requestOrderType == 'delivery') $order_type_val = 'Delivery';
 
-            $allowedDeliveryPartners = ['inhouse', 'foodpanda', 'foodi', 'pathao_food'];
-            $deliveryPartner = $requestOrderType === 'delivery'
-                ? trim((string) ($request->delivery_partner ?: 'inhouse'))
-                : null;
+            $deliveryPartner = $requestOrderType === 'delivery' ? (int) ($request->delivery_partner ?: 0) : null;
 
-            if ($requestOrderType === 'delivery' && !in_array($deliveryPartner, $allowedDeliveryPartners, true)) {
+            if ($requestOrderType === 'delivery' && !DeliveryPartner::where('id',$deliveryPartner)->exists()) {
                 DB::rollBack();
                 return response()->json([
                     'status' => 'error',
@@ -775,6 +1553,13 @@ public function placeOrder(Request $request)
                         $customerId = null;
                     }
 
+                    $booking = $requestOrderType === 'dine_in'
+                        ? $this->resolveTableBookingForOrder($request, $order->table_id ?: $request->table_id, $customerId)
+                        : null;
+                    $bookingAdvance = Schema::hasColumn('orders', 'booking_advance')
+                        ? max(0, (float) ($booking->advance_amount ?? $order->booking_advance ?? 0))
+                        : 0;
+
                     $orderUpdateData = [
                         'customer_id' => $customerId,
                         'waiter_id' => $request->waiter_id ?: $order->waiter_id,
@@ -786,17 +1571,26 @@ public function placeOrder(Request $request)
                         'vat_tax' => $tax,
                         'service_charge' => $service_charge,
                         'grand_total' => $grand_total,
-                        'due' => $grand_total,
+                        'due' => max(0, $grand_total - $bookingAdvance),
                         'status' => $newStatus,
                         'notes' => $request->order_notes ?? $order->notes,
                         'preparation_time' => $request->preparation_time ?? 20
                     ];
 
+                    if (Schema::hasColumn('orders', 'booking_advance')) {
+                        $orderUpdateData['booking_advance'] = $bookingAdvance;
+                    }
+                    if (Schema::hasColumn('orders', 'table_booking_id')) {
+                        $orderUpdateData['table_booking_id'] = $booking->id ?? $order->table_booking_id ?? null;
+                    }
                     if (Schema::hasColumn('orders', 'is_complimentary_order')) {
                         $orderUpdateData['is_complimentary_order'] = $isComplimentaryOrder ? 1 : 0;
                     }
                     if (Schema::hasColumn('orders', 'delivery_partner')) {
                         $orderUpdateData['delivery_partner'] = $deliveryPartner;
+                    }
+                    if (Schema::hasColumn('orders', 'delivery_partner_id')) {
+                        $orderUpdateData['delivery_partner_id'] = $deliveryPartner;
                     }
 
                     $order->update($orderUpdateData);
@@ -813,6 +1607,7 @@ public function placeOrder(Request $request)
                     // ==========================================
                     // অবস্থা ২: Add More Food (আগে থেকেই কিচেনে রান্না চলছে, ওয়েটার নতুন খাবার যোগ করেছে)
                     // ==========================================
+                    $isAddMoreFlow = true;
 
                     // ১. ফ্রন্ট ডেস্ক যখন কার্ট এপ্রুভ করবে, তখন আগের তৈরি হওয়া ডামি 'Hold' KOT ডিলিট করে সাবটোটাল মাইনাস করতে হবে (যাতে ডাবল বিল না হয়)
                     $holdKots = OrderKot::where('order_id', $order->id)->where('kitchen_status', 'Hold')->get();
@@ -844,7 +1639,7 @@ public function placeOrder(Request $request)
                         'service_charge' => $service_charge,
                         'grand_total' => $grand_total,
                         'preparation_time' => $request->preparation_time ?? 20,
-                        'due' => $grand_total,
+                        'due' => max(0, $grand_total - (Schema::hasColumn('orders', 'booking_advance') ? (float) ($order->booking_advance ?? 0) : 0)),
                         'status' => $newStatus // ওয়েটার করলে Waiter_Hold, ফ্রন্ট ডেস্ক করলে Pending হবে
                     ];
 
@@ -854,6 +1649,9 @@ public function placeOrder(Request $request)
                     }
                     if (Schema::hasColumn('orders', 'delivery_partner') && $requestOrderType === 'delivery') {
                         $orderUpdateData['delivery_partner'] = $deliveryPartner;
+                    }
+                    if (Schema::hasColumn('orders', 'delivery_partner_id') && $requestOrderType === 'delivery') {
+                        $orderUpdateData['delivery_partner_id'] = $deliveryPartner;
                     }
 
                     $order->update($orderUpdateData);
@@ -878,6 +1676,13 @@ public function placeOrder(Request $request)
                     }
                 }
 
+                $booking = $requestOrderType === 'dine_in'
+                    ? $this->resolveTableBookingForOrder($request, $request->table_id, $customerId)
+                    : null;
+                $bookingAdvance = Schema::hasColumn('orders', 'booking_advance')
+                    ? max(0, (float) ($booking->advance_amount ?? 0))
+                    : 0;
+
                 $orderCreateData = [
                     'customer_id' => $customerId,
                     'table_id' => in_array($requestOrderType, ['takeaway', 'delivery'], true) ? null : $request->table_id,
@@ -890,18 +1695,27 @@ public function placeOrder(Request $request)
                     'vat_tax' => $tax,
                     'service_charge' => $service_charge,
                     'grand_total' => $grand_total,
-                    'due' => $grand_total,
+                    'due' => max(0, $grand_total - $bookingAdvance),
                     'status' => $newStatus,
                     'notes' => $request->order_notes,
                     'order_time' => now(),
                     'preparation_time' => $request->preparation_time ?? 20
                 ];
 
+                if (Schema::hasColumn('orders', 'booking_advance')) {
+                    $orderCreateData['booking_advance'] = $bookingAdvance;
+                }
+                if (Schema::hasColumn('orders', 'table_booking_id')) {
+                    $orderCreateData['table_booking_id'] = $booking->id ?? null;
+                }
                 if (Schema::hasColumn('orders', 'is_complimentary_order')) {
                     $orderCreateData['is_complimentary_order'] = $isComplimentaryOrder ? 1 : 0;
                 }
                 if (Schema::hasColumn('orders', 'delivery_partner')) {
                     $orderCreateData['delivery_partner'] = $deliveryPartner;
+                }
+                if (Schema::hasColumn('orders', 'delivery_partner_id')) {
+                    $orderCreateData['delivery_partner_id'] = $deliveryPartner;
                 }
 
                 $order = Order::create($orderCreateData);
@@ -913,11 +1727,15 @@ public function placeOrder(Request $request)
 
             // নতুন KOT জেনারেট করা (Global serial: KOT-1, KOT-2, KOT-3...)
             $kotNumber = $this->generateGlobalKotNumber();
-            $kot = OrderKot::create([
+            $kotData = [
                 'order_id' => $order->id,
                 'kot_number' => $kotNumber,
                 'kitchen_status' => $isWaiter ? 'Hold' : 'Pending' // ওয়েটার হলে হোল্ড হবে
-            ]);
+            ];
+            if (Schema::hasColumn('order_kots', 'is_add_more')) {
+                $kotData['is_add_more'] = $isAddMoreFlow ? 1 : 0;
+            }
+            $kot = OrderKot::create($kotData);
 
             // কার্টের আইটেমগুলো নতুন KOT-তে সেভ করা
             foreach ($cart as $item) {
@@ -960,7 +1778,7 @@ public function placeOrder(Request $request)
     public function getTableOrder($table_id)
     {
         // Cooking এবং Ready স্টেটাস যুক্ত করা হলো যাতে সব ধরনের রানিং অর্ডার পাওয়া যায়
-        $order = Order::with(['kots.orderDetails', 'orderDetails', 'waiter', 'customer', 'table'])
+        $order = Order::with(['kots.orderDetails', 'orderDetails', 'waiter', 'customer', 'table', 'tableBooking', 'deliveryPartner'])
                       ->where('table_id', $table_id)
                       ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
                       ->first();
@@ -1029,7 +1847,8 @@ public function placeOrder(Request $request)
                     'customer_phone' => $order->customer->phone ?? '',
                     'is_walk_in' => $order->customer_id ? 0 : 1,
                     'notes' => $order->notes ?? '',
-                    'delivery_partner' => $order->delivery_partner ?? null,
+                    'delivery_partner' => $order->resolved_delivery_partner_id ?? null,
+                    'delivery_partner_name' => $order->delivery_partner_display_name,
                     'subtotal' => $order->subtotal
                 ]
             ]);
@@ -1055,10 +1874,72 @@ public function placeOrder(Request $request)
             ->orderBy('table_number', 'asc')
             ->get();
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables'))->render();
+        $customers = $order->customer_id
+            ? collect()
+            : Customer::orderBy('name', 'asc')->get(['id', 'name', 'phone']);
+        $waiters = Waiter::where('status', 1)->orderBy('name')->get(['id', 'name']);
+        $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
+
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners'))->render();
     }
 
-    public function swapTable(Request $request)
+public function tableReservationStatuses()
+{
+    $bdNow = Carbon::now('Asia/Dhaka');
+    $today = $bdNow->toDateString();
+    $currentTime = $bdNow->format('H:i:s');
+
+    $activeTableIds = Order::query()
+        ->whereNotNull('table_id')
+        ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
+        ->pluck('table_id')
+        ->map(fn ($id) => (int) $id)
+        ->flip();
+
+    $bookingsByTable = TableBooking::with('customer')
+        ->whereIn('status', ['upcoming', 'confirmed'])
+        ->whereDate('booking_date', $today)
+        ->where(function ($query) use ($currentTime) {
+            $query->whereNull('booking_start_time')
+                ->orWhereTime('booking_start_time', '<=', $currentTime);
+        })
+        ->where(function ($query) use ($currentTime) {
+            $query->whereNull('booking_end_time')
+                ->orWhereTime('booking_end_time', '>=', $currentTime);
+        })
+        ->orderBy('booking_start_time')
+        ->get()
+        ->groupBy('table_id')
+        ->map(fn ($bookings) => $bookings->first());
+
+    $states = Table::query()->get(['id'])->map(function ($table) use ($activeTableIds, $bookingsByTable) {
+        $tableId = (int) $table->id;
+
+        if ($activeTableIds->has($tableId)) {
+            return ['table_id' => $tableId, 'status' => 'occupied', 'booking_id' => null, 'customer_id' => null];
+        }
+
+        $booking = $bookingsByTable->get($tableId);
+        if ($booking) {
+            return [
+                'table_id' => $tableId,
+                'status' => 'reserved',
+                'booking_id' => (int) $booking->id,
+                'customer_id' => $booking->customer_id ? (int) $booking->customer_id : null,
+            ];
+        }
+
+        return ['table_id' => $tableId, 'status' => 'available', 'booking_id' => null, 'customer_id' => null];
+    })->values();
+
+    return response()->json([
+        'status' => 'success',
+        'server_time' => $bdNow->toIso8601String(),
+        'tables' => $states,
+    ]);
+}
+
+        public function swapTable(Request $request)
     {
         $request->validate([
             'order_id' => 'required|integer|exists:orders,id',
@@ -1203,9 +2084,203 @@ public function placeOrder(Request $request)
         }
     }
 
+    public function updateActiveOrderMeta(Request $request)
+    {
+        if (!$this->getPosOrderWindowStatus()['is_open']) {
+            return $this->posOrderClosedResponse();
+        }
+
+        $request->validate([
+            'order_id' => 'required|integer|exists:orders,id',
+            'update_type' => 'required|in:customer,delivery_partner,waiter',
+            'customer_mode' => 'nullable|in:existing,new,walk_in',
+            'customer_id' => 'nullable|integer',
+            'customer_name' => 'nullable|string|max:255',
+            'customer_phone' => 'nullable|string|max:20',
+            'customer_email' => 'nullable|email|max:255',
+            'delivery_partner' => 'nullable|integer|exists:delivery_partners,id',
+            'waiter_id' => 'nullable|integer|exists:waiters,id',
+        ]);
+
+        if ($request->update_type === 'customer') {
+            $customerMode = $request->input('customer_mode', 'existing');
+
+            if ($customerMode === 'new') {
+                $request->validate([
+                    'customer_name' => 'required|string|max:255',
+                    'customer_phone' => 'required|string|max:20',
+                ]);
+            } elseif ($customerMode === 'existing') {
+                $request->validate([
+                    'customer_id' => 'required|integer|exists:customers,id',
+                ]);
+            }
+        } elseif ($request->update_type === 'delivery_partner') {
+            $request->validate([
+                'delivery_partner' => 'required|integer|exists:delivery_partners,id',
+            ]);
+        } else {
+            $request->validate([
+                'waiter_id' => 'required|integer|exists:waiters,id',
+            ]);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
+            $order = Order::where('id', $request->order_id)
+                ->whereIn('status', $activeStatuses)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Active order not found or payment is already completed.'
+                ], 404);
+            }
+
+            // payment_type has a database default of "Cash", even before any payment is made.
+            // Treat the order as payment-started only when an actual paid amount exists.
+            $hasPayment = (float) ($order->total_paid_amount ?? 0) > 0
+                || (float) ($order->paid_in_cash ?? 0) > 0
+                || (float) ($order->paid_in_card ?? 0) > 0
+                || (float) ($order->paid_in_mfc ?? 0) > 0;
+
+            if ($hasPayment) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Customer, waiter or delivery partner cannot be changed after payment has started.'
+                ], 422);
+            }
+
+            if ($request->update_type === 'customer') {
+                $customerMode = $request->input('customer_mode', 'existing');
+
+                if ($customerMode === 'walk_in') {
+                    $order->customer_id = null;
+                    $order->save();
+
+                    DB::commit();
+
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => 'Order changed back to Walk-in Customer successfully.',
+                        'customer' => null,
+                    ]);
+                }
+
+                if ($order->customer_id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'This order already has a customer. Change it back to Walk-in first if you want to assign another customer.'
+                    ], 422);
+                }
+
+                if ($customerMode === 'new') {
+                    $customer = Customer::create([
+                        'name' => trim((string) $request->customer_name),
+                        'phone' => trim((string) $request->customer_phone),
+                        'email' => $request->filled('customer_email') ? trim((string) $request->customer_email) : null,
+                    ]);
+                } else {
+                    $customer = Customer::findOrFail($request->customer_id);
+                }
+
+                $order->customer_id = $customer->id;
+                $order->save();
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Customer added to the order successfully.',
+                    'customer' => [
+                        'id' => $customer->id,
+                        'name' => $customer->name,
+                        'phone' => $customer->phone,
+                    ],
+                ]);
+            }
+
+            if ($request->update_type === 'waiter') {
+                $waiter = Waiter::where('id', $request->waiter_id)
+                    ->where('status', 1)
+                    ->first();
+
+                if (!$waiter) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Please select an active waiter.'
+                    ], 422);
+                }
+
+                $order->waiter_id = $waiter->id;
+                $order->save();
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Waiter updated successfully.',
+                    'waiter' => ['id' => $waiter->id, 'name' => $waiter->name],
+                ]);
+            }
+
+            if ($this->normalizePosOrderType($order->order_type ?? '') !== 'delivery') {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Delivery partner can only be changed for Delivery orders.'
+                ], 422);
+            }
+
+            $deliveryPartner = DeliveryPartner::whereKey((int) $request->delivery_partner)
+                ->where('status', 1)
+                ->first();
+
+            if (!$deliveryPartner) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please select an active delivery partner.'
+                ], 422);
+            }
+
+            if (Schema::hasColumn('orders', 'delivery_partner')) {
+                $order->delivery_partner = $deliveryPartner->id;
+            }
+            if (Schema::hasColumn('orders', 'delivery_partner_id')) {
+                $order->delivery_partner_id = $deliveryPartner->id;
+            }
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Delivery partner updated successfully.',
+                'delivery_partner' => $deliveryPartner->id,
+                'delivery_partner_name' => $deliveryPartner->name,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order details update failed! ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getPosOrder($order_id)
     {
-        $order = Order::with(['kots.orderDetails', 'orderDetails', 'waiter', 'customer', 'table'])
+        $order = Order::with(['kots.orderDetails', 'orderDetails', 'waiter', 'customer', 'table', 'deliveryPartner'])
             ->where('id', $order_id)
             ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
             ->first();
@@ -1276,6 +2351,8 @@ public function placeOrder(Request $request)
                     'customer_phone' => $order->customer->phone ?? '',
                     'is_walk_in' => $order->customer_id ? 0 : 1,
                     'notes' => $order->notes ?? '',
+                    'delivery_partner' => $order->resolved_delivery_partner_id ?? null,
+                    'delivery_partner_name' => $order->delivery_partner_display_name,
                     'subtotal' => $order->subtotal
                 ]
             ]);
@@ -1287,7 +2364,13 @@ public function placeOrder(Request $request)
             ? $order->kots()->whereIn('kitchen_status', ['Pending', 'Cooking', 'Hold'])->exists()
             : false;
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus'))->render();
+        $customers = $order->customer_id
+            ? collect()
+            : Customer::orderBy('name', 'asc')->get(['id', 'name', 'phone']);
+        $waiters = Waiter::where('status', 1)->orderBy('name')->get(['id', 'name']);
+        $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
+
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'customers', 'waiters', 'deliveryPartners'))->render();
     }
 
     public function holdWebOrder(Request $request)
@@ -1621,7 +2704,7 @@ public function placeOrder(Request $request)
         if (in_array($selectedPaymentMethod, ['Card', 'Mobile Banking'], true)
             && trim((string) $request->input('transaction_id')) === '') {
             $referenceLabel = $selectedPaymentMethod === 'Card'
-                ? 'Card Reference Number'
+                ? 'Bank / Card Reference Number'
                 : 'MFS Reference Number';
 
             return response()->json([
@@ -1637,7 +2720,7 @@ public function placeOrder(Request $request)
             if ($splitCardAmount > 0 && trim((string) $request->input('split_card_reference')) === '') {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Card Reference Number is required when a Card amount is entered.'
+                    'message' => 'Bank / Card Reference Number is required when a Bank / Card amount is entered.'
                 ], 422);
             }
 
@@ -1716,28 +2799,56 @@ public function placeOrder(Request $request)
             // ===============================================
             $paymentMethod = $request->payment_method;
 
-            // Total Paid = শুধু bill payment. Tips/Given/Change আলাদা থাকবে।
-            // Split হলে Total Paid input ব্যবহার হবে না; Cash + Card + Mobile Banking sum হবে।
-            if ($paymentMethod == 'Split') {
+            // The linked Table Booking remains the authoritative source of advance amount.
+            // We copy it to the order for invoice/report audit but never reduce table_bookings.advance_amount.
+            $bookingAdvanceSource = null;
+            if (Schema::hasColumn('orders', 'table_booking_id') && $order->table_booking_id) {
+                $linkedBooking = TableBooking::find($order->table_booking_id);
+                $bookingAdvanceSource = $linkedBooking?->advance_amount;
+            }
+
+            $advanceAmount = Schema::hasColumn('orders', 'booking_advance')
+                ? min((float) $grand_total, max(0, round((float) ($bookingAdvanceSource ?? $order->booking_advance ?? 0), 2)))
+                : 0;
+
+            if (Schema::hasColumn('orders', 'booking_advance')) {
+                $order->booking_advance = $advanceAmount;
+            }
+
+            $remainingPayable = max(0, round((float) $grand_total - $advanceAmount, 2));
+
+            // Total Paid is the combined paid amount including reservation advance.
+            // Cash/Card/MFS fields represent only the money received now at final POS payment.
+            if ($paymentMethod === 'Split') {
                 $cash = max(0, (float) ($request->paid_in_cash ?? 0));
                 $card = max(0, (float) ($request->paid_in_card ?? 0));
                 $mfc  = max(0, (float) ($request->paid_in_mfc ?? 0));
-                $totalPaid = round($cash + $card + $mfc, 2);
+
+                $splitTotal = max(0, round($cash + $card + $mfc, 2));
+                if ($splitTotal > $remainingPayable && $splitTotal > 0) {
+                    $ratio = $remainingPayable / $splitTotal;
+                    $cash = round($cash * $ratio, 2);
+                    $card = round($card * $ratio, 2);
+                    $mfc = max(0, round($remainingPayable - $cash - $card, 2));
+                }
+
+                $currentPayment = max(0, round($cash + $card + $mfc, 2));
+                $totalPaid = min((float) $grand_total, round($advanceAmount + $currentPayment, 2));
             } else {
-                $totalPaid = max(0, (float) ($request->total_paid_amount ?? 0));
-                $cash = ($paymentMethod == 'Cash') ? $totalPaid : 0;
-                $card = ($paymentMethod == 'Card') ? $totalPaid : 0;
-                $mfc  = ($paymentMethod == 'Mobile Banking') ? $totalPaid : 0;
+                $requestedTotalPaid = max(0, round((float) ($request->total_paid_amount ?? 0), 2));
+                $totalPaid = min((float) $grand_total, max($advanceAmount, $requestedTotalPaid));
+                $currentPayment = max(0, min($remainingPayable, round($totalPaid - $advanceAmount, 2)));
+
+                $cash = $paymentMethod === 'Cash' ? $currentPayment : 0;
+                $card = $paymentMethod === 'Card' ? $currentPayment : 0;
+                $mfc  = $paymentMethod === 'Mobile Banking' ? $currentPayment : 0;
             }
 
             $tipsAmount = max(0, round((float) ($request->tips_amount ?? 0), 2));
             $givenMoney = max(0, round((float) ($request->given_money ?? 0), 2));
-            $requiredGivenMoney = round($totalPaid + $tipsAmount, 2);
+            $requiredGivenMoney = round($currentPayment + $tipsAmount, 2);
             $saveAsDueOrder = (int) $request->input('save_as_due_order', 0) === 1;
 
-            // A short Given Money entry normally remains a validation error. If the operator
-            // explicitly chooses "Save as Due Order", convert only the actually received amount
-            // into bill payment and carry the shortage to Due. Negative Change is never persisted.
             if ($givenMoney + 0.001 < $requiredGivenMoney) {
                 if (!$saveAsDueOrder) {
                     DB::rollBack();
@@ -1748,43 +2859,42 @@ public function placeOrder(Request $request)
                     ], 422);
                 }
 
-                // Given Money includes tips. Do not save tips greater than the money actually received.
                 $tipsAmount = min($tipsAmount, $givenMoney);
                 $receivedForBill = max(0, round($givenMoney - $tipsAmount, 2));
-                $totalPaid = min($totalPaid, $receivedForBill, (float) $grand_total);
+                $currentPayment = min($currentPayment, $receivedForBill, $remainingPayable);
 
-                // Keep method-wise paid amounts consistent with the adjusted Total Paid.
                 if ($paymentMethod === 'Cash') {
-                    $cash = $totalPaid;
+                    $cash = $currentPayment;
                     $card = 0;
                     $mfc = 0;
                 } elseif ($paymentMethod === 'Card') {
                     $cash = 0;
-                    $card = $totalPaid;
+                    $card = $currentPayment;
                     $mfc = 0;
                 } elseif ($paymentMethod === 'Mobile Banking') {
                     $cash = 0;
                     $card = 0;
-                    $mfc = $totalPaid;
+                    $mfc = $currentPayment;
                 } elseif ($paymentMethod === 'Split') {
                     $originalSplitTotal = max(0, round($cash + $card + $mfc, 2));
-
-                    if ($originalSplitTotal > 0 && $totalPaid > 0) {
-                        $cash = round($totalPaid * ($cash / $originalSplitTotal), 2);
-                        $card = round($totalPaid * ($card / $originalSplitTotal), 2);
-                        $mfc = max(0, round($totalPaid - $cash - $card, 2));
+                    if ($originalSplitTotal > 0 && $currentPayment > 0) {
+                        $cash = round($currentPayment * ($cash / $originalSplitTotal), 2);
+                        $card = round($currentPayment * ($card / $originalSplitTotal), 2);
+                        $mfc = max(0, round($currentPayment - $cash - $card, 2));
                     } else {
                         $cash = 0;
                         $card = 0;
                         $mfc = 0;
                     }
                 }
+
+                $totalPaid = min((float) $grand_total, round($advanceAmount + $currentPayment, 2));
             }
 
-            // UI may display a negative shortage while typing, but database Change is always >= 0.
-            $changeAmount = max(0, round($givenMoney - $totalPaid - $tipsAmount, 2));
+            // Advance is excluded from Given Money/Change because it was collected at booking time.
+            $changeAmount = max(0, round($givenMoney - $currentPayment - $tipsAmount, 2));
 
-            // Due = Grand Total - the bill amount actually paid.
+            // Total Paid already contains advance, therefore it is subtracted exactly once.
             $due = max(0, round($grand_total - $totalPaid, 2));
 
             // ===============================================
@@ -1814,7 +2924,7 @@ public function placeOrder(Request $request)
             }
             $order->status            = 'Completed'; // স্ট্যাটাস ১০০% আপডেট হবে
             $order->due               = $due;
-            $order->total_paid_amount = $totalPaid;
+            $order->total_paid_amount = min((float) $grand_total, $totalPaid);
             if (Schema::hasColumn('orders', 'tips_amount')) {
                 $order->tips_amount = $tipsAmount;
             }
@@ -1844,6 +2954,12 @@ public function placeOrder(Request $request)
             }
 
             $order->save();
+
+            // Payment completes the reservation lifecycle so the table becomes Available immediately,
+            // while the original booking advance amount/payment details remain untouched for audit.
+            if (Schema::hasColumn('orders', 'table_booking_id') && $order->table_booking_id) {
+                TableBooking::where('id', $order->table_booking_id)->update(['status' => 'completed']);
+            }
 
             // Final payment হলে kitchen dashboard থেকে সরানোর জন্য সব KOT Delivered করা হবে।
             OrderKot::where('order_id', $order->id)
@@ -2020,6 +3136,12 @@ public function placeOrder(Request $request)
 
     public function removeFromCart(Request $request)
     {
+        // Cart items are not yet finalized/saved order items, so deleting them does not
+        // require the shared POS action password. Saved order-item deletion still does.
+        $request->validate([
+            'cart_id' => 'required',
+        ]);
+
         $cartKey = $this->getCartKey($request);
         $cart = Session::get($cartKey, []);
 
@@ -2055,16 +3177,68 @@ public function placeOrder(Request $request)
 
 
     /**
-     * Convert an already ordered POS food line into a complimentary line.
+     * Validate the shared POS action password used by destructive/complimentary actions.
+     * Returns a JSON error response when invalid, otherwise null.
+     */
+    private function validatePosActionPassword($providedPassword)
+    {
+        $savedPassword = (string) (optional(RestaurantSetting::first())->pos_action_password ?? '');
+        $providedPassword = (string) ($providedPassword ?? '');
+
+        if ($savedPassword === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'POS Action Password is not configured. Please set it from Settings first.'
+            ], 422);
+        }
+
+        if ($providedPassword === '' || !hash_equals($savedPassword, $providedPassword)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Wrong POS Action Password.'
+            ], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Toggle an already ordered POS food line between normal and complimentary.
      * Existing "Add Complimentary" cart flow stays unchanged; this only affects
      * a saved order_detail that is already visible in the active-order offcanvas.
      */
+    public function verifyPosActionPassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        if ($passwordError = $this->validatePosActionPassword($request->input('password'))) {
+            return $passwordError;
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Password verified.'
+        ]);
+    }
+
     public function makeOrderedItemComplimentary(Request $request)
     {
         $request->validate([
             'order_id' => 'required|exists:orders,id',
             'order_detail_id' => 'required|exists:order_details,id',
+            'is_complimentary' => 'nullable|boolean',
+            'action_password' => 'required|string',
         ]);
+        if ($passwordError = $this->validatePosActionPassword($request->input('action_password'))) {
+            return $passwordError;
+        }
+
+        // Backward compatible: old callers without this field still make the item complimentary.
+        $makeComplimentary = $request->has('is_complimentary')
+            ? $request->boolean('is_complimentary')
+            : true;
 
         DB::beginTransaction();
 
@@ -2092,38 +3266,92 @@ public function placeOrder(Request $request)
                 DB::rollBack();
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Unavailable food cannot be converted to complimentary.'
+                    'message' => 'Unavailable food cannot be changed.'
                 ], 422);
             }
 
             $alreadyComplimentary = !empty($detail->is_complimentary)
                 || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
 
-            $addons = json_decode($detail->addons ?? '[]', true);
-            if (!is_array($addons)) {
-                $addons = [];
-            }
-
-            foreach ($addons as &$addon) {
-                if (is_array($addon)) {
-                    $addon['price'] = 0;
+            if ($makeComplimentary) {
+                $addons = json_decode($detail->addons ?? '[]', true);
+                if (!is_array($addons)) {
+                    $addons = [];
                 }
+
+                foreach ($addons as &$addon) {
+                    if (is_array($addon)) {
+                        $addon['price'] = 0;
+                    }
+                }
+                unset($addon);
+
+                // Normalize both newly converted and legacy complimentary rows to a true zero-value line.
+                $detail->price = 0;
+                $detail->subtotal = 0;
+                $detail->addons = json_encode($addons);
+                $detail->product_discount_type = null;
+                $detail->product_discount_value = 0;
+                $detail->product_discount_amount = 0;
+
+                if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                    $detail->is_complimentary = 1;
+                }
+
+                $detail->save();
+            } elseif ($alreadyComplimentary) {
+                // Complimentary conversion overwrites saved values with zero, so restore from the current food/addon prices.
+                $food = FoodItem::with('addons')->find($detail->product_id);
+                if (!$food) {
+                    throw new \RuntimeException('Normal price could not be restored because the food item no longer exists.');
+                }
+
+                $normalFoodPrice = (float) ($food->discount_price ?? $food->base_price ?? 0);
+                $currentAddons = $food->addons->keyBy('id');
+                $addons = json_decode($detail->addons ?? '[]', true);
+                if (!is_array($addons)) {
+                    $addons = [];
+                }
+
+                $addonTotal = 0;
+                foreach ($addons as &$addon) {
+                    if (!is_array($addon)) {
+                        continue;
+                    }
+
+                    $addonId = (int) ($addon['id'] ?? 0);
+                    if ($addonId > 0 && $currentAddons->has($addonId)) {
+                        $currentAddon = $currentAddons->get($addonId);
+                        $addon['name'] = $currentAddon->name ?? ($addon['name'] ?? 'Addon');
+                        $addon['price'] = (float) ($currentAddon->price ?? 0);
+                    } else {
+                        // If an old addon was removed from the menu, do not invent a price for it.
+                        $addon['price'] = max(0, (float) ($addon['price'] ?? 0));
+                    }
+
+                    $addonTotal += (float) ($addon['price'] ?? 0);
+                }
+                unset($addon);
+
+                $quantity = max(1, (int) ($detail->quantity ?? 1));
+                $detail->price = $normalFoodPrice;
+                $detail->subtotal = round(($normalFoodPrice + $addonTotal) * $quantity, 2);
+                $detail->addons = json_encode($addons);
+                $detail->product_discount_type = null;
+                $detail->product_discount_value = 0;
+                $detail->product_discount_amount = 0;
+
+                if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                    $detail->is_complimentary = 0;
+                }
+
+                // A whole complimentary order stops being whole-complimentary as soon as one item returns to normal.
+                if (Schema::hasColumn('orders', 'is_complimentary_order') && !empty($order->is_complimentary_order)) {
+                    $order->is_complimentary_order = 0;
+                }
+
+                $detail->save();
             }
-            unset($addon);
-
-            // Normalize both newly converted and legacy complimentary rows to a true zero-value line.
-            $detail->price = 0;
-            $detail->subtotal = 0;
-            $detail->addons = json_encode($addons);
-            $detail->product_discount_type = null;
-            $detail->product_discount_value = 0;
-            $detail->product_discount_amount = 0;
-
-            if (Schema::hasColumn('order_details', 'is_complimentary')) {
-                $detail->is_complimentary = 1;
-            }
-
-            $detail->save();
 
             $remainingDetails = OrderDetail::where('order_id', $order->id)
                 ->where('is_unavailable', 0)
@@ -2180,7 +3408,7 @@ public function placeOrder(Request $request)
             $vatTax = round((($newSubtotal + $serviceCharge) * $vatRate) / 100);
 
             // orders.discount_amount stores the already-calculated other discount amount.
-            // Keep that amount, but cap it against the newly reduced bill.
+            // Keep that amount, but cap it against the newly recalculated bill.
             $discountAmount = min(
                 max(0, round((float) ($order->discount_amount ?? 0))),
                 round($newSubtotal + $serviceCharge + $vatTax)
@@ -2202,11 +3430,20 @@ public function placeOrder(Request $request)
 
             DB::commit();
 
+            if ($makeComplimentary) {
+                $message = $alreadyComplimentary
+                    ? 'Food is already complimentary.'
+                    : 'Food converted to complimentary successfully.';
+            } else {
+                $message = $alreadyComplimentary
+                    ? 'Food returned to normal successfully.'
+                    : 'Food is already normal.';
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => $alreadyComplimentary
-                    ? 'Food is already complimentary.'
-                    : 'Food converted to complimentary successfully.',
+                'message' => $message,
+                'is_complimentary' => $makeComplimentary ? 1 : 0,
                 'order_id' => $order->id,
                 'order_detail_id' => $detail->id,
             ]);
@@ -2215,7 +3452,7 @@ public function placeOrder(Request $request)
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Complimentary conversion failed! ' . $e->getMessage()
+                'message' => 'Food status update failed! ' . $e->getMessage()
             ], 500);
         }
     }
@@ -2228,6 +3465,7 @@ public function placeOrder(Request $request)
             'order_detail_id' => 'required|exists:order_details,id',
             'qty' => 'required|integer|min:1',
             'reason' => 'nullable|string|max:1000',
+            'action_password' => 'nullable|string',
         ]);
 
         DB::beginTransaction();
@@ -2237,6 +3475,14 @@ public function placeOrder(Request $request)
             $detail = OrderDetail::where('order_id', $order->id)
                 ->lockForUpdate()
                 ->findOrFail($request->order_detail_id);
+
+            // Anything already sent to the kitchen is a saved order item and must stay
+            // password protected. Add More food is password-free only while it is still
+            // unsent in the POS cart; after Send to Kitchen it follows this same rule.
+            if ($passwordError = $this->validatePosActionPassword($request->input('action_password'))) {
+                DB::rollBack();
+                return $passwordError;
+            }
 
             if (!empty($detail->is_unavailable)) {
                 DB::rollBack();
@@ -2378,7 +3624,8 @@ public function placeOrder(Request $request)
     // ====================================================
     public function printInvoice($id)
     {
-        $order = Order::with(['orderDetails', 'customer', 'waiter', 'user'])->findOrFail($id);
+        $order = Order::with(['orderDetails', 'customer', 'waiter', 'user', 'deliveryPartner'])->findOrFail($id);
+        $order->ensureFeedbackToken();
         $restaurant = \App\Models\RestaurantSetting::first();
 
         // Final payment values are now stored separately:
@@ -2393,7 +3640,8 @@ public function placeOrder(Request $request)
 
     public function printPreInvoice(Request $request, $id)
     {
-        $order = Order::with(['orderDetails', 'customer', 'waiter', 'user'])->findOrFail($id);
+        $order = Order::with(['orderDetails', 'customer', 'waiter', 'user', 'deliveryPartner'])->findOrFail($id);
+        $order->ensureFeedbackToken();
         $restaurant = \App\Models\RestaurantSetting::first();
         $taxSetting = DB::table('tax_settings')->first();
         $invoiceSetting = \App\Models\InvoiceSetting::first();

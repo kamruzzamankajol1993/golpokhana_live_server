@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\TableController;
 use App\Http\Controllers\Admin\TableBookingController;
 use App\Http\Controllers\Admin\OccasionController;
 use App\Http\Controllers\Admin\FoodCategoryController;
+use App\Http\Controllers\Admin\DeliveryPartnerController;
 Route::get('/', function () {
     return view('admin.auth.login');
 });
@@ -94,11 +95,23 @@ Route::get('/refresh-csrf-token', function () {
     Route::get('reports', [App\Http\Controllers\Admin\ReportController::class, 'salesOrder'])->name('reports.index');
     Route::get('reports/sales-order', [App\Http\Controllers\Admin\ReportController::class, 'salesOrder'])->name('reports.sales_order');
     Route::get('reports/delivery', [App\Http\Controllers\Admin\ReportController::class, 'deliveryReport'])->name('reports.delivery');
+    Route::get('reports/due', [App\Http\Controllers\Admin\ReportController::class, 'dueReport'])->name('reports.due');
+    Route::get('reports/due/pdf', [App\Http\Controllers\Admin\ReportController::class, 'dueReportPdf'])->name('reports.due.pdf');
+    Route::get('reports/due/excel', [App\Http\Controllers\Admin\ReportController::class, 'dueReportExcel'])->name('reports.due.excel');
     Route::get('reports/delivery/pdf', [App\Http\Controllers\Admin\ReportController::class, 'deliveryReportPdf'])->name('reports.delivery.pdf');
+    Route::get('reports/delivery/excel', [App\Http\Controllers\Admin\ReportController::class, 'deliveryReportExcel'])->name('reports.delivery.excel');
     Route::get('reports/complimentary-orders', [App\Http\Controllers\Admin\ReportController::class, 'complimentaryOrders'])->name('reports.complimentary_orders');
     Route::get('reports/payment-type-wise-sales', [App\Http\Controllers\Admin\ReportController::class, 'paymentTypeSales'])->name('reports.payment_type_sales');
     Route::get('reports/food-wise-sales', [App\Http\Controllers\Admin\ReportController::class, 'foodSales'])->name('reports.food_sales');
     Route::get('reports/waiter-daily-orders', [App\Http\Controllers\Admin\ReportController::class, 'waiterDailyOrders'])->name('reports.waiter_daily_orders');
+    Route::get('reports/waiter-daily-orders/pdf', [App\Http\Controllers\Admin\ReportController::class, 'waiterDailyOrdersPdf'])->name('reports.waiter_daily_orders.pdf');
+    Route::get('reports/waiter-daily-orders/excel', [App\Http\Controllers\Admin\ReportController::class, 'waiterDailyOrdersExcel'])->name('reports.waiter_daily_orders.excel');
+    Route::get('reports/kots', [App\Http\Controllers\Admin\ReportController::class, 'kotReport'])->name('reports.kots');
+    Route::get('reports/kots/pdf', [App\Http\Controllers\Admin\ReportController::class, 'kotReportPdf'])->name('reports.kots.pdf');
+    Route::get('reports/kots/excel', [App\Http\Controllers\Admin\ReportController::class, 'kotReportExcel'])->name('reports.kots.excel');
+    Route::get('reports/pos-sessions', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReport'])->name('reports.pos_sessions');
+    Route::get('reports/pos-sessions/pdf', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReportPdf'])->name('reports.pos_sessions.pdf');
+    Route::get('reports/pos-sessions/excel', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReportExcel'])->name('reports.pos_sessions.excel');
     Route::get('reports/export/pdf', [App\Http\Controllers\Admin\ReportController::class, 'exportPdf'])->name('reports.export.pdf');
     Route::get('reports/export/excel', [App\Http\Controllers\Admin\ReportController::class, 'exportExcel'])->name('reports.export.excel');
     Route::get('reports/export/csv', [App\Http\Controllers\Admin\ReportController::class, 'exportCsv'])->name('reports.export.csv');
@@ -111,6 +124,7 @@ Route::get('/refresh-csrf-token', function () {
 // POS Session Routes
 Route::post('pos-session-start', [App\Http\Controllers\Admin\PosController::class, 'startSession'])->name('pos.session.start');
 Route::post('pos-session-end', [App\Http\Controllers\Admin\PosController::class, 'endSession'])->name('pos.session.end');
+Route::post('pos-session-activity', [App\Http\Controllers\Admin\PosController::class, 'touchSessionActivity'])->name('pos.session.activity');
 
 // POS Session History & Report Routes
 Route::get('/pos/session/report/{id}', [App\Http\Controllers\Admin\PosController::class, 'printSessionReport'])->name('pos.session.report');
@@ -121,6 +135,12 @@ Route::post('/kitchen/mark-unavailable', [App\Http\Controllers\Admin\KitchenCont
     // POS (Point of Sale) Routes
     // ==========================================
     Route::get('/pos', [App\Http\Controllers\Admin\PosController::class, 'index'])->name('pos.index');
+    Route::get('/pos/sessions', [App\Http\Controllers\Admin\PosController::class, 'sessionList'])->name('pos.sessions.index');
+    Route::get('/pos/sessions/pdf', [App\Http\Controllers\Admin\PosController::class, 'sessionListPdf'])->name('pos.sessions.pdf');
+    Route::get('/pos/sessions/excel', [App\Http\Controllers\Admin\PosController::class, 'sessionListExcel'])->name('pos.sessions.excel');
+    Route::get('/pos/kots', [App\Http\Controllers\Admin\PosController::class, 'kotList'])->name('pos.kots.index');
+    Route::get('/pos/kots/pdf', [App\Http\Controllers\Admin\PosController::class, 'kotListPdf'])->name('pos.kots.pdf');
+    Route::get('/pos/kots/excel', [App\Http\Controllers\Admin\PosController::class, 'kotListExcel'])->name('pos.kots.excel');
     Route::post('/pos/random-half-order/activate', [App\Http\Controllers\Admin\PosController::class, 'activateRandomHalfOrderList'])->name('pos.random_half_order.activate');
 
     // POS: Food & Category
@@ -136,6 +156,7 @@ Route::post('/kitchen/mark-unavailable', [App\Http\Controllers\Admin\KitchenCont
     Route::post('/pos/cart/add', [App\Http\Controllers\Admin\PosController::class, 'addToCart'])->name('pos.cart.add');
     Route::post('/pos/cart/update', [App\Http\Controllers\Admin\PosController::class, 'updateCart'])->name('pos.cart.update');
     Route::post('/pos/cart/remove', [App\Http\Controllers\Admin\PosController::class, 'removeFromCart'])->name('pos.cart.remove');
+    Route::post('/pos/action/verify', [App\Http\Controllers\Admin\PosController::class, 'verifyPosActionPassword'])->name('pos.action.verify');
     Route::post('/pos/order-item/remove', [App\Http\Controllers\Admin\PosController::class, 'removeOrderedItem'])->name('pos.order_item.remove');
     Route::post('/pos/order-item/complimentary', [App\Http\Controllers\Admin\PosController::class, 'makeOrderedItemComplimentary'])->name('pos.order_item.complimentary');
     Route::post('/pos/cart/clear', [App\Http\Controllers\Admin\PosController::class, 'clearCart'])->name('pos.cart.clear');
@@ -145,7 +166,9 @@ Route::get('reviews', [App\Http\Controllers\Admin\ReviewController::class, 'inde
     Route::post('/pos-place-order', [App\Http\Controllers\Admin\PosController::class, 'placeOrder'])->name('pos.place_order'); // Send to Kitchen
     Route::post('/pos/hold-web-order', [App\Http\Controllers\Admin\PosController::class, 'holdWebOrder'])->name('pos.hold_web_order'); // Hold website QR order in POS cart
     Route::get('/pos/table-order/{table_id}', [App\Http\Controllers\Admin\PosController::class, 'getTableOrder'])->name('pos.get_table_order'); // Occupied Table Data
+    Route::get('/pos/table-reservation-statuses', [App\Http\Controllers\Admin\PosController::class, 'tableReservationStatuses'])->name('pos.table_reservation_statuses'); // Live BD-time reservation state
     Route::post('/pos/table-swap', [App\Http\Controllers\Admin\PosController::class, 'swapTable'])->name('pos.table_swap'); // Dine-In active order table swap
+    Route::post('/pos/active-order/update-meta', [App\Http\Controllers\Admin\PosController::class, 'updateActiveOrderMeta'])->name('pos.active_order.update_meta'); // Customer / delivery partner update before payment
     Route::get('/pos/active-order/{order_id}', [App\Http\Controllers\Admin\PosController::class, 'getPosOrder'])->name('pos.get_pos_order'); // Takeaway/Delivery active order data
     Route::post('/pos/takeaway-delivery/complete-pending', [App\Http\Controllers\Admin\PosController::class, 'completePendingTakeawayDeliveryPayments'])->name('pos.takeaway_delivery.complete_pending');
     Route::post('/pos/payment', [App\Http\Controllers\Admin\PosController::class, 'completePayment'])->name('pos.complete_payment');
@@ -176,6 +199,9 @@ Route::get('get-subcategories/{id}', [App\Http\Controllers\Admin\FoodCategoryCon
     Route::post('course-type-status/{id}', [App\Http\Controllers\Admin\CourseTypeController::class, 'updateStatus'])->name('course-type.status');
 Route::get('orders-export-pdf', [App\Http\Controllers\Admin\OrderController::class, 'exportPDF'])->name('order.export_pdf');
 Route::get('orders-export-excel', [App\Http\Controllers\Admin\OrderController::class, 'exportExcel'])->name('order.export_excel');
+Route::get('orders-print', [App\Http\Controllers\Admin\OrderController::class, 'printReport'])->name('order.print_report');
+
+    Route::resource('delivery-partner', DeliveryPartnerController::class);
 
 // Food Category Routes
     Route::resource('food-category', FoodCategoryController::class);
@@ -213,6 +239,9 @@ Route::post('food-category-status/{id}', [FoodCategoryController::class, 'update
     // Table Management Routes
     // ==========================================
     Route::resource('table', TableController::class);
+    Route::post('table/floor-zone', [App\Http\Controllers\Admin\TableController::class, 'storeFloorZone'])->name('table.floor_zone.store');
+    Route::put('table/floor-zone/{id}', [App\Http\Controllers\Admin\TableController::class, 'updateFloorZone'])->name('table.floor_zone.update');
+    Route::delete('table/floor-zone/{id}', [App\Http\Controllers\Admin\TableController::class, 'destroyFloorZone'])->name('table.floor_zone.destroy');
 
 
 // ==========================================
@@ -236,6 +265,7 @@ Route::get('customer-export-excel', [CustomerController::class, 'exportExcel'])-
 
 // Zone Management Routes
     Route::resource('zone', ZoneController::class);
+    Route::resource('floor-zone', App\Http\Controllers\Admin\FloorZoneController::class);
 
     // Shift Management Routes
     Route::resource('shift', ShiftController::class);
@@ -277,6 +307,7 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::get('/attendance/reports', [AttendanceController::class, 'reports'])->name('attendance.reports.index');
         Route::get('/attendance/reports/table', [AttendanceController::class, 'reportTable'])->name('attendance.reports.table');
         Route::get('/attendance/reports/pdf', [AttendanceController::class, 'reportPdf'])->name('attendance.reports.pdf');
+        Route::get('/attendance/reports/excel', [AttendanceController::class, 'reportExcel'])->name('attendance.reports.excel');
         Route::post('/attendance/bulk', [AttendanceController::class, 'storeBulk'])->name('attendance.bulk.store');
         Route::put('/attendance/{attendance}', [AttendanceController::class, 'update'])->name('attendance.update');
         Route::delete('/attendance/{attendance}', [AttendanceController::class, 'destroy'])->name('attendance.destroy');
@@ -362,4 +393,5 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
     Route::post('/settings/tax', [SettingController::class, 'updateTax'])->name('settings.tax');
     Route::post('/settings/invoice', [SettingController::class, 'updateInvoice'])->name('settings.invoice');
     Route::post('/settings/pos', [SettingController::class, 'updatePos'])->name('settings.pos');
+    Route::post('/settings/pos/clear-transactions', [SettingController::class, 'clearPosTransactionData'])->name('settings.pos.clear-transactions');
 });

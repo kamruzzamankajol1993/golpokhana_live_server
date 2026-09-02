@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\DeliveryPartner;
 use Carbon\Carbon;
 use Mpdf\Mpdf;
 use Mpdf\HTMLParserMode;
@@ -58,12 +59,12 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'duePayments.user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner', 'duePayments.user'])->findOrFail($id);
         return view('admin.order.partials._order_details', compact('order'))->render();
     }
 
     /**
-     * Order List/PDF/Excel export এর জন্য common filtered query.
+     * Order List/PDF/Excel/Print report এর জন্য common filtered query.
      * এখানে নতুন filter add করলে তিন জায়গায় একইভাবে কাজ করবে।
      */
     /**
@@ -104,7 +105,7 @@ class OrderController extends Controller
 
     private function buildOrderReportQuery(Request $request)
     {
-        $query = Order::with(['customer', 'table', 'orderDetails']);
+        $query = Order::with(['customer', 'table', 'orderDetails', 'deliveryPartner']);
 
         // Search: order number অথবা customer name.
         $search = trim((string) $request->input('search', ''));
@@ -222,10 +223,12 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'revenue' => 0,
             'discount' => 0,
             'product_discount' => 0,
+            'vat' => 0,
             'service_charge' => 0,
             'tips' => 0,
             'given' => 0,
             'change' => 0,
+            'due' => 0,
         ];
 
         if ($totalOrders <= 0) {
@@ -239,10 +242,12 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                     foreach ($orders as $order) {
                         $discountAmount = max(0, (float) ($order->discount_amount ?? 0));
                         $productDiscountAmount = max(0, (float) ($order->product_discount_amount ?? 0));
+                        $vatAmount = max(0, (float) ($order->vat_tax ?? 0));
                         $serviceCharge = max(0, (float) ($order->service_charge ?? 0));
                         $tipsAmount = max(0, (float) ($order->tips_amount ?? ((float) ($order->total_paid_amount ?? 0) - (float) ($order->grand_total ?? 0))));
                         $givenMoney = max(0, (float) ($order->given_money ?? 0));
                         $changeAmount = max(0, (float) ($order->change_amount ?? 0));
+                        $dueAmount = max(0, (float) ($order->due ?? 0));
 
                         if ($order->status === 'Completed') {
                             $totals['subtotal'] += (float) ($order->subtotal ?? 0);
@@ -251,10 +256,12 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
                         $totals['discount'] += $discountAmount;
                         $totals['product_discount'] += $productDiscountAmount;
+                        $totals['vat'] += $vatAmount;
                         $totals['service_charge'] += $serviceCharge;
                         $totals['tips'] += $tipsAmount;
                         $totals['given'] += $givenMoney;
                         $totals['change'] += $changeAmount;
+                        $totals['due'] += $dueAmount;
                     }
 
                     // Important: every chunk is a complete table. No open <table>/<tbody> is carried
@@ -322,6 +329,20 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
         $fileName = 'Order_Report_' . now()->format('d_M_Y') . '.xlsx';
 
         return Excel::download(new OrdersExport($orders), $fileName);
+    }
+
+    public function printReport(Request $request)
+    {
+        $restaurant = \App\Models\RestaurantSetting::first();
+        $orders = $this->buildOrderReportQuery($request)->orderBy('id', 'desc')->get();
+
+        return view('admin.order.pdf_report', [
+            'mode' => 'full',
+            'orders' => $orders,
+            'restaurant' => $restaurant,
+            'dateFilterLabel' => $this->orderReportDateFilterLabel($request),
+            'printMode' => true,
+        ]);
     }
 
 
@@ -435,7 +456,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
      */
     public function edit($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails.foodItem.addons', 'user'])->findOrFail($id);
         $taxSetting = DB::table('tax_settings')->first();
 
         $vatRate = (float) ($taxSetting->vat_rate ?? 0);
@@ -478,16 +499,17 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'paid_in_card' => ['nullable', 'numeric', 'min:0'],
             'paid_in_mfc' => ['nullable', 'numeric', 'min:0'],
             'transaction_id' => ['nullable', 'string', 'max:255'],
-            'delivery_partner' => ['nullable', Rule::in(['inhouse', 'foodpanda', 'foodi', 'pathao_food'])],
+            'delivery_partner' => ['nullable', 'nullable'],
         ]);
 
         DB::beginTransaction();
 
         try {
-            $order = Order::with('orderDetails')->lockForUpdate()->findOrFail($id);
+            $order = Order::with('orderDetails.foodItem.addons')->lockForUpdate()->findOrFail($id);
             $inputItems = $request->input('items', []);
             $deleteItemId = $request->filled('delete_item_id') ? (int) $request->delete_item_id : null;
             $deletedItemName = null;
+            $restoredComplimentaryToNormal = false;
 
             if ($deleteItemId && !$order->orderDetails->contains('id', $deleteItemId)) {
                 DB::rollBack();
@@ -568,12 +590,11 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
                 $isAlreadyComplimentary = !empty($detail->is_complimentary)
                     || ((float) ($detail->price ?? 0) <= 0 && $oldLineSubtotal <= 0);
-                $makeComplimentary = filter_var(
-                    $itemInput['make_complimentary'] ?? false,
-                    FILTER_VALIDATE_BOOLEAN
-                );
+                $makeComplimentary = array_key_exists('make_complimentary', $itemInput)
+                    ? filter_var($itemInput['make_complimentary'], FILTER_VALIDATE_BOOLEAN)
+                    : $isAlreadyComplimentary;
 
-                if ($isAlreadyComplimentary || $makeComplimentary) {
+                if ($makeComplimentary) {
                     $addons = json_decode($detail->addons ?? '[]', true);
                     if (!is_array($addons)) {
                         $addons = [];
@@ -602,8 +623,50 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                     continue;
                 }
 
-                // Existing line subtotal/qty থেকে unit total বের করা হচ্ছে, যাতে addon price preserve থাকে।
-                if ($oldLineSubtotal > 0 && $oldQty > 0) {
+                if ($isAlreadyComplimentary) {
+                    // Complimentary rows have zero saved values, so rebuild normal price from current menu data.
+                    $food = $detail->foodItem;
+                    if (!$food) {
+                        throw new \RuntimeException('Normal price could not be restored for "' . $detail->product_name . '" because the food item no longer exists.');
+                    }
+
+                    $normalFoodPrice = (float) ($food->discount_price ?? $food->base_price ?? 0);
+                    $currentAddons = $food->addons->keyBy('id');
+                    $addons = json_decode($detail->addons ?? '[]', true);
+                    if (!is_array($addons)) {
+                        $addons = [];
+                    }
+
+                    $addonTotal = 0;
+                    foreach ($addons as &$addon) {
+                        if (!is_array($addon)) {
+                            continue;
+                        }
+
+                        $addonId = (int) ($addon['id'] ?? 0);
+                        if ($addonId > 0 && $currentAddons->has($addonId)) {
+                            $currentAddon = $currentAddons->get($addonId);
+                            $addon['name'] = $currentAddon->name ?? ($addon['name'] ?? 'Addon');
+                            $addon['price'] = (float) ($currentAddon->price ?? 0);
+                        } else {
+                            $addon['price'] = max(0, (float) ($addon['price'] ?? 0));
+                        }
+
+                        $addonTotal += (float) ($addon['price'] ?? 0);
+                    }
+                    unset($addon);
+
+                    $unitTotal = $normalFoodPrice + $addonTotal;
+                    $detail->price = $normalFoodPrice;
+                    $detail->addons = json_encode($addons);
+
+                    if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                        $detail->is_complimentary = 0;
+                    }
+
+                    $restoredComplimentaryToNormal = true;
+                } elseif ($oldLineSubtotal > 0 && $oldQty > 0) {
+                    // Normal existing line keeps its historical unit total.
                     $unitTotal = $oldLineSubtotal / $oldQty;
                 } else {
                     $addonTotal = 0;
@@ -699,6 +762,10 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             $order->paid_in_mfc = $mfc;
             $order->due = $due;
 
+            if ($restoredComplimentaryToNormal && Schema::hasColumn('orders', 'is_complimentary_order')) {
+                $order->is_complimentary_order = 0;
+            }
+
             if (Schema::hasColumn('orders', 'tips_amount')) {
                 $order->tips_amount = $tipsAmount;
             }
@@ -759,7 +826,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
         if (in_array($request->payment_type, ['Card', 'Mobile Banking'], true)
             && trim((string) $request->transaction_reference) === '') {
             return back()->withErrors([
-                'transaction_reference' => 'Reference number is required for Card or Mobile Banking due payment.',
+                'transaction_reference' => 'Reference number is required for Bank / Card or Mobile Banking due payment.',
             ])->withInput();
         }
 
@@ -835,7 +902,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
     public function details($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'review', 'duePayments.user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner', 'review', 'duePayments.user'])->findOrFail($id);
 
         return view('admin.order.show', compact('order'));
     }

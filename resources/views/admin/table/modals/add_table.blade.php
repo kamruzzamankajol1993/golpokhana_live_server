@@ -14,10 +14,10 @@
                 <div class="col-12">
                     <div class="progga-form-group">
                         <label class="progga-form-label">Floor / Zone <span class="progga-required">*</span></label>
-                        <select class="progga-select" name="zone_id" required>
+                        <select class="progga-select" name="floor_zone_id" required>
                           <option value="">Select zone</option>
-                          @foreach($zones as $zone)
-                            <option value="{{ $zone->id }}">{{ $zone->name }}</option>
+                          @foreach($floorZones as $floorZone)
+                            <option value="{{ $floorZone->id }}">{{ $floorZone->name }}</option>
                           @endforeach
                         </select>
                     </div>

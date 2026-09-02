@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exports\AttendanceTemplateExport;
+use App\Exports\ArrayReportExport;
 use App\Http\Controllers\Controller;
 use App\Imports\AttendanceRowsImport;
 use App\Models\Attendance;
@@ -29,7 +30,7 @@ class AttendanceController extends Controller
     public function __construct()
     {
         $this->middleware('permission:attendance-view')->only([
-            'index', 'reports', 'reportTable', 'reportPdf',
+            'index', 'reports', 'reportTable', 'reportPdf', 'reportExcel',
         ]);
         $this->middleware('permission:attendance-create|attendance-edit')->only('downloadTemplate');
         $this->middleware('permission:attendance-create|attendance-edit')->only(['storeBulk', 'importExcel']);
@@ -558,6 +559,71 @@ class AttendanceController extends Controller
             'Pragma' => 'public',
         ]);
     }
+
+
+
+    public function reportExcel(Request $request)
+    {
+        $validated = $request->validate([
+            'report_type' => ['required', Rule::in(['monthly_summary', 'employee_detail'])],
+            'month' => ['required', 'date_format:Y-m'],
+            'employee_id' => ['nullable', 'required_if:report_type,employee_detail', 'exists:employees,id'],
+            'department_id' => ['nullable', 'exists:departments,id'],
+            'search' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        [$start, $end] = $this->monthRange($validated['month']);
+
+        if ($validated['report_type'] === 'employee_detail') {
+            $employee = Employee::with(['department', 'designation', 'defaultShift'])->findOrFail($validated['employee_id']);
+            $detailRows = $this->employeeMonthlyRows($employee, $start, $end);
+            $headings = ['Date', 'Day', 'Status', 'Shift', 'Check In', 'Check Out', 'Worked Minutes', 'Late Minutes', 'OT Minutes', 'Note'];
+            $rows = $detailRows->map(function ($row) {
+                $attendance = $row['attendance'];
+                $shift = $row['shift'];
+                return [
+                    $row['date']->format('d-m-Y'), $row['date']->format('D'), ucfirst(str_replace('_', ' ', (string) $row['status'])),
+                    $shift?->name ?? 'N/A', $attendance?->check_in?->format('h:i A') ?? 'N/A',
+                    $attendance?->check_out?->format('h:i A') ?? 'N/A', (int) ($attendance?->worked_minutes ?? 0),
+                    (int) ($attendance?->late_minutes ?? 0), (int) ($attendance?->overtime_minutes ?? 0), $attendance?->notes ?? '',
+                ];
+            })->all();
+            return Excel::download(new ArrayReportExport($headings, $rows, 'Attendance Detail'), 'attendance-' . $employee->employee_code . '-' . $validated['month'] . '.xlsx');
+        }
+
+        $query = $this->employeesForMonthQuery($start, $end)->with(['department', 'designation', 'defaultShift']);
+        if (!empty($validated['department_id'])) $query->where('department_id', $validated['department_id']);
+        if (!empty($validated['search'])) {
+            $search = trim($validated['search']);
+            $query->where(function ($builder) use ($search) {
+                $builder->where('name', 'like', "%{$search}%")->orWhere('employee_code', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+        $employees = $query->orderBy('employee_code')->get();
+        $reportData = $this->buildMonthlyReportData($employees, $start, $end);
+        $statusCodes = [
+            'present' => 'P', 'late' => 'L', 'absent' => 'A', 'half_day' => 'HD', 'leave' => 'LV',
+            'off_day' => 'O', 'not_marked' => 'NM', 'not_applicable' => '-', 'future' => '-',
+        ];
+        $dayHeadings = array_map(fn ($day) => str_pad((string) $day, 2, '0', STR_PAD_LEFT), $reportData['days']);
+        $headings = array_merge(['Employee', 'Code', 'Department'], $dayHeadings, ['Present', 'Late', 'Absent', 'Half Day', 'Leave', 'Off Day', 'Not Marked', 'OT Minutes']);
+        $rows = $employees->map(function ($employee) use ($reportData, $start, $statusCodes) {
+            $row = [$employee->name, $employee->employee_code, $employee->department->name ?? 'N/A'];
+            foreach ($reportData['days'] as $day) {
+                $date = $start->copy()->day($day)->toDateString();
+                $entry = $reportData['dayMap'][$employee->id . '|' . $date] ?? null;
+                $status = $entry['status'] ?? 'not_marked';
+                $row[] = $statusCodes[$status] ?? strtoupper(substr($status, 0, 2));
+            }
+            $summary = $reportData['summaryMap'][$employee->id];
+            return array_merge($row, [
+                $summary['present'], $summary['late'], $summary['absent'], $summary['half_day'],
+                $summary['leave'], $summary['off_day'], $summary['not_marked'], $summary['overtime_minutes'],
+            ]);
+        })->all();
+        return Excel::download(new ArrayReportExport($headings, $rows, 'Monthly Attendance'), 'attendance-all-employees-' . $validated['month'] . '.xlsx');
+    }
+
 
     public function update(Request $request, Attendance $attendance)
     {

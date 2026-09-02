@@ -22,7 +22,7 @@ Dashboard — {{ $restaurantSettingName }}
     </div>
 
     <div class="row g-3 mb-4 dashboard-stat-row">
-      <div class="col-xl-3 col-md-6">
+      <div class="col-xl col-md-6">
         <div class="progga-stat-card">
           <div class="progga-stat-icon secondary"><i class="bi bi-currency-dollar"></i></div>
           <div class="progga-stat-info">
@@ -35,28 +35,24 @@ Dashboard — {{ $restaurantSettingName }}
           </div>
         </div>
       </div>
-      <div class="col-xl-3 col-md-6">
+
+      @if($isSuperAdmin)
+      <div class="col-xl col-md-6">
         <div class="progga-stat-card">
           <div class="progga-stat-icon success"><i class="bi bi-graph-up-arrow"></i></div>
           <div class="progga-stat-info">
-            @if($isSuperAdmin)
-              <div class="progga-stat-label">Monthly Revenue</div>
-              <div class="progga-stat-value">৳{{ number_format($monthlySales) }}</div>
-              <div class="progga-stat-change {{ $monthlyChange >= 0 ? 'up' : 'down' }}">
-                  <i class="bi {{ $monthlyChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>
-                  {{ $monthlyChange > 0 ? '+' : '' }}{{ number_format($monthlyChange, 1) }}% this month
-              </div>
-            @else
-              <div class="progga-stat-label">Pending Amount</div>
-              <div class="progga-stat-value">৳{{ number_format($todayPendingAmount, 0) }}</div>
-              <div class="progga-stat-change neutral">
-                  <i class="bi bi-clock"></i> Business day
-              </div>
-            @endif
+            <div class="progga-stat-label">Monthly Revenue</div>
+            <div class="progga-stat-value">৳{{ number_format($monthlySales) }}</div>
+            <div class="progga-stat-change {{ $monthlyChange >= 0 ? 'up' : 'down' }}">
+                <i class="bi {{ $monthlyChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>
+                {{ $monthlyChange > 0 ? '+' : '' }}{{ number_format($monthlyChange, 1) }}% this month
+            </div>
           </div>
         </div>
       </div>
-      <div class="col-xl-3 col-md-6">
+      @endif
+
+      <div class="col-xl col-md-6">
         <div class="progga-stat-card">
           <div class="progga-stat-icon primary"><i class="bi bi-receipt"></i></div>
           <div class="progga-stat-info">
@@ -69,13 +65,27 @@ Dashboard — {{ $restaurantSettingName }}
           </div>
         </div>
       </div>
-      <div class="col-xl-3 col-md-6">
+
+      <div class="col-xl col-md-6">
         <div class="progga-stat-card">
           <div class="progga-stat-icon warning"><i class="bi bi-layout-wtf"></i></div>
           <div class="progga-stat-info">
             <div class="progga-stat-label">Running Tables</div>
             <div class="progga-stat-value">{{ $runningTables }} / {{ $totalTables }}</div>
             <div class="progga-stat-change neutral"><i class="bi bi-dash"></i> {{ $availableTables }} available</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-xl col-md-6">
+        <div class="progga-stat-card">
+          <div class="progga-stat-icon warning"><i class="bi bi-hourglass-split"></i></div>
+          <div class="progga-stat-info">
+            <div class="progga-stat-label">Pending Amount (Business Day)</div>
+            <div class="progga-stat-value">৳{{ number_format($todayPendingAmount, 0) }}</div>
+            <div class="progga-stat-change neutral">
+                <i class="bi bi-clock"></i> Pending orders total amount
+            </div>
           </div>
         </div>
       </div>
@@ -122,7 +132,7 @@ Dashboard — {{ $restaurantSettingName }}
               <canvas id="paymentCollectionChart" data-dashboard-dynamic="true"></canvas>
             </div>
             <div class="text-center text-muted" style="font-size:12px;margin-top:10px;">
-              Split payment amounts are included in their respective Cash, Card and MFS bars.
+              Split payment amounts are included in their respective Cash, Bank / Card and MFS bars.
             </div>
           </div>
         </div>
@@ -169,7 +179,7 @@ Dashboard — {{ $restaurantSettingName }}
                 <canvas id="incomeChart" data-dashboard-dynamic="true"></canvas>
               </div>
               <div class="text-center text-muted" style="font-size:12px;margin-top:10px;">
-                Split payment amounts are included in their respective Cash, Card and Mobile (MFS) bars.
+                Split payment amounts are included in their respective Cash, Bank / Card and Mobile (MFS) bars.
               </div>
             </div>
           </div>
@@ -438,7 +448,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         borderSkipped: false
                     },
                     {
-                        label: 'Card',
+                        label: 'Bank / Card',
                         data: cardData,
                         backgroundColor: '#21352a',
                         borderColor: '#21352a',

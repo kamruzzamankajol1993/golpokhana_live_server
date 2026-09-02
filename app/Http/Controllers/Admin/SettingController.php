@@ -11,6 +11,8 @@ use App\Models\PosSetting;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\File;
 use Intervention\Image\Laravel\Facades\Image;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class SettingController extends Controller
 {
@@ -31,9 +33,14 @@ class SettingController extends Controller
     $request->validate([
         'icon_name' => 'nullable|image|max:100', // শুধুমাত্র PNG, ম্যাক্স ১০০ KB
         'logo'      => 'nullable|image|max:500',
+        'pos_action_password' => 'nullable|string|max:255',
     ]);
 
-    $data = $request->except(['_token', 'logo', 'icon_name']);
+    // Keep the existing POS action password when the password field is left blank.
+    $data = $request->except(['_token', 'logo', 'icon_name', 'pos_action_password']);
+    if ($request->filled('pos_action_password')) {
+        $data['pos_action_password'] = (string) $request->pos_action_password;
+    }
     $restaurant = RestaurantSetting::first() ?? new RestaurantSetting();
 
     // Logo Upload Logic
@@ -111,6 +118,84 @@ class SettingController extends Controller
         $pos->save();
 
         return back()->with('success', 'POS preferences updated!');
+    }
+
+    public function clearPosTransactionData(Request $request)
+    {
+        if (!$this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {
+            abort(403, 'Only Super Admin can clear POS transaction data.');
+        }
+
+        $request->validate([
+            'confirmation' => ['required', 'in:CLEAR POS DATA'],
+        ], [
+            'confirmation.in' => 'Type CLEAR POS DATA to confirm the cleanup.',
+        ]);
+
+        try {
+            $summary = DB::transaction(function () {
+                $orderCount = Schema::hasTable('orders') ? DB::table('orders')->count() : 0;
+                $sessionCount = Schema::hasTable('pos_sessions') ? DB::table('pos_sessions')->count() : 0;
+                $bookingCount = Schema::hasTable('table_bookings') ? DB::table('table_bookings')->count() : 0;
+                $tableCount = Schema::hasTable('tables') ? DB::table('tables')->count() : 0;
+
+                // Clear POS/order transaction tables only. Master data such as customers,
+                // menu items, users, waiters and settings are intentionally preserved.
+                if (Schema::hasTable('pos_deleted_item_histories')) {
+                    DB::table('pos_deleted_item_histories')->delete();
+                }
+                if (Schema::hasTable('order_due_payments')) {
+                    DB::table('order_due_payments')->delete();
+                }
+                if (Schema::hasTable('reviews') && Schema::hasColumn('reviews', 'order_id')) {
+                    DB::table('reviews')->delete();
+                }
+                if (Schema::hasTable('order_details')) {
+                    DB::table('order_details')->delete();
+                }
+                if (Schema::hasTable('order_kots')) {
+                    DB::table('order_kots')->delete();
+                }
+                if (Schema::hasTable('orders')) {
+                    DB::table('orders')->delete();
+                }
+                if (Schema::hasTable('pos_sessions')) {
+                    DB::table('pos_sessions')->delete();
+                }
+
+                // Clear table-booking transactions too so no old reservation can make a
+                // table appear Reserved immediately after the POS reset.
+                if (Schema::hasTable('table_bookings')) {
+                    DB::table('table_bookings')->delete();
+                }
+
+                // Make every restaurant table available after transaction cleanup.
+                if (Schema::hasTable('tables') && Schema::hasColumn('tables', 'initial_status')) {
+                    DB::table('tables')->update([
+                        'initial_status' => 'Available',
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                return [
+                    'orders' => $orderCount,
+                    'sessions' => $sessionCount,
+                    'bookings' => $bookingCount,
+                    'tables' => $tableCount,
+                ];
+            }, 5);
+
+            $request->session()->forget('force_pos_unfinished_prompt');
+
+            return back()->with(
+                'success',
+                "POS transaction data cleared successfully. Orders: {$summary['orders']}, POS Sessions: {$summary['sessions']}, Table Bookings: {$summary['bookings']}, Tables reset to Available: {$summary['tables']}."
+            );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->with('error', 'POS transaction cleanup failed. No partial changes were saved. Please check the application log.');
+        }
     }
 
     private function userHasRoleCaseInsensitive($user, string $roleName): bool

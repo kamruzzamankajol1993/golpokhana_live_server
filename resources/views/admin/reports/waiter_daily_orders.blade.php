@@ -82,9 +82,11 @@
                 <span class="progga-breadcrumb-item active">Waiter Daily Orders</span>
             </div>
         </div>
-        <button type="button" onclick="window.print()" class="progga-btn progga-btn-outline progga-btn-sm no-print">
-            <i class="bi bi-printer"></i> Print
-        </button>
+        <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="{{ route('reports.waiter_daily_orders.pdf', request()->query()) }}" target="_blank" rel="noopener" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+            <a href="{{ route('reports.waiter_daily_orders.excel', request()->query()) }}" class="progga-btn progga-btn-outline progga-btn-sm" style="border-color:#198754;color:#198754;background:#f8fff9;"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <button type="button" onclick="window.print()" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-printer"></i> Print</button>
+        </div>
     </div>
 
     <div class="progga-card no-print" style="margin-bottom:16px;">

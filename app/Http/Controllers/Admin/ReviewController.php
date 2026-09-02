@@ -11,7 +11,7 @@ class ReviewController extends Controller
     public function index()
     {
         // সব রিভিউ সর্বশেষ সময় অনুযায়ী ডাটাবেজ থেকে আনা হচ্ছে
-        $reviews = Review::with(['order.customer'])->latest()->paginate(15);
+        $reviews = Review::with(['order.customer', 'order.waiter', 'order.user', 'order.table'])->orderByDesc('updated_at')->paginate(15);
         return view('admin.review.index', compact('reviews'));
     }
 }

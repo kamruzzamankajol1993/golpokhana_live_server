@@ -22,9 +22,9 @@
             @endcan
 
             @can('table-booking-create')
-            <button class="progga-btn progga-btn-primary" data-bs-toggle="modal" data-bs-target="#addBookingModal">
+            <a class="progga-btn progga-btn-primary" href="{{ route('table-booking.create') }}">
                 <i class="bi bi-plus-lg"></i> New Booking
-            </button>
+            </a>
             @endcan
         </div>
     </div>

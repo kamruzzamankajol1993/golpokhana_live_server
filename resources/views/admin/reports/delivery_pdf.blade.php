@@ -27,7 +27,7 @@
         <h2>{{ $restaurant->name ?? $restaurantSettingName }}</h2>
         <p>{{ $restaurant->address ?? '' }}@if(!empty($restaurant->phone)) | Phone: {{ $restaurant->phone }}@endif</p>
         <div class="title">Delivery Report</div>
-        <p>Period: {{ $startDate->format('d M Y') }} to {{ $endDate->format('d M Y') }}</p>
+        <p>Period: {{ $startDate->format('d M Y') }} to {{ $endDate->format('d M Y') }} | Partner: {{ $selectedDeliveryPartnerLabel ?? 'ALL' }}</p>
     </div>
 
     <table class="summary">
@@ -59,21 +59,19 @@
         <tbody>
             @forelse($orders as $order)
                 @php
-                    $partnerLabels = [
-                        'inhouse' => 'In-house Delivery',
-                        'foodpanda' => 'Foodpanda',
-                        'foodi' => 'Foodi',
-                        'pathao_food' => 'Pathao Food',
-                    ];
-                    $partnerKey = strtolower(trim((string) ($order->delivery_partner ?: 'inhouse')));
-                    $partnerLabel = $partnerLabels[$partnerKey] ?? ($order->delivery_partner ?: 'N/A');
+                    $partnerRaw = trim((string) ($order->delivery_partner ?? ''));
+                    $legacyPartnerLabels = ['inhouse' => 'In-house Delivery', 'foodpanda' => 'Foodpanda', 'foodi' => 'Foodi', 'pathao_food' => 'Pathao Food'];
+                    $partnerLabel = optional($order->deliveryPartner)->name
+                        ?? ((ctype_digit($partnerRaw) && isset($deliveryPartnerNameMap[(int)$partnerRaw])) ? $deliveryPartnerNameMap[(int)$partnerRaw] : null)
+                        ?? ($legacyPartnerLabels[strtolower($partnerRaw)] ?? ($partnerRaw !== '' ? $partnerRaw : 'N/A'));
                     $discount = max(0, (float)($order->discount_amount ?? 0)) + max(0, (float)($order->product_discount_amount ?? 0));
                     $payment = $order->payment_type ?: '—';
+                    if ($payment === 'Card') $payment = 'Bank / Card';
                     if ($payment === 'Mobile Banking') $payment = 'MFS';
                     if ($payment === 'Split') {
                         $parts = [];
                         if ((float)($order->paid_in_cash ?? 0) > 0) $parts[] = 'Cash ' . number_format($order->paid_in_cash, 0);
-                        if ((float)($order->paid_in_card ?? 0) > 0) $parts[] = 'Card ' . number_format($order->paid_in_card, 0);
+                        if ((float)($order->paid_in_card ?? 0) > 0) $parts[] = 'Bank / Card ' . number_format($order->paid_in_card, 0);
                         if ((float)($order->paid_in_mfc ?? 0) > 0) $parts[] = 'MFS ' . number_format($order->paid_in_mfc, 0);
                         if ($parts) $payment .= ' (' . implode(', ', $parts) . ')';
                     }

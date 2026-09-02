@@ -10,6 +10,12 @@ class TableBooking extends Model
     use HasFactory;
     protected $guarded = [];
 
+    protected $casts = [
+        'booking_date' => 'date',
+        'booking_start_time' => 'datetime:H:i',
+        'booking_end_time' => 'datetime:H:i',
+    ];
+
     // রিলেশনশিপস
     public function customer()
     {

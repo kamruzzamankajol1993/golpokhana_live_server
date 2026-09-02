@@ -30,11 +30,13 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
             'Subtotal',
             'Honered',
             'Product Discount',
+            'VAT',
             'Service Charge',
             'Tips',
             'Given Money',
             'Change',
             'Grand Total',
+            'Due',
             'Payment',
             'Status',
             'Time',
@@ -60,18 +62,20 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
 
             $discountAmount = max(0, (float)($order->discount_amount ?? 0));
             $productDiscountAmount = max(0, (float)($order->product_discount_amount ?? 0));
+            $vatAmount = max(0, (float)($order->vat_tax ?? 0));
             $serviceCharge = max(0, (float)($order->service_charge ?? 0));
             $tipsAmount = max(0, (float)($order->tips_amount ?? ((float)($order->total_paid_amount ?? 0) - (float)($order->grand_total ?? 0))));
             $givenMoney = max(0, (float)($order->given_money ?? 0));
             $changeAmount = max(0, (float)($order->change_amount ?? 0));
+            $dueAmount = max(0, (float)($order->due ?? 0));
             $kitchenToPayment = is_null($order->kitchen_to_payment_minutes) ? '—' : $order->kitchen_to_payment_minutes . ' min';
 
             // Split Payment formatting
-            $paymentText = $order->payment_type ?? 'N/A';
+            $paymentText = ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A');
             if ($paymentText === 'Split') {
                 $splits = [];
                 if((float)$order->paid_in_cash > 0) $splits[] = 'Cash: ' . $order->paid_in_cash;
-                if((float)$order->paid_in_card > 0) $splits[] = 'Card: ' . $order->paid_in_card;
+                if((float)$order->paid_in_card > 0) $splits[] = 'Bank / Card: ' . $order->paid_in_card;
                 if((float)$order->paid_in_mfc > 0) $splits[] = 'MFC: ' . $order->paid_in_mfc;
                 if(!empty($splits)) {
                     $paymentText .= "\n(" . implode(', ', $splits) . ")";
@@ -85,11 +89,13 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
                 (float) ($order->subtotal ?? 0),
                 $discountAmount,
                 $productDiscountAmount,
+                $vatAmount,
                 $serviceCharge,
                 $tipsAmount,
                 $givenMoney,
                 $changeAmount,
                 (float) ($order->grand_total ?? 0),
+                $dueAmount,
                 $paymentText,
                 $order->status ?? 'N/A',
                 $order->created_at ? $order->created_at->format('d M Y, h:i A') : '—',
@@ -111,11 +117,11 @@ class OrdersExport implements FromCollection, WithHeadings, ShouldAutoSize, With
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getAlignment()->setWrapText(true);
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getAlignment()->setVertical(Alignment::VERTICAL_TOP);
 
-        // Money columns right aligned (D to K)
-        $sheet->getStyle('D2:K' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        // Money columns right aligned (D to M)
+        $sheet->getStyle('D2:M' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-        // Center alignment for Payment, Status, Time, etc. (L to O)
-        $sheet->getStyle('L2:O' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        // Center alignment for Payment, Status, Time, etc. (N to Q)
+        $sheet->getStyle('N2:Q' . $highestRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         // Border for table readability
         $sheet->getStyle('A1:' . $highestColumn . $highestRow)->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);

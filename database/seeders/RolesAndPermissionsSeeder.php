@@ -48,6 +48,7 @@ class RolesAndPermissionsSeeder extends Seeder
         // Reports: each report has a separate permission.
         $reportPermissions = [
             'report-sales-order-view',
+            'report-due-view',
             'report-complimentary-orders-view',
             'report-payment-type-sales-view',
             'report-food-sales-view',

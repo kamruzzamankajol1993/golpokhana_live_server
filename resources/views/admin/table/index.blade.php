@@ -113,7 +113,7 @@
 
                 <div class="progga-table-card-actions">
                     @can('table-edit')
-                    <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" onclick="editTableData({{ $table->id }}, '{{ $table->table_number }}', {{ $table->seating_capacity }}, '{{ $table->zone_id }}', '{{ $table->initial_status }}', '{{ $table->notes }}')">
+                    <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" onclick="editTableData({{ $table->id }}, '{{ $table->table_number }}', {{ $table->seating_capacity }}, '{{ $table->floor_zone_id }}', '{{ $table->initial_status }}', '{{ $table->notes }}')">
                         <i class="bi bi-pencil"></i>
                     </button>
                     @endcan
@@ -159,13 +159,13 @@
     });
 
     // Edit Modal Data Pass
-    window.editTableData = function(id, table_number, capacity, zone_id, status, notes) {
+    window.editTableData = function(id, table_number, capacity, floor_zone_id, status, notes) {
         let formAction = "{{ route('table.update', ':id') }}".replace(':id', id);
         $('#editTableForm').attr('action', formAction);
 
         $('#edit_table_number').val(table_number);
         $('#edit_capacity').val(capacity);
-        $('#edit_zone_id').val(zone_id).trigger('change');
+        $('#edit_floor_zone_id').val(floor_zone_id).trigger('change');
         $('#edit_initial_status').val(status).trigger('change');
         $('#edit_notes').val(notes);
 

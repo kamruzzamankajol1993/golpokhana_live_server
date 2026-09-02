@@ -45,10 +45,10 @@
     <td>
         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
             @if($showCash) <span class="progga-badge progga-badge-neutral">Cash</span> @endif
-            @if($showCard) <span class="progga-badge progga-badge-neutral">Card</span> @endif
-            @if($showMfc) <span class="progga-badge progga-badge-neutral">Mobile Banking</span> @endif
+            @if($showCard) <span class="progga-badge progga-badge-neutral">Bank / Card</span> @endif
+            @if($showMfc) <span class="progga-badge progga-badge-neutral">MFS</span> @endif
             @if(!$showCash && !$showCard && !$showMfc)
-                <span class="progga-badge progga-badge-neutral">{{ $order->payment_type ?? 'N/A' }}</span>
+                <span class="progga-badge progga-badge-neutral">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : (($order->payment_type ?? '') === 'Mobile Banking' ? 'MFS' : ($order->payment_type ?? 'N/A')) }}</span>
             @endif
         </div>
     </td>

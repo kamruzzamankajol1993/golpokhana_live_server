@@ -17,6 +17,11 @@ class Table extends Model
         return $this->belongsTo(Zone::class);
     }
 
+    public function floorZone()
+    {
+        return $this->belongsTo(FloorZone::class);
+    }
+
     // নতুন রিলেশনশিপ: একটি টেবিলে একাধিক অর্ডার থাকতে পারে
     public function orders()
     {

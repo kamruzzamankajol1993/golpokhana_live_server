@@ -101,8 +101,8 @@
               <select name="payment_method" id="paymentMethod" class="form-select">
                   <option value="">All Payments</option>
                   <option value="Cash" {{ ($paymentMethod ?? '') == 'Cash' ? 'selected' : '' }}>Cash</option>
-                  <option value="Card" {{ ($paymentMethod ?? '') == 'Card' ? 'selected' : '' }}>Card</option>
-                  <option value="Mobile Banking" {{ ($paymentMethod ?? '') == 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
+                  <option value="Card" {{ ($paymentMethod ?? '') == 'Card' ? 'selected' : '' }}>Bank / Card</option>
+                  <option value="Mobile Banking" {{ ($paymentMethod ?? '') == 'Mobile Banking' ? 'selected' : '' }}>MFS</option>
                   <!-- Split removed to divide data dynamically -->
               </select>
           </div>
@@ -132,7 +132,7 @@
             <th>Product Discount</th>
             <th>Payment Type</th>
             <th>Cash</th>
-            <th>Card</th>
+            <th>Bank / Card</th>
             <th>MFS</th>
             <th>Total Paid</th>
           </tr>

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Table;
 use App\Models\Zone;
+use App\Models\FloorZone;
+use App\Models\TableBooking;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +17,7 @@ class TableController extends Controller
   public function index()
     {
         $zones = Zone::all();
+        $floorZones = FloorZone::all();
 
         // টেবিলের সাথে রানিং অর্ডার, KOT এবং ওয়েটারের ডাটা নিয়ে আসা হচ্ছে
         $tables = Table::with(['zone', 'orders' => function($query) {
@@ -23,10 +26,16 @@ class TableController extends Controller
         }])->orderBy('table_number', 'asc')->get();
 
         $tables->map(function ($table) {
-            if ($table->orders->count() > 0) {
+            $hasBooking = TableBooking::where('table_id', $table->id)
+                ->whereIn('status', ['upcoming','confirmed'])
+                ->whereDate('booking_date', '>=', now()->toDateString())
+                ->exists();
+            if ($hasBooking) {
+                $table->dynamic_status = 'reserved';
+            } elseif ($table->orders->count() > 0) {
                 $table->dynamic_status = 'occupied';
             } else {
-                $table->dynamic_status = strtolower($table->initial_status);
+                $table->dynamic_status = strtolower(trim((string) $table->initial_status));
             }
             return $table;
         });
@@ -37,7 +46,7 @@ class TableController extends Controller
         $reservedCount = $tables->where('dynamic_status', 'reserved')->count();
 
         return view('admin.table.index', compact(
-            'tables', 'zones', 'totalTables', 'occupiedCount', 'availableCount', 'reservedCount'
+            'tables', 'zones', 'floorZones', 'totalTables', 'occupiedCount', 'availableCount', 'reservedCount'
         ));
     }
     public function store(Request $request)
@@ -45,7 +54,8 @@ class TableController extends Controller
         $request->validate([
             'table_number' => 'required|string|unique:tables,table_number',
             'seating_capacity' => 'required|integer|min:1',
-            'zone_id' => 'required|exists:zones,id',
+            'zone_id' => 'nullable|exists:zones,id',
+            'floor_zone_id' => 'required|exists:floor_zones,id',
             'initial_status' => 'required|string',
         ]);
 
@@ -55,6 +65,7 @@ class TableController extends Controller
                 'table_number' => $request->table_number,
                 'seating_capacity' => $request->seating_capacity,
                 'zone_id' => $request->zone_id,
+                'floor_zone_id' => $request->floor_zone_id,
                 'initial_status' => strtolower($request->initial_status),
                 'notes' => $request->notes,
             ]);
@@ -73,7 +84,8 @@ class TableController extends Controller
         $request->validate([
             'table_number' => 'required|string|unique:tables,table_number,' . $id,
             'seating_capacity' => 'required|integer|min:1',
-            'zone_id' => 'required|exists:zones,id',
+            'zone_id' => 'nullable|exists:zones,id',
+            'floor_zone_id' => 'required|exists:floor_zones,id',
             'initial_status' => 'required|string',
         ]);
 
@@ -84,6 +96,7 @@ class TableController extends Controller
                 'table_number' => $request->table_number,
                 'seating_capacity' => $request->seating_capacity,
                 'zone_id' => $request->zone_id,
+                'floor_zone_id' => $request->floor_zone_id,
                 'initial_status' => strtolower($request->initial_status),
                 'notes' => $request->notes,
             ]);
@@ -95,6 +108,26 @@ class TableController extends Controller
             Log::error('Table Update Failed: ' . $e->getMessage());
             return back()->with('error', 'Failed to update table!');
         }
+    }
+
+    public function storeFloorZone(Request $request)
+    {
+        $request->validate(['name'=>'required|string|max:100']);
+        FloorZone::create(['name'=>$request->name]);
+        return back()->with('success','Floor / Zone added successfully!');
+    }
+
+    public function updateFloorZone(Request $request, $id)
+    {
+        $request->validate(['name'=>'required|string|max:100']);
+        FloorZone::findOrFail($id)->update(['name'=>$request->name]);
+        return back()->with('success','Floor / Zone updated successfully!');
+    }
+
+    public function destroyFloorZone($id)
+    {
+        FloorZone::findOrFail($id)->delete();
+        return back()->with('success','Floor / Zone deleted successfully!');
     }
 
     public function destroy($id)

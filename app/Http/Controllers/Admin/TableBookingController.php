@@ -68,6 +68,29 @@ class TableBookingController extends Controller
         ));
     }
 
+    public function create()
+    {
+        $customers = Customer::orderBy('name')->get();
+        $occasions = Occasion::where('status','Active')->get();
+        $zonesWithTables = Zone::with('tables')->get();
+        return view('admin.table_booking.pages.create', compact('customers','occasions','zonesWithTables'));
+    }
+
+    public function edit($id)
+    {
+        $booking = TableBooking::with(['customer','table'])->findOrFail($id);
+        $customers = Customer::orderBy('name')->get();
+        $occasions = Occasion::where('status','Active')->get();
+        $zonesWithTables = Zone::with('tables')->get();
+        return view('admin.table_booking.pages.edit', compact('booking','customers','occasions','zonesWithTables'));
+    }
+
+    public function show($id)
+    {
+        $booking = TableBooking::with(['customer','table.zone','occasion'])->findOrFail($id);
+        return view('admin.table_booking.pages.show', compact('booking'));
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -76,7 +99,14 @@ class TableBookingController extends Controller
             'booking_date' => 'required|date',
             'booking_start_time' => 'required|date_format:H:i',
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
+            'advance_amount' => 'nullable|numeric|min:0',
+            'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
+            'advance_payment_reference' => 'nullable|string|max:255',
         ]);
+
+        if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
+            return back()->withErrors(['advance_payment_reference' => 'Reference number is required for Bank / Card or MFS payment.'])->withInput();
+        }
 
         DB::beginTransaction();
         try {
@@ -118,6 +148,9 @@ class TableBookingController extends Controller
                 'booking_end_time' => $request->booking_end_time,
                 'occasion_id' => $request->occasion_id,
                 'special_request' => $request->special_request,
+                'advance_amount' => $request->advance_amount ?? 0,
+                'advance_payment_method' => $request->advance_payment_method,
+                'advance_payment_reference' => $request->advance_payment_reference,
                 'status' => $request->status ?? 'upcoming',
             ]);
 
@@ -143,7 +176,14 @@ class TableBookingController extends Controller
             'booking_date' => 'required|date',
             'booking_start_time' => 'required|date_format:H:i',
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
+            'advance_amount' => 'nullable|numeric|min:0',
+            'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
+            'advance_payment_reference' => 'nullable|string|max:255',
         ]);
+
+        if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
+            return back()->withErrors(['advance_payment_reference' => 'Reference number is required for Bank / Card or MFS payment.'])->withInput();
+        }
 
         DB::beginTransaction();
         try {
@@ -173,8 +213,13 @@ class TableBookingController extends Controller
                 'booking_end_time' => $request->booking_end_time,
                 'occasion_id' => $request->occasion_id,
                 'special_request' => $request->special_request,
+                'advance_amount' => $request->advance_amount ?? 0,
+                'advance_payment_method' => $request->advance_payment_method,
+                'advance_payment_reference' => $request->advance_payment_reference,
                 'status' => $request->status,
             ]);
+
+            $this->releaseTableIfCompletedOrCancelled($booking->fresh());
 
             DB::commit();
             return back()->with('success', 'Booking updated successfully!');
@@ -182,6 +227,13 @@ class TableBookingController extends Controller
             DB::rollBack();
             Log::error('Table Booking Update Error: ' . $e->getMessage());
             return back()->with('error', 'Failed to update booking!');
+        }
+    }
+
+    private function releaseTableIfCompletedOrCancelled($booking)
+    {
+        if (in_array(strtolower((string) $booking->status), ['completed', 'cancelled'])) {
+            Table::where('id', $booking->table_id)->update(['initial_status' => 'Available']);
         }
     }
 

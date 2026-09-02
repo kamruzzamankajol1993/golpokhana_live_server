@@ -4,6 +4,9 @@
 @section('css')
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <style>
+    .select2-selection__clear {
+        display: none !important;
+    }
     /* ── Order List page-specific ── */
     .progga-order-items-preview { display: flex; flex-direction: column; gap: 2px; }
     .progga-order-items-main {
@@ -103,6 +106,33 @@
       }
     }
 
+    .progga-order-action-menu .dropdown-toggle {
+      white-space: nowrap;
+      min-width: 92px;
+      justify-content: center;
+    }
+    .progga-order-action-menu .dropdown-menu {
+      min-width: 190px;
+      padding: 6px;
+      border: 1px solid var(--progga-border-light);
+      border-radius: 10px;
+      z-index: 1080;
+    }
+    .progga-order-action-menu .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .progga-order-action-menu .dropdown-item i {
+      width: 18px;
+      text-align: center;
+      font-size: 14px;
+    }
+
 </style>
 @endsection
 
@@ -126,6 +156,9 @@
     </button>
     <button type="button" onclick="exportOrderExcel()" class="progga-btn progga-btn-outline progga-btn-sm" style="border-color:#198754;color:#198754;background:#f8fff9;">
         <i class="bi bi-file-earmark-excel"></i> Export Excel
+    </button>
+    <button type="button" onclick="printOrderList()" class="progga-btn progga-btn-outline progga-btn-sm">
+        <i class="bi bi-printer"></i> Print
     </button>
     <a href="{{ route('pos.index') }}" class="progga-btn progga-btn-primary progga-btn-sm"><i class="bi bi-display"></i> Open POS</a>
 </div>
@@ -208,7 +241,7 @@
         <select class="progga-select filter-trigger" id="filterPayment" data-placeholder="Payment">
           <option value="">All Payments</option>
           <option value="Cash">Cash</option>
-          <option value="Card">Card</option>
+          <option value="Card">Bank / Card</option>
           <option value="Mobile Banking">Mobile Banking</option>
           <option value="Split">Split</option>
         </select>
@@ -387,7 +420,7 @@
     });
 };
 
-   // PDF and Excel export use the current filter state.
+   // PDF, Excel and Print use the current filter state.
    function buildOrderExportQueryString() {
         let search = $('#searchOrder').val() || '';
         let status = $('#filterStatus').val() || '';
@@ -408,6 +441,10 @@
 
    function exportOrderExcel() {
         window.location.href = "{{ route('order.export_excel') }}?" + buildOrderExportQueryString();
+    }
+
+   function printOrderList() {
+        window.open("{{ route('order.print_report') }}?" + buildOrderExportQueryString(), '_blank');
     }
 </script>
 @endsection

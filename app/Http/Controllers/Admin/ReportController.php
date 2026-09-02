@@ -6,10 +6,16 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\OrderDetail;
+use App\Models\OrderKot;
+use App\Models\PosSession;
 use App\Models\RestaurantSetting;
 use App\Models\User;
+use App\Models\DeliveryPartner;
+use App\Exports\ArrayReportExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
 
@@ -17,11 +23,15 @@ class ReportController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('permission:report-sales-order-view', ['only' => ['salesOrder', 'deliveryReport', 'deliveryReportPdf']]);
+        $this->middleware('permission:report-sales-order-view', ['only' => ['salesOrder']]);
+        $this->middleware('permission:report-delivery-view', ['only' => ['deliveryReport', 'deliveryReportPdf', 'deliveryReportExcel']]);
+        $this->middleware('permission:report-kot-view', ['only' => ['kotReport', 'kotReportPdf', 'kotReportExcel']]);
+        $this->middleware('permission:report-pos-session-view', ['only' => ['posSessionReport', 'posSessionReportPdf', 'posSessionReportExcel']]);
+        $this->middleware('permission:report-due-view', ['only' => ['dueReport', 'dueReportPdf', 'dueReportExcel']]);
         $this->middleware('permission:report-complimentary-orders-view', ['only' => ['complimentaryOrders']]);
         $this->middleware('permission:report-payment-type-sales-view', ['only' => ['paymentTypeSales']]);
         $this->middleware('permission:report-food-sales-view', ['only' => ['foodSales']]);
-        $this->middleware('permission:report-waiter-daily-orders-view', ['only' => ['waiterDailyOrders']]);
+        $this->middleware('permission:report-waiter-daily-orders-view', ['only' => ['waiterDailyOrders', 'waiterDailyOrdersPdf', 'waiterDailyOrdersExcel']]);
     }
 
     /**
@@ -34,6 +44,9 @@ class ReportController extends Controller
             'payment_type_sales' => 'report-payment-type-sales-view',
             'food_sales' => 'report-food-sales-view',
             'waiter_daily_orders' => 'report-waiter-daily-orders-view',
+            'delivery' => 'report-delivery-view',
+            'kots' => 'report-kot-view',
+            'pos_sessions' => 'report-pos-session-view',
             default => 'report-sales-order-view',
         };
 
@@ -69,7 +82,12 @@ class ReportController extends Controller
         $year = (int) ($request->year ?: $currentYear);
         $month = (int) ($request->month ?: Carbon::now()->month);
 
-        if ($filterType === 'date' && $request->start_date && $request->end_date) {
+        if ($filterType === 'all') {
+            // Keep harmless current-year date values for shared view fields; reports that
+            // support All can intentionally skip applying a date range to their query.
+            $startDate = Carbon::create($year, 1, 1)->startOfYear()->startOfDay();
+            $endDate = Carbon::create($year, 12, 31)->endOfYear()->endOfDay();
+        } elseif ($filterType === 'date' && $request->start_date && $request->end_date) {
             try {
                 $startDate = $this->parseReportDate($request->start_date)->startOfDay();
                 $endDate = $this->parseReportDate($request->end_date)->endOfDay();
@@ -182,71 +200,265 @@ class ReportController extends Controller
         ));
     }
 
+
+    /** Delivery Report partner selector sourced from delivery_partners table. */
+    private function resolveDeliveryReportPartner(Request $request): array
+    {
+        $deliveryPartners = DeliveryPartner::query()
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+
+        $requested = trim((string) $request->get('delivery_partner', 'all'));
+        $selectedDeliveryPartner = null;
+        $selectedDeliveryPartnerId = 'all';
+
+        if ($requested !== '' && strtolower($requested) !== 'all' && ctype_digit($requested)) {
+            $selectedDeliveryPartner = $deliveryPartners->firstWhere('id', (int) $requested);
+            if ($selectedDeliveryPartner) {
+                $selectedDeliveryPartnerId = (string) $selectedDeliveryPartner->id;
+            }
+        }
+
+        return compact('deliveryPartners', 'selectedDeliveryPartner', 'selectedDeliveryPartnerId');
+    }
+
+    /** Apply stable ID filtering and also support legacy rows that stored partner ID/name in delivery_partner. */
+    private function applyDeliveryReportPartnerFilter($query, ?DeliveryPartner $partner)
+    {
+        if (!$partner) {
+            return $query;
+        }
+
+        $partnerId = (string) $partner->id;
+        $partnerName = strtolower(trim((string) $partner->name));
+
+        return $query->where(function ($partnerQuery) use ($partner, $partnerId, $partnerName) {
+            $partnerQuery->where('delivery_partner_id', $partner->id)
+                ->orWhere('delivery_partner', $partnerId)
+                ->orWhereRaw('LOWER(TRIM(delivery_partner)) = ?', [$partnerName]);
+        });
+    }
+
+    /** Common query used by Delivery screen, PDF and Excel. */
+    private function deliveryReportQuery(Carbon $startDate, Carbon $endDate, ?DeliveryPartner $partner = null)
+    {
+        $query = Order::with(['customer', 'table', 'waiter', 'user', 'deliveryPartner'])
+            ->whereIn('order_type', ['Delivery', 'delivery'])
+            ->whereBetween('created_at', [$startDate, $endDate]);
+
+        return $this->applyDeliveryReportPartnerFilter($query, $partner);
+    }
+
+    private function deliveryPartnerLabelForOrder($order): string
+    {
+        if ($order->deliveryPartner) {
+            return (string) $order->deliveryPartner->name;
+        }
+
+        $raw = trim((string) ($order->delivery_partner ?? ''));
+        if ($raw !== '' && ctype_digit($raw)) {
+            $name = DeliveryPartner::query()->whereKey((int) $raw)->value('name');
+            if ($name) return (string) $name;
+        }
+
+        $legacy = [
+            'inhouse' => 'In-house Delivery',
+            'foodpanda' => 'Foodpanda',
+            'foodi' => 'Foodi',
+            'pathao_food' => 'Pathao Food',
+        ];
+        return $legacy[strtolower($raw)] ?? ($raw !== '' ? $raw : 'N/A');
+    }
+
     /** Delivery Report — show only Delivery order types. */
     public function deliveryReport(Request $request)
     {
         $filters = $this->resolveReportFilters($request);
         extract($filters);
+        $partnerFilter = $this->resolveDeliveryReportPartner($request);
+        extract($partnerFilter);
 
-        $baseQuery = Order::with(['customer', 'table', 'waiter', 'user'])
-            ->whereIn('order_type', ['Delivery', 'delivery'])
-            ->whereBetween('created_at', [$startDate, $endDate]);
+        $baseQuery = $this->deliveryReportQuery($startDate, $endDate, $selectedDeliveryPartner);
 
         $totalOrders = (clone $baseQuery)->count();
         $completedOrders = (clone $baseQuery)->where('status', 'Completed')->count();
         $totalValue = (float) (clone $baseQuery)->sum('grand_total');
         $totalDue = (float) (clone $baseQuery)->sum('due');
+        $selectedDeliveryPartnerLabel = $selectedDeliveryPartner?->name ?? 'ALL';
 
         $orders = (clone $baseQuery)
             ->orderBy('id', 'desc')
             ->paginate(15)
             ->appends($request->query());
 
+        $deliveryPartnerNameMap = $deliveryPartners->pluck('name', 'id');
+
         if ($request->ajax()) {
             return response()->json([
-                'html' => view('admin.reports.partials.delivery_table_rows', compact('orders'))->render(),
+                'html' => view('admin.reports.partials.delivery_table_rows', compact('orders', 'deliveryPartnerNameMap'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
                     'orders' => $totalOrders,
                     'completed' => $completedOrders,
                     'value' => '৳' . number_format($totalValue, 0),
                     'due' => '৳' . number_format($totalDue, 0),
+                    'partner_label' => $selectedDeliveryPartnerLabel,
                 ],
             ]);
         }
 
         return view('admin.reports.delivery_report', compact(
             'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
-            'totalOrders', 'completedOrders', 'totalValue', 'totalDue', 'orders'
+            'totalOrders', 'completedOrders', 'totalValue', 'totalDue', 'orders',
+            'deliveryPartners', 'selectedDeliveryPartner', 'selectedDeliveryPartnerId', 'selectedDeliveryPartnerLabel',
+            'deliveryPartnerNameMap'
         ));
     }
 
-    /** Open the filtered Delivery Report as an inline PDF in a new browser tab. */
-    public function deliveryReportPdf(Request $request)
+    /**
+     * Due Report — all outstanding dues by default.
+     * Selecting a delivery partner narrows the list to that partner only;
+     * the default All option intentionally includes dine-in/takeaway/non-partner dues too.
+     */
+    public function dueReport(Request $request)
     {
         $filters = $this->resolveReportFilters($request);
         extract($filters);
 
-        $orders = Order::with(['customer', 'table', 'waiter', 'user'])
-            ->whereIn('order_type', ['Delivery', 'delivery'])
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->orderByDesc('id')
-            ->get();
+        $allowedPartners = ['inhouse', 'dine_in', 'takeaway', 'foodpanda', 'foodi', 'pathao_food'];
+        $deliveryPartner = strtolower(trim((string) $request->input('delivery_partner', '')));
+        if (!in_array($deliveryPartner, $allowedPartners, true)) {
+            $deliveryPartner = '';
+        }
 
+        $baseQuery = Order::with(['customer', 'table', 'waiter', 'user'])
+            ->where('due', '>', 0);
+
+        if ($filterType !== 'all') {
+            $baseQuery->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($deliveryPartner === 'inhouse') {
+            $baseQuery->whereIn('order_type', ['Delivery', 'delivery'])
+                ->where(function ($partnerQuery) {
+                    $partnerQuery->where('delivery_partner', 'inhouse')
+                        ->orWhereNull('delivery_partner')
+                        ->orWhere('delivery_partner', '');
+                });
+        } elseif ($deliveryPartner === 'dine_in') {
+            $baseQuery->whereIn('order_type', ['Dine-In', 'dine-in', 'dine_in', 'Dine In', 'dine in', 'DineIn', 'dinein']);
+        } elseif ($deliveryPartner === 'takeaway') {
+            $baseQuery->whereIn('order_type', ['Takeaway', 'takeaway', 'Take Away', 'take away', 'take_away', 'Take-Away', 'take-away']);
+        } elseif ($deliveryPartner !== '') {
+            $baseQuery->whereIn('order_type', ['Delivery', 'delivery'])
+                ->where('delivery_partner', $deliveryPartner);
+        }
+
+        $totalOrders = (clone $baseQuery)->count();
+        $totalGrand = (float) (clone $baseQuery)->sum('grand_total');
+        $totalPaid = (float) (clone $baseQuery)->sum('total_paid_amount');
+        $totalDue = (float) (clone $baseQuery)->sum('due');
+
+        $orders = (clone $baseQuery)
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->appends($request->query());
+
+        $deliveryPartnerOptions = [
+            'inhouse' => 'In-house Delivery',
+            'dine_in' => 'Dine-In',
+            'takeaway' => 'Takeaway',
+            'foodpanda' => 'Foodpanda',
+            'foodi' => 'Foodi',
+            'pathao_food' => 'Pathao Food',
+        ];
+
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('admin.reports.partials.due_table_rows', compact('orders'))->render(),
+                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
+                'summary' => [
+                    'orders' => $totalOrders,
+                    'grand' => '৳' . number_format($totalGrand, 0),
+                    'paid' => '৳' . number_format($totalPaid, 0),
+                    'due' => '৳' . number_format($totalDue, 0),
+                ],
+            ]);
+        }
+
+        return view('admin.reports.due_report', compact(
+            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'deliveryPartner', 'deliveryPartnerOptions', 'totalOrders', 'totalGrand',
+            'totalPaid', 'totalDue', 'orders'
+        ));
+    }
+
+    /** Open the filtered Due Report as an inline PDF in a new browser tab. */
+    public function dueReportPdf(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+
+        $allowedPartners = ['inhouse', 'dine_in', 'takeaway', 'foodpanda', 'foodi', 'pathao_food'];
+        $deliveryPartner = strtolower(trim((string) $request->input('delivery_partner', '')));
+        if (!in_array($deliveryPartner, $allowedPartners, true)) {
+            $deliveryPartner = '';
+        }
+
+        $query = Order::with(['customer', 'table', 'waiter', 'user'])
+            ->where('due', '>', 0);
+
+        if ($filterType !== 'all') {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($deliveryPartner === 'inhouse') {
+            $query->whereIn('order_type', ['Delivery', 'delivery'])
+                ->where(function ($partnerQuery) {
+                    $partnerQuery->where('delivery_partner', 'inhouse')
+                        ->orWhereNull('delivery_partner')
+                        ->orWhere('delivery_partner', '');
+                });
+        } elseif ($deliveryPartner === 'dine_in') {
+            $query->whereIn('order_type', ['Dine-In', 'dine-in', 'dine_in', 'Dine In', 'dine in', 'DineIn', 'dinein']);
+        } elseif ($deliveryPartner === 'takeaway') {
+            $query->whereIn('order_type', ['Takeaway', 'takeaway', 'Take Away', 'take away', 'take_away', 'Take-Away', 'take-away']);
+        } elseif ($deliveryPartner !== '') {
+            $query->whereIn('order_type', ['Delivery', 'delivery'])
+                ->where('delivery_partner', $deliveryPartner);
+        }
+
+        $orders = $query->orderByDesc('id')->get();
         $totalOrders = $orders->count();
-        $completedOrders = $orders->where('status', 'Completed')->count();
-        $totalValue = (float) $orders->sum('grand_total');
+        $totalGrand = (float) $orders->sum('grand_total');
+        $totalPaid = (float) $orders->sum('total_paid_amount');
         $totalDue = (float) $orders->sum('due');
         $restaurant = RestaurantSetting::first();
+
+        $deliveryPartnerOptions = [
+            'inhouse' => 'In-house Delivery',
+            'dine_in' => 'Dine-In',
+            'takeaway' => 'Takeaway',
+            'foodpanda' => 'Foodpanda',
+            'foodi' => 'Foodi',
+            'pathao_food' => 'Pathao Food',
+        ];
+        $deliveryPartnerLabel = $deliveryPartner === ''
+            ? 'All (including non-partner dues)'
+            : ($deliveryPartnerOptions[$deliveryPartner] ?? $deliveryPartner);
+        $periodLabel = $filterType === 'all'
+            ? 'All Dates'
+            : $startDate->format('d M Y') . ' to ' . $endDate->format('d M Y');
 
         @ini_set('pcre.backtrack_limit', '50000000');
         @ini_set('memory_limit', '1024M');
         @ini_set('max_execution_time', '300');
         @set_time_limit(300);
 
-        $html = view('admin.reports.delivery_pdf', compact(
-            'orders', 'startDate', 'endDate', 'totalOrders', 'completedOrders',
-            'totalValue', 'totalDue', 'restaurant'
+        $html = view('admin.reports.due_pdf', compact(
+            'orders', 'periodLabel', 'deliveryPartnerLabel', 'totalOrders',
+            'totalGrand', 'totalPaid', 'totalDue', 'restaurant'
         ))->render();
 
         $tempDir = storage_path('app/mpdf-temp');
@@ -267,10 +479,194 @@ class ReportController extends Controller
             'autoLangToFont' => true,
         ]);
 
-        $fileName = 'Delivery_Report_' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.pdf';
+        $fileName = 'Due_Report_' . ($filterType === 'all'
+            ? 'All_Dates'
+            : $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d')) . '.pdf';
         $mpdf->SetTitle($fileName);
         $mpdf->WriteHTML($html);
 
+        return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
+
+
+    public function dueReportExcel(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+        $allowedPartners = ['inhouse', 'dine_in', 'takeaway', 'foodpanda', 'foodi', 'pathao_food'];
+        $deliveryPartner = strtolower(trim((string) $request->input('delivery_partner', '')));
+        if (!in_array($deliveryPartner, $allowedPartners, true)) $deliveryPartner = '';
+
+        $query = Order::with(['customer', 'table', 'waiter', 'user'])->where('due', '>', 0);
+        if ($filterType !== 'all') $query->whereBetween('created_at', [$startDate, $endDate]);
+        if ($deliveryPartner === 'inhouse') {
+            $query->whereIn('order_type', ['Delivery', 'delivery'])->where(function ($q) {
+                $q->where('delivery_partner', 'inhouse')->orWhereNull('delivery_partner')->orWhere('delivery_partner', '');
+            });
+        } elseif ($deliveryPartner === 'dine_in') {
+            $query->whereIn('order_type', ['Dine-In', 'dine-in', 'dine_in', 'Dine In', 'dine in', 'DineIn', 'dinein']);
+        } elseif ($deliveryPartner === 'takeaway') {
+            $query->whereIn('order_type', ['Takeaway', 'takeaway', 'Take Away', 'take away', 'take_away', 'Take-Away', 'take-away']);
+        } elseif ($deliveryPartner !== '') {
+            $query->whereIn('order_type', ['Delivery', 'delivery'])->where('delivery_partner', $deliveryPartner);
+        }
+
+        $orders = $query->orderByDesc('id')->get();
+        $headings = ['Order #', 'Date & Time', 'Customer', 'Order Type', 'Delivery Partner', 'Grand Total', 'Paid', 'Due', 'Payment', 'Status'];
+        $rows = $orders->map(function ($order) {
+            return [
+                '#' . $order->order_number,
+                optional($order->created_at)->format('d M Y h:i A'),
+                optional($order->customer)->name ?? 'Walk-in',
+                $order->order_type ?? 'N/A',
+                strtolower((string) $order->order_type) === 'delivery' ? $this->deliveryPartnerLabelForOrder($order) : 'N/A',
+                (float) ($order->grand_total ?? 0),
+                (float) ($order->total_paid_amount ?? 0),
+                (float) ($order->due ?? 0),
+                $this->displayPaymentText($order),
+                $order->status ?? 'N/A',
+            ];
+        })->all();
+        return Excel::download(new ArrayReportExport($headings, $rows, 'Due Report'), 'due-report-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
+
+    /** Open the filtered Delivery Report as an inline PDF in a new browser tab. */
+    public function deliveryReportPdf(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+        $partnerFilter = $this->resolveDeliveryReportPartner($request);
+        extract($partnerFilter);
+
+        $orders = $this->deliveryReportQuery($startDate, $endDate, $selectedDeliveryPartner)
+            ->orderByDesc('id')
+            ->get();
+
+        $totalOrders = $orders->count();
+        $completedOrders = $orders->where('status', 'Completed')->count();
+        $totalValue = (float) $orders->sum('grand_total');
+        $totalDue = (float) $orders->sum('due');
+        $restaurant = RestaurantSetting::first();
+        $selectedDeliveryPartnerLabel = $selectedDeliveryPartner?->name ?? 'ALL';
+        $deliveryPartnerNameMap = $deliveryPartners->pluck('name', 'id');
+
+        @ini_set('pcre.backtrack_limit', '50000000');
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
+        $html = view('admin.reports.delivery_pdf', compact(
+            'orders', 'startDate', 'endDate', 'totalOrders', 'completedOrders',
+            'totalValue', 'totalDue', 'restaurant', 'selectedDeliveryPartnerLabel', 'deliveryPartnerNameMap'
+        ))->render();
+
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) mkdir($tempDir, 0775, true);
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8', 'format' => 'A4', 'orientation' => 'L',
+            'margin_left' => 7, 'margin_right' => 7, 'margin_top' => 8, 'margin_bottom' => 8,
+            'tempDir' => $tempDir, 'autoScriptToLang' => true, 'autoLangToFont' => true,
+        ]);
+
+        $partnerSlug = $selectedDeliveryPartner ? Str::slug($selectedDeliveryPartner->name, '_') : 'ALL';
+        $fileName = 'Delivery_Report_' . ($selectedDeliveryPartner ? ('Partner-' . $selectedDeliveryPartner->id . '_' . $partnerSlug) : 'ALL')
+            . '_' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.pdf';
+        $mpdf->SetTitle($fileName);
+        $mpdf->WriteHTML($html);
+
+        return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
+
+
+    public function deliveryReportExcel(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        extract($filters);
+        $partnerFilter = $this->resolveDeliveryReportPartner($request);
+        extract($partnerFilter);
+
+        $orders = $this->deliveryReportQuery($startDate, $endDate, $selectedDeliveryPartner)
+            ->orderByDesc('id')->get();
+
+        $headings = ['Order #', 'Date & Time', 'Delivery Partner', 'Customer', 'Phone', 'Subtotal', 'VAT', 'Discount', 'Grand Total', 'Due', 'Payment', 'Status'];
+        $rows = $orders->map(function ($order) {
+            $discount = max(0, (float) ($order->product_discount_amount ?? 0)) + max(0, (float) ($order->discount_amount ?? 0));
+            return [
+                '#' . $order->order_number,
+                optional($order->created_at)->format('d M Y h:i A'),
+                $this->deliveryPartnerLabelForOrder($order),
+                optional($order->customer)->name ?? 'Walk-in Customer',
+                optional($order->customer)->phone ?? optional($order->customer)->mobile ?? 'N/A',
+                (float) ($order->subtotal ?? 0),
+                (float) ($order->vat_tax ?? 0),
+                $discount,
+                (float) ($order->grand_total ?? 0),
+                max(0, (float) ($order->due ?? 0)),
+                $this->displayPaymentText($order),
+                $order->status ?? 'N/A',
+            ];
+        })->all();
+
+        $partnerSlug = $selectedDeliveryPartner ? Str::slug($selectedDeliveryPartner->name, '_') : 'ALL';
+        $fileName = 'Delivery_Report_' . ($selectedDeliveryPartner ? ('Partner-' . $selectedDeliveryPartner->id . '_' . $partnerSlug) : 'ALL')
+            . '_' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.xlsx';
+
+        return Excel::download(new ArrayReportExport($headings, $rows, 'Delivery Report'), $fileName);
+    }
+
+    private function displayPaymentText($order): string
+    {
+        $paymentText = (string) ($order->payment_type ?? 'N/A');
+        if ($paymentText === 'Card') $paymentText = 'Bank / Card';
+        if ($paymentText === 'Mobile Banking') $paymentText = 'MFS';
+        if (($order->payment_type ?? '') === 'Split') {
+            $parts = [];
+            if ((float) ($order->paid_in_cash ?? 0) > 0) $parts[] = 'Cash: ' . number_format((float) $order->paid_in_cash, 2, '.', '');
+            if ((float) ($order->paid_in_card ?? 0) > 0) $parts[] = 'Bank / Card: ' . number_format((float) $order->paid_in_card, 2, '.', '');
+            if ((float) ($order->paid_in_mfc ?? 0) > 0) $parts[] = 'MFS: ' . number_format((float) $order->paid_in_mfc, 2, '.', '');
+            if ($parts) $paymentText = 'Split (' . implode(', ', $parts) . ')';
+        }
+        return $paymentText;
+    }
+
+    private function simpleReportPdfResponse(string $title, array $headings, array $rows, array $meta, string $fileName, string $format = 'A4', string $orientation = 'L')
+    {
+        @ini_set('pcre.backtrack_limit', '50000000');
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
+        $restaurant = RestaurantSetting::first();
+        $html = view('admin.reports.simple_table_pdf', [
+            'title' => $title,
+            'subtitle' => $restaurant->name ?? $restaurant->restaurant_name ?? 'Restaurant',
+            'headings' => $headings,
+            'rows' => $rows,
+            'meta' => $meta,
+        ])->render();
+
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) mkdir($tempDir, 0775, true);
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8', 'format' => $format, 'orientation' => $orientation,
+            'margin_left' => 7, 'margin_right' => 7, 'margin_top' => 8, 'margin_bottom' => 8,
+            'tempDir' => $tempDir, 'autoScriptToLang' => true, 'autoLangToFont' => true,
+        ]);
+        $mpdf->SetTitle($fileName);
+        $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
+        $mpdf->WriteHTML($html);
         return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $fileName . '"',
@@ -539,6 +935,71 @@ class ReportController extends Controller
         ));
     }
 
+
+
+    private function waiterDailyExportData(Request $request): array
+    {
+        $restaurant = RestaurantSetting::first();
+        $businessDate = $this->defaultBusinessDate($restaurant);
+        if ($request->filled('business_date')) {
+            try { $businessDate = $this->parseReportDate($request->business_date)->startOfDay(); } catch (\Throwable $e) {}
+        }
+        [$windowStart, $windowEnd] = $this->resolveBusinessWindow($businessDate, $restaurant);
+
+        $waiters = User::query()
+            ->whereHas('roles', fn ($query) => $query->whereRaw('LOWER(name) = ?', ['waiter']))
+            ->select('id', 'name', 'user_id', 'first_name', 'last_name')
+            ->orderBy('name')->orderBy('id')->get();
+        $waiterIds = $waiters->pluck('id')->map(fn ($id) => (int) $id)->values();
+        $selectedUserId = $request->filled('user_id') ? (int) $request->user_id : null;
+        if ($selectedUserId && !$waiterIds->contains($selectedUserId)) $selectedUserId = null;
+
+        $orders = Order::with(['user', 'table'])
+            ->whereBetween('created_at', [$windowStart, $windowEnd])
+            ->whereIn('user_id', $waiterIds->all())
+            ->when($selectedUserId, fn ($q) => $q->where('user_id', $selectedUserId))
+            ->orderByDesc('created_at')->orderByDesc('id')->get();
+
+        $headings = ['Order #', 'Waiter User', 'Order Time', 'Table', 'Order Type', 'Status', 'Honored', 'Product Discount', 'Grand Total', 'Payment'];
+        $rows = $orders->map(function ($order) {
+            $userName = optional($order->user)->name ?: trim((optional($order->user)->first_name ?? '') . ' ' . (optional($order->user)->last_name ?? ''));
+            return [
+                $order->order_number,
+                $userName ?: ('User #' . $order->user_id),
+                optional($order->created_at)->format('d/m/Y h:i A'),
+                optional($order->table)->table_number ?: 'N/A',
+                $order->order_type ?: 'N/A',
+                $order->status ?: 'N/A',
+                (float) ($order->discount_amount ?? 0),
+                (float) ($order->product_discount_amount ?? 0),
+                (float) ($order->grand_total ?? 0),
+                $this->displayPaymentText($order),
+            ];
+        })->all();
+        $waiterName = $selectedUserId ? (optional($waiters->firstWhere('id', $selectedUserId))->name ?? ('User #' . $selectedUserId)) : 'All Waiters';
+        $meta = [
+            'Business Date' => $businessDate->format('d M Y'),
+            'Business Window' => $windowStart->format('d M Y, h:i A') . ' - ' . $windowEnd->format('d M Y, h:i A'),
+            'Waiter' => $waiterName,
+            'Orders' => (string) $orders->count(),
+            'Completed Sales' => number_format((float) $orders->filter(fn ($o) => strtolower((string) $o->status) === 'completed')->sum('grand_total'), 2),
+        ];
+        return [$headings, $rows, $meta];
+    }
+
+    public function waiterDailyOrdersPdf(Request $request)
+    {
+        [$headings, $rows, $meta] = $this->waiterDailyExportData($request);
+        return $this->simpleReportPdfResponse('Waiter Daily Order Report', $headings, $rows, $meta, 'waiter-daily-orders-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
+    }
+
+    public function waiterDailyOrdersExcel(Request $request)
+    {
+        [$headings, $rows] = $this->waiterDailyExportData($request);
+        return Excel::download(new ArrayReportExport($headings, $rows, 'Waiter Daily Orders'), 'waiter-daily-orders-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
+
     /** ২. পেমেন্ট টাইপ ওয়াইজ রিপোর্ট */
     public function paymentTypeSales(Request $request)
     {
@@ -591,7 +1052,7 @@ class ReportController extends Controller
             $paymentRows[] = ['label' => 'Cash', 'icon' => 'bi-cash-coin', 'amount' => $cashAmount, 'orders_count' => $cashOrders, 'percentage' => $totalCollected > 0 ? ($cashAmount / $totalCollected) * 100 : 0];
         }
         if (!$paymentMethod || $paymentMethod == 'Card') {
-            $paymentRows[] = ['label' => 'Card', 'icon' => 'bi-credit-card', 'amount' => $cardAmount, 'orders_count' => $cardOrders, 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0];
+            $paymentRows[] = ['label' => 'Bank / Card', 'icon' => 'bi-credit-card', 'amount' => $cardAmount, 'orders_count' => $cardOrders, 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0];
         }
         if (!$paymentMethod || $paymentMethod == 'Mobile Banking') {
             $paymentRows[] = ['label' => 'Mobile Banking / MFC', 'icon' => 'bi-phone', 'amount' => $mfcAmount, 'orders_count' => $mfcOrders, 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0];
@@ -744,7 +1205,7 @@ class ReportController extends Controller
                 $paymentText = 'Cash';
                 $rowTotal = $cashAmount;
             } elseif ($paymentMethod === 'Card') {
-                $paymentText = 'Card';
+                $paymentText = 'Bank / Card';
                 $rowTotal = $cardAmount;
             } elseif ($paymentMethod === 'Mobile Banking') {
                 $paymentText = 'Mobile Banking';
@@ -752,7 +1213,7 @@ class ReportController extends Controller
             } else {
                 $paymentParts = [];
                 if ($cashAmount > 0) $paymentParts[] = 'Cash';
-                if ($cardAmount > 0) $paymentParts[] = 'Card';
+                if ($cardAmount > 0) $paymentParts[] = 'Bank / Card';
                 if ($mfcAmount > 0) $paymentParts[] = 'Mobile Banking';
 
                 $paymentText = count($paymentParts) > 0
@@ -855,6 +1316,116 @@ class ReportController extends Controller
             'restaurant' => RestaurantSetting::first(),
         ];
     }
+
+    /** KOT Report — complete historical list, including delivered/completed KOTs. */
+    public function kotReport(Request $request)
+    {
+        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->appends($request->query());
+
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('admin.reports.partials.kot_report_rows', compact('kots'))->render(),
+                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $kots])->render(),
+            ]);
+        }
+
+        return view('admin.reports.kot_report', compact('kots'));
+    }
+
+    /** POS Session Report — complete historical session list. */
+    public function posSessionReport(Request $request)
+    {
+        $sessions = PosSession::with('user')
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->appends($request->query());
+
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('admin.reports.partials.pos_session_report_rows', compact('sessions'))->render(),
+                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $sessions])->render(),
+            ]);
+        }
+
+        return view('admin.reports.pos_session_report', compact('sessions'));
+    }
+
+
+
+    private function kotExportData(): array
+    {
+        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])->orderByDesc('id')->get();
+        $headings = ['#', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
+        $rows = $kots->values()->map(function ($kot, $index) {
+            $order = $kot->order;
+            $type = strtolower((string) optional($order)->order_type);
+            $location = in_array($type, ['dine-in', 'dine_in'], true)
+                ? 'Table ' . (optional(optional($order)->table)->table_number ?? 'N/A')
+                : ucfirst(str_replace('_', ' ', (string) optional($order)->order_type));
+            $itemQty = $kot->orderDetails->where('is_unavailable', 0)->sum('quantity');
+            return [
+                $index + 1, $kot->kot_number, '#' . (optional($order)->order_number ?? 'N/A'),
+                $location ?: 'N/A', optional(optional($order)->waiter)->name ?? 'Unassigned', (int) $itemQty,
+                $kot->created_at ? $kot->created_at->format('d M Y - h:i A') : 'N/A',
+                $kot->kitchen_status ?? 'N/A', optional($order)->status ?? 'N/A',
+            ];
+        })->all();
+        return [$headings, $rows, ['Records' => (string) count($rows)]];
+    }
+
+    public function kotReportPdf(Request $request)
+    {
+        [$headings, $rows, $meta] = $this->kotExportData();
+        return $this->simpleReportPdfResponse('KOT Report', $headings, $rows, $meta, 'kot-report-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
+    }
+
+    public function kotReportExcel(Request $request)
+    {
+        [$headings, $rows] = $this->kotExportData();
+        return Excel::download(new ArrayReportExport($headings, $rows, 'KOT Report'), 'kot-report-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
+    private function posSessionExportData(): array
+    {
+        $sessions = PosSession::with('user')->orderByDesc('id')->get();
+        $headings = ['ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Sales', 'Service Charge', 'VAT', 'Grand Total', 'Cash', 'Bank / Card', 'MFS', 'Status'];
+        $rows = $sessions->map(function ($session) {
+            $income = is_array($session->incomes_summary) ? $session->incomes_summary : [];
+            return [
+                $session->id,
+                optional($session->user)->name ?? 'N/A',
+                $session->weekday ?? ($session->start_time ? Carbon::parse($session->start_time)->format('l') : 'N/A'),
+                $session->start_time ? Carbon::parse($session->start_time)->format('d M Y, h:i A') : 'N/A',
+                $session->end_time ? Carbon::parse($session->end_time)->format('d M Y, h:i A') : 'Running',
+                $session->duration ?? 'Running',
+                (float) ($session->sales_total ?? 0),
+                (float) ($session->service_charge ?? 0),
+                (float) ($session->vat_total ?? 0),
+                (float) ($session->grand_total ?? 0),
+                (float) ($income['Cash'] ?? 0),
+                (float) ($income['Card'] ?? 0),
+                (float) ($income['MFC'] ?? 0),
+                $session->status ?? 'N/A',
+            ];
+        })->all();
+        return [$headings, $rows, ['Records' => (string) count($rows)]];
+    }
+
+    public function posSessionReportPdf(Request $request)
+    {
+        [$headings, $rows, $meta] = $this->posSessionExportData();
+        return $this->simpleReportPdfResponse('POS Session Report', $headings, $rows, $meta, 'pos-session-report-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
+    }
+
+    public function posSessionReportExcel(Request $request)
+    {
+        [$headings, $rows] = $this->posSessionExportData();
+        return Excel::download(new ArrayReportExport($headings, $rows, 'POS Sessions'), 'pos-session-report-' . now()->format('Y-m-d-His') . '.xlsx');
+    }
+
 
     public function exportPdf(Request $request)
     {

@@ -1,0 +1,193 @@
+/*
+ * Progga RMS - Admin header responsive overrides
+ * Desktop (> 1024px) intentionally keeps the original layout.
+ */
+
+.progga-navbar-leading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.progga-navbar-heading {
+  min-width: 0;
+}
+
+.progga-navbar-branch-btn,
+.progga-navbar-pos-btn,
+.progga-navbar-cache-btn {
+  white-space: nowrap;
+}
+
+.progga-navbar-branch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  /* Tablet uses the same drawer-style sidebar as mobile. */
+  .progga-sidebar {
+    width: min(280px, 86vw) !important;
+    transform: translateX(-100%) !important;
+    z-index: 1050;
+  }
+
+  .progga-sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  .progga-navbar,
+  .progga-navbar.progga-navbar-expanded {
+    left: 0 !important;
+    height: var(--progga-navbar-height);
+    padding: 0 16px;
+    gap: 10px;
+  }
+
+  .progga-main,
+  .progga-main.progga-main-expanded {
+    margin-left: 0 !important;
+  }
+
+  .progga-navbar-leading {
+    flex: 0 1 auto;
+    gap: 8px;
+  }
+
+  .progga-navbar-heading {
+    max-width: 180px;
+  }
+
+  .progga-navbar-title,
+  .progga-navbar-subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progga-navbar-actions {
+    min-width: 0;
+    flex: 0 1 auto;
+    gap: 5px;
+  }
+
+  .progga-navbar-branch-btn {
+    min-width: 0;
+    max-width: 190px;
+  }
+
+  .progga-navbar-branch-label {
+    display: block;
+  }
+
+  .progga-navbar-cache-btn,
+  .progga-navbar-pos-btn {
+    flex-shrink: 0;
+  }
+
+  .progga-sidebar-overlay.active {
+    display: block;
+  }
+}
+
+@media (max-width: 768px) {
+  .progga-navbar {
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  .progga-navbar-leading {
+    gap: 5px;
+  }
+
+  .progga-navbar-toggle {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .progga-navbar-heading {
+    max-width: 125px;
+  }
+
+  .progga-navbar-title {
+    font-size: 13px;
+  }
+
+  .progga-navbar-subtitle {
+    display: none !important;
+  }
+
+  /* Cache remains available on desktop; hide it where header space is limited. */
+  .progga-navbar-cache-btn {
+    display: none !important;
+  }
+
+  .progga-navbar-branch-btn {
+    max-width: 150px;
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .progga-navbar-pos-btn {
+    width: 38px;
+    height: 36px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  .progga-navbar-pos-btn .progga-navbar-action-label {
+    display: none;
+  }
+
+  .progga-navbar-avatar {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 576px) {
+  .progga-navbar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .progga-navbar-heading {
+    max-width: 92px;
+  }
+
+  .progga-navbar-branch-btn {
+    max-width: 120px;
+    min-height: 34px;
+    font-size: 11px;
+  }
+
+  .progga-navbar-notification-btn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 430px) {
+  /* On narrow phones prioritise navigation, branch context, POS and account. */
+  .progga-navbar-heading {
+    display: none;
+  }
+
+  .progga-navbar-actions {
+    gap: 4px;
+  }
+
+  .progga-navbar-branch-btn {
+    max-width: 132px;
+  }
+}
+
+@media (max-width: 360px) {
+  .progga-navbar-branch-btn {
+    max-width: 105px;
+  }
+}

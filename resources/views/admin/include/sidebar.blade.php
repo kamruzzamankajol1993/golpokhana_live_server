@@ -23,9 +23,22 @@
     @endcan
     @can('pos-view')
     <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('pos.*') ? 'active' : '' }}" href="{{ route('pos.index') }}">
-            <i class="bi bi-display progga-nav-icon"></i><span>POS System</span><span class="progga-nav-badge">LIVE</span>
+        <a class="progga-nav-link {{ request()->routeIs('pos.*') ? 'active' : '' }}" data-bs-toggle="collapse" href="#posSystemDropdown" role="button" aria-expanded="{{ request()->routeIs('pos.*') ? 'true' : 'false' }}" aria-controls="posSystemDropdown">
+            <i class="bi bi-display progga-nav-icon"></i><span>POS System</span>
+            <span class="progga-nav-badge">LIVE</span>
+            <i class="bi bi-chevron-down ms-auto" style="font-size:11px;"></i>
         </a>
+        <div class="collapse {{ request()->routeIs('pos.*') ? 'show' : '' }}" id="posSystemDropdown">
+            <a class="progga-nav-link {{ request()->routeIs('pos.index') ? 'active' : '' }}" href="{{ route('pos.index') }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-display progga-nav-icon"></i><span>Sales</span>
+            </a>
+            <a class="progga-nav-link {{ request()->routeIs('pos.sessions.*') ? 'active' : '' }}" href="{{ route('pos.sessions.index') }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-clock-history progga-nav-icon"></i><span>Session List</span>
+            </a>
+            <a class="progga-nav-link {{ request()->routeIs('pos.kots.*') ? 'active' : '' }}" href="{{ route('pos.kots.index') }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-receipt progga-nav-icon"></i><span>Kot List</span>
+            </a>
+        </div>
     </div>
     @endcan
 
@@ -79,11 +92,21 @@
 
    @can('table-view')
 <div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('table.*') ? 'active' : '' }}" href="{{ route('table.index') }}">
+    <a class="progga-nav-link {{ (request()->routeIs('table.*') || request()->routeIs('floor-zone.*')) ? 'active' : '' }}" data-bs-toggle="collapse" href="#tableManagementMenu" role="button" aria-expanded="false">
         <i class="bi bi-table progga-nav-icon"></i><span>Table Management</span>
+        <i class="bi bi-chevron-down ms-auto"></i>
     </a>
+    <div class="collapse {{ (request()->routeIs('table.*') || request()->routeIs('floor-zone.*')) ? 'show' : '' }}" id="tableManagementMenu">
+        <a class="progga-nav-link ps-5 {{ request()->routeIs('floor-zone.*') ? 'active' : '' }}" href="{{ route('floor-zone.index') }}">
+            <span>Floor / Zone</span>
+        </a>
+        <a class="progga-nav-link ps-5 {{ request()->routeIs('table.*') ? 'active' : '' }}" href="{{ route('table.index') }}#table-section">
+            <span>Tables</span>
+        </a>
+    </div>
 </div>
 @endcan
+
 
 @can('qrcode-view')
 <div class="progga-nav-item">
@@ -111,6 +134,19 @@
     <div class="progga-nav-item">
         <a class="progga-nav-link {{ request()->routeIs('customer.*') || request()->routeIs('reward-points.*') ? 'active' : '' }}" href="{{ route('customer.index') }}">
             <i class="bi bi-people-fill progga-nav-icon"></i><span>Customers</span>
+        </a>
+    </div>
+
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('delivery-partner.*') ? 'active' : '' }}" href="{{ route('delivery-partner.index') }}">
+            <i class="bi bi-truck progga-nav-icon"></i><span>Delivery Partner</span>
+        </a>
+    </div>
+    @endcan
+    @can('customer-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('reviews.*') ? 'active' : '' }}" href="{{ route('reviews.index') }}">
+            <i class="bi bi-chat-square-heart-fill progga-nav-icon"></i><span>Feedback List</span>
         </a>
     </div>
     @endcan
@@ -181,7 +217,7 @@
     </div>
     @endcan
     @endcanany
-@canany(['report-sales-order-view', 'report-complimentary-orders-view', 'report-payment-type-sales-view', 'report-food-sales-view', 'report-waiter-daily-orders-view'])
+@canany(['report-sales-order-view', 'report-delivery-view', 'report-due-view', 'report-complimentary-orders-view', 'report-payment-type-sales-view', 'report-food-sales-view', 'report-waiter-daily-orders-view', 'report-kot-view', 'report-pos-session-view'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Analytics</div></div>
 
     <div class="progga-nav-item">
@@ -195,9 +231,29 @@
                 <i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Sales & Order Report</span>
             </a>
             @endcan
-            @can('report-sales-order-view')
-            <a class="progga-nav-link {{ request()->routeIs('reports.delivery') ? 'active' : '' }}" href="{{ route('reports.delivery') }}" style="padding-left: 42px; font-size: 13px;">
-                <i class="bi bi-truck progga-nav-icon"></i><span>Delivery Report</span>
+            @can('report-delivery-view')
+            @php
+                $sidebarDeliveryPartners = \App\Models\DeliveryPartner::query()->orderBy('name')->orderBy('id')->get();
+                $deliveryReportOpen = request()->routeIs('reports.delivery*');
+                $sidebarSelectedPartner = (string) request()->query('delivery_partner', 'all');
+            @endphp
+            <a class="progga-nav-link {{ $deliveryReportOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#deliveryReportDropdown" role="button" aria-expanded="{{ $deliveryReportOpen ? 'true' : 'false' }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-truck progga-nav-icon"></i><span>Delivery Report</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
+            </a>
+            <div class="collapse {{ $deliveryReportOpen ? 'show' : '' }}" id="deliveryReportDropdown">
+                <a class="progga-nav-link {{ $deliveryReportOpen && ($sidebarSelectedPartner === 'all' || $sidebarSelectedPartner === '') ? 'active' : '' }}" href="{{ route('reports.delivery', ['delivery_partner' => 'all']) }}" style="padding-left:58px;font-size:12px;">
+                    <span>ALL</span>
+                </a>
+                @foreach($sidebarDeliveryPartners as $partner)
+                    <a class="progga-nav-link {{ $deliveryReportOpen && $sidebarSelectedPartner === (string)$partner->id ? 'active' : '' }}" href="{{ route('reports.delivery', ['delivery_partner' => $partner->id]) }}" style="padding-left:58px;font-size:12px;">
+                        <span>{{ $partner->name }}</span>
+                    </a>
+                @endforeach
+            </div>
+            @endcan
+            @can('report-due-view')
+            <a class="progga-nav-link {{ request()->routeIs('reports.due') ? 'active' : '' }}" href="{{ route('reports.due') }}" style="padding-left: 42px; font-size: 13px;">
+                <i class="bi bi-hourglass-split progga-nav-icon"></i><span>Due Report</span>
             </a>
             @endcan
             @can('report-complimentary-orders-view')
@@ -219,6 +275,17 @@
             <a class="progga-nav-link {{ request()->routeIs('reports.waiter_daily_orders') ? 'active' : '' }}" href="{{ route('reports.waiter_daily_orders') }}" style="padding-left: 42px; font-size: 13px;">
                 <i class="bi bi-person-check-fill progga-nav-icon"></i><span>Waiter Daily Orders</span>
             </a>
+            @endcan
+            @can('report-kot-view')
+            <a class="progga-nav-link {{ request()->routeIs('reports.kots') ? 'active' : '' }}" href="{{ route('reports.kots') }}" style="padding-left: 42px; font-size: 13px;">
+                <i class="bi bi-receipt progga-nav-icon"></i><span>KOT Report</span>
+            </a>
+            @endcan
+            @can('report-pos-session-view')
+            <a class="progga-nav-link {{ request()->routeIs('reports.pos_sessions') ? 'active' : '' }}" href="{{ route('reports.pos_sessions') }}" style="padding-left: 42px; font-size: 13px;">
+                <i class="bi bi-clock-history progga-nav-icon"></i><span>POS Session Report</span>
+            </a>
+
             @endcan
         </div>
     </div>

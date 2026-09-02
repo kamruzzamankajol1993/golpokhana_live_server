@@ -1,0 +1,257 @@
+/*
+ * POS mobile/tablet responsive overrides.
+ * Loaded after progga-style.css so desktop styles remain unchanged.
+ */
+
+.pos-header-mobile-trigger {
+  display: none;
+}
+
+.pos-mobile-header-offcanvas {
+  width: min(340px, 88vw) !important;
+  border-left: 0 !important;
+  background: #f7f9f8;
+  box-shadow: -16px 0 42px rgba(15, 23, 42, 0.2);
+}
+
+.pos-mobile-header-offcanvas-head {
+  min-height: 82px;
+  padding: 16px 18px;
+  color: #fff;
+  background: var(--grad-pos-header, linear-gradient(135deg, #21352a 0%, #15251c 100%));
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.pos-mobile-menu-kicker {
+  margin-bottom: 2px;
+  color: var(--progga-secondary, #d5aa65);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+}
+
+.pos-mobile-header-offcanvas-head .offcanvas-title {
+  max-width: 235px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+
+.pos-mobile-header-offcanvas-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.pos-mobile-menu-action {
+  min-height: 40px;
+  justify-content: flex-start;
+  padding: 9px 12px !important;
+  border-radius: 9px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+.pos-mobile-session-card {
+  margin-top: 2px;
+  padding: 14px;
+  border: 1px solid rgba(25,135,84,.22);
+  border-radius: 12px;
+  background: rgba(25,135,84,.08);
+  color: #198754;
+}
+
+.pos-mobile-session-card.no-session {
+  border-color: rgba(220,53,69,.22);
+  background: rgba(220,53,69,.08);
+  color: #dc3545;
+}
+
+.pos-mobile-session-card.no-session .progga-session-dot {
+  background: #dc3545;
+  box-shadow: 0 0 0 4px rgba(220,53,69,.14);
+}
+
+.pos-mobile-session-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.pos-mobile-session-line {
+  padding-left: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+/* Mobile + tablet POS layout */
+@media (max-width: 1024px) {
+  .progga-pos-header {
+    height: 58px;
+    padding: 0 12px !important;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .progga-pos-logo {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+    letter-spacing: .4px;
+  }
+
+  .progga-pos-logo img {
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px;
+  }
+
+  .progga-pos-logo > span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .progga-pos-step-indicator,
+  .pos-header-desktop-actions {
+    display: none !important;
+  }
+
+  .pos-header-mobile-trigger {
+    display: flex !important;
+    flex: 0 0 34px;
+    margin-left: auto !important;
+    border: 0;
+  }
+
+  /* Hide table counters and filters on tablet/mobile only. */
+  .pos-table-stats,
+  .pos-s1-filters {
+    display: none !important;
+  }
+
+  .progga-pos-table-screen.active {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .pos-s1-top {
+    padding: 12px 14px 10px !important;
+    gap: 8px !important;
+    flex-wrap: wrap;
+  }
+
+  .pos-s1-heading-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pos-s1-title {
+    font-size: 17px;
+  }
+
+  .pos-s1-sub {
+    font-size: 11px;
+  }
+
+  .pos-s1-actions {
+    width: 100%;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .pos-s1-actions .pos-s1-takeaway-btn {
+    width: auto !important;
+    min-height: 32px;
+    padding: 6px 8px !important;
+    border-width: 1px;
+    border-radius: 8px;
+    gap: 5px;
+    font-size: 10.5px !important;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+
+  .pos-s1-actions .pos-s1-takeaway-btn i {
+    font-size: 13px;
+  }
+
+  .pos-s1-actions #modeTakeawayDeliveryList {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  .pos-s1-actions #modeTakeaway {
+    flex: 0 0 auto;
+  }
+
+  /* Keep the table cards in the existing grid and make the card area scrollable. */
+  .pos-s1-grid {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 10px 14px 20px !important;
+    margin-top: 0 !important;
+  }
+
+  #posTableGrid,
+  #posTakeawayDeliveryGrid {
+    align-content: start;
+  }
+}
+
+@media (max-width: 480px) {
+  .progga-pos-header {
+    padding: 0 10px !important;
+  }
+
+  .progga-pos-logo img {
+    width: 36px !important;
+    height: 36px !important;
+    flex-basis: 36px;
+  }
+
+  .progga-pos-logo > span {
+    font-size: 12px;
+  }
+
+  .pos-s1-top {
+    padding: 10px 12px 8px !important;
+  }
+
+  .pos-s1-actions .pos-s1-takeaway-btn {
+    padding: 6px 7px !important;
+    font-size: 10px !important;
+  }
+
+  .pos-s1-grid {
+    padding: 10px 12px 18px !important;
+  }
+}
+
+@media (max-width: 768px) {
+    #posCatList .progga-pos-cat-item:not(.active) {
+        background: var(--progga-bg, #f0e4d2) !important;
+        border-color: var(--progga-border, #dfd0bc) !important;
+    }
+
+    #posCatList .progga-pos-cat-item.active {
+        background: var(--progga-primary, #21352a) !important;
+    }
+}

@@ -4,6 +4,10 @@
     $activeSession = $activeSession ?? null;
     $requirePreviousSessionClose = $requirePreviousSessionClose ?? false;
     $sessions = $sessions ?? collect();
+    $feedbackBaseUrl = rtrim((string) ($restaurant->website ?? $restaurantSettingWebsite ?? ''), '/');
+    $feedbackUrl = ($feedbackBaseUrl !== '' && !empty($order->feedback_token))
+        ? $feedbackBaseUrl . '/feedback/' . $order->feedback_token
+        : null;
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -198,6 +202,23 @@
     }
     .bill-partner { font-size: 9.5px; color: #000; margin-top: 6px; font-family: var(--mono); }
 
+
+    .bill-feedback-qr {
+      text-align: center; margin: 12px auto 2px; padding-top: 10px;
+      border-top: 1.5px dashed #000; font-family: var(--mono);
+    }
+    .bill-feedback-qr-title {
+      font-size: 10.5px; font-weight: 900; color: #000;
+      text-transform: uppercase; letter-spacing: .4px;
+    }
+    .bill-feedback-qr img {
+      display: block; width: 76px; height: 76px;
+      margin: 6px auto 4px;
+    }
+    .bill-feedback-qr-note {
+      font-size: 9px; line-height: 1.35; color: #000; font-weight: 900;
+    }
+
     .btn-print-wrap { margin-top: 28px; display: flex; justify-content: center; }
     .btn-print {
       display: inline-flex; align-items: center; gap: 7px;
@@ -277,18 +298,9 @@
           <span class="bill-meta-val">: {{ $order->customer->name ?? 'Walk-in' }}</span>
         </div>
         @if(strtolower((string) ($order->order_type ?? '')) === 'delivery')
-          @php
-              $deliveryPartnerLabels = [
-                  'inhouse' => 'In-house Delivery',
-                  'foodpanda' => 'Foodpanda',
-                  'foodi' => 'Foodi',
-                  'pathao_food' => 'Pathao Food',
-              ];
-              $deliveryPartnerValue = $order->delivery_partner ?? 'inhouse';
-          @endphp
           <div class="bill-meta-row">
-            <span class="bill-meta-label">Delivery</span>
-            <span class="bill-meta-val">: {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+            <span class="bill-meta-label">Delivery Partner</span>
+            <span class="bill-meta-val">: {{ $order->delivery_partner_display_name ?? '—' }}</span>
           </div>
         @endif
         <div class="bill-meta-row" style="grid-column:1/-1;">
@@ -349,21 +361,16 @@
 
       <hr class="dashed-sep-thick">
 
-      @php
-          $isDeliveryInvoice = strtolower((string) ($order->order_type ?? '')) === 'delivery';
-      @endphp
-      @if($isDeliveryInvoice)
-        <div style="text-align:center; font-weight:800; font-size:12px; text-transform:uppercase; margin:2px 0 7px;">Order Summary</div>
-      @endif
+      {{-- All order types now use the same order summary layout as Dine-in. --}}
       <div class="bill-totals">
         <div class="bill-total-row">
-          <span>{{ $isDeliveryInvoice ? 'Subtotal' : 'Sub Total' }}</span>
+          <span>Sub Total</span>
           <span>{{ number_format($order->subtotal, 0) }}</span>
         </div>
 
 
 
-        @if(!$isDeliveryInvoice && $order->service_charge > 0)
+        @if($order->service_charge > 0)
         <div class="bill-total-row">
           <span>Service Charge ({{ $taxSettingServiceCharge }}%)</span>
           <span>+ {{ number_format($order->service_charge, 0) }}</span>
@@ -389,12 +396,11 @@
         </div>
         @endif
         <div class="bill-total-row grand">
-          <span>{{ $isDeliveryInvoice ? 'Grand Total' : 'Total Payable' }}</span>
+          <span>Total Payable</span>
           <span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->grand_total, 0) }}</span>
         </div>
       </div>
 
-      @if(!$isDeliveryInvoice)
       @php
           // Invoice payment display helper values.
           // Given Amount and Tips will show above Change when available.
@@ -415,7 +421,7 @@
             </div>
           </div>
           <div class="bill-total-row"><span>Cash</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_cash ?? $order->paid_in_cash ?? 0, 0) }}</span></div>
-          <div class="bill-total-row"><span>Card</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0, 0) }}</span></div>
+          <div class="bill-total-row"><span>Bank / Card</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0, 0) }}</span></div>
           <div class="bill-total-row"><span>MFS / Mobile</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0, 0) }}</span></div>
 
           @if($invoiceGivenAmount > 0 || $invoiceTipsAmount > 0)
@@ -447,7 +453,7 @@
           <div class="bill-payment-top">
             <div>
               <div class="bill-payment-label">Paid By</div>
-              <div class="bill-payment-val">{{ $order->payment_type ?? 'Cash' }}</div>
+              <div class="bill-payment-val">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'Cash') }}</div>
             </div>
             <div style="text-align:right;">
               <div class="bill-payment-label">Total Paid</div>
@@ -480,11 +486,14 @@
           @endif
         </div>
       @endif
-      @endif
 
-      <div class="bill-server">
-       Served By: <strong>{{ $order->waiter->name ?? $order->user->name ?? 'N/A' }}</strong>
+      @if($feedbackUrl)
+      <div class="bill-feedback-qr">
+        <div class="bill-feedback-qr-title">Scan for Feedback</div>
+        <img src="data:image/png;base64,{{ \DNS2D::getBarcodePNG($feedbackUrl, 'QRCODE', 4, 4) }}" alt="Feedback QR Code">
+       
       </div>
+      @endif
 
     </div><div class="bill-footer">
       {{-- <div class="bill-thankyou">✦ Thank You ✦</div> --}}

@@ -9,7 +9,7 @@
               return strtolower($order->status ?? '') === 'pending';
           })->count();
       @endphp
-      <div class="d-flex flex-wrap justify-content-end" style="gap:10px;">
+      <div class="d-flex flex-wrap justify-content-end pos-s1-actions" style="gap:10px;">
         <button class="pos-s1-takeaway-btn" id="modeTakeawayDeliveryList" type="button">
           <i class="bi bi-card-list"></i> Takeaway / Delivery Orders
         </button>
@@ -43,7 +43,7 @@
       <div class="progga-pos-table-grid" id="posTableGrid">
         @foreach($tables as $table)
             @php $statusClass = strtolower($table->initial_status); @endphp
-            <div class="progga-pos-table-card {{ $statusClass }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-status="{{ $statusClass }}">
+            <div class="progga-pos-table-card {{ $statusClass }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-reserved-customer-id="{{ $table->reserved_customer_id ?? '' }}" data-reserved-booking-id="{{ $table->reserved_booking_id ?? '' }}" data-status="{{ $statusClass }}">
               <span class="progga-pos-table-icon">🪑</span>
               <div class="progga-pos-table-num">{{ $table->table_number }}</div>
               <div class="progga-pos-table-zone">{{ $table->zone->name ?? 'Main' }}</div>
@@ -73,6 +73,9 @@
                   $runningCustomer = $runningOrder->customer->name ?? 'Walk-in Customer';
                   $runningItemCount = $runningOrder->orderDetails->sum('quantity');
                   $runningOrderDate = optional($runningOrder->created_at)->format('d M Y, h:i A');
+                  $runningDeliveryPartnerName = $runningTypeClass === 'delivery'
+                      ? ($runningOrder->delivery_partner_display_name ?: 'Not selected')
+                      : null;
                   $statusKey = strtolower(str_replace([' ', '_'], '-', $runningOrder->status ?? 'pending'));
               @endphp
               <div class="progga-pos-running-order-card {{ $runningTypeClass }}"
@@ -84,6 +87,9 @@
                 <div class="progga-pos-table-zone"><i class="bi bi-person-check"></i> {{ $runningCustomer }}</div>
                 <div class="progga-pos-table-info"><i class="bi bi-calendar-event"></i> {{ $runningOrderDate }}</div>
                 <div class="progga-pos-table-info"><i class="bi bi-bag-check-fill"></i> {{ $runningTypeLabel }} · {{ (int) $runningItemCount }} items</div>
+                @if($runningTypeClass === 'delivery')
+                  <div class="progga-pos-table-info fw-bold"><i class="bi bi-truck"></i> Partner: {{ $runningDeliveryPartnerName }}</div>
+                @endif
                 <span class="progga-badge progga-status-occupied js-td-order-status-badge">{{ str_replace('_', ' ', $runningOrder->status) }}</span>
               </div>
           @empty

@@ -1,3 +1,10 @@
+@php
+    $feedbackBaseUrl = rtrim((string) ($restaurant->website ?? ($restaurantSettingWebsite ?? '')), '/');
+    $feedbackToken = trim((string) ($order->feedback_token ?? ''));
+    $feedbackUrl = ($feedbackBaseUrl !== '' && $feedbackToken !== '')
+        ? $feedbackBaseUrl . '/feedback/' . rawurlencode($feedbackToken)
+        : null;
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -168,6 +175,23 @@
     }
     .bill-partner { font-size: 9.5px; color: #000; margin-top: 6px; font-family: var(--mono); }
 
+
+    .bill-feedback-qr {
+      text-align: center; margin: 12px auto 2px; padding-top: 10px;
+      border-top: 1.5px dashed #000; font-family: var(--mono);
+    }
+    .bill-feedback-qr-title {
+      font-size: 10.5px; font-weight: 900; color: #000;
+      text-transform: uppercase; letter-spacing: .4px;
+    }
+    .bill-feedback-qr img {
+      display: block; width: 76px; height: 76px;
+      margin: 6px auto 4px;
+    }
+    .bill-feedback-qr-note {
+      font-size: 9px; line-height: 1.35; color: #000; font-weight: 900;
+    }
+
     .btn-print-wrap { margin-top: 28px; display: flex; justify-content: center; }
     .btn-print {
       display: inline-flex; align-items: center; gap: 7px;
@@ -242,18 +266,9 @@
           <span class="bill-meta-val">: {{ $order->customer->name ?? 'Walk-in' }}</span>
         </div>
         @if(strtolower((string) ($order->order_type ?? '')) === 'delivery')
-          @php
-              $deliveryPartnerLabels = [
-                  'inhouse' => 'In-house Delivery',
-                  'foodpanda' => 'Foodpanda',
-                  'foodi' => 'Foodi',
-                  'pathao_food' => 'Pathao Food',
-              ];
-              $deliveryPartnerValue = $order->delivery_partner ?? 'inhouse';
-          @endphp
           <div class="bill-meta-row">
-            <span class="bill-meta-label">Delivery</span>
-            <span class="bill-meta-val">: {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
+            <span class="bill-meta-label">Delivery Partner</span>
+            <span class="bill-meta-val">: {{ $order->delivery_partner_display_name ?? '—' }}</span>
           </div>
         @endif
       </div>
@@ -364,6 +379,14 @@
       <div class="bill-server">
         Served By: <strong>{{ $order->waiter->name ?? 'N/A' }}</strong>
       </div>
+
+      @if($feedbackUrl)
+      <div class="bill-feedback-qr">
+        <div class="bill-feedback-qr-title">Scan for Feedback</div>
+        <img src="data:image/png;base64,{{ \DNS2D::getBarcodePNG($feedbackUrl, 'QRCODE', 4, 4) }}" alt="Feedback QR Code">
+        
+      </div>
+      @endif
 
     </div>
   </div>
