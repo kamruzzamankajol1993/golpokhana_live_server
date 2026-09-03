@@ -6,6 +6,10 @@
     .pos-list-table th { white-space:nowrap; font-size:11px; }
     .pos-list-table td { font-size:12px; vertical-align:middle; }
     .pos-list-loading { opacity:.55; pointer-events:none; }
+    .pos-list-search { position:relative; width:320px; max-width:100%; margin-left:auto; }
+    .pos-list-search .bi-search { position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:13px; color:#7a817d; pointer-events:none; }
+    .pos-list-search .progga-form-control { width:100%; height:36px; padding-left:34px; font-size:12px; }
+    @media (max-width: 767px) { .pos-list-search { width:100%; } }
 </style>
 @endsection
 
@@ -29,10 +33,14 @@
     </div>
 
     <div class="progga-card" id="sessionListCard">
-        <div class="progga-card-header">
+        <div class="progga-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div>
                 <div class="progga-card-title">Work Period Sessions</div>
                 <div class="progga-card-subtitle">Same POS session history list with AJAX pagination</div>
+            </div>
+            <div class="pos-list-search">
+                <i class="bi bi-search"></i>
+                <input type="text" id="sessionSearchInput" class="progga-form-control" value="{{ request('search') }}" placeholder="Search session, employee, status..." autocomplete="off">
             </div>
         </div>
 
@@ -103,26 +111,51 @@
 @section('script')
 <script>
 (function() {
-    function loadSessionPage(url) {
+    let searchTimer = null;
+    let activeRequest = null;
+
+    function withSessionSearch(url) {
+        const target = new URL(url, window.location.href);
+        const search = $.trim($('#sessionSearchInput').val() || '');
+        if (search) target.searchParams.set('search', search);
+        else target.searchParams.delete('search');
+        return target.toString();
+    }
+
+    function loadSessionPage(url, historyMode) {
+        const ajaxUrl = withSessionSearch(url);
+        if (activeRequest) activeRequest.abort();
         $('#sessionListCard').addClass('pos-list-loading');
-        $.ajax({
-            url: url,
+
+        activeRequest = $.ajax({
+            url: ajaxUrl,
             type: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             success: function(data) {
                 $('#sessionRows').html(data.html || '');
                 $('#sessionPagination').html(data.pagination || '');
-                window.history.pushState({}, '', url);
+                if (historyMode === 'push') window.history.pushState({}, '', ajaxUrl);
+                if (historyMode === 'replace') window.history.replaceState({}, '', ajaxUrl);
             },
-            complete: function() { $('#sessionListCard').removeClass('pos-list-loading'); }
+            complete: function() {
+                $('#sessionListCard').removeClass('pos-list-loading');
+                activeRequest = null;
+            }
         });
     }
+
+    $('#sessionSearchInput').on('input', function() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function() {
+            loadSessionPage("{{ route('pos.sessions.index') }}", 'replace');
+        }, 250);
+    });
 
     $(document).on('click', '#sessionPagination a', function(e) {
         e.preventDefault();
         const url = $(this).attr('href');
         if (!url || url === '#' || $(this).hasClass('disabled')) return;
-        loadSessionPage(url);
+        loadSessionPage(url, 'push');
     });
 
     $(document).on('click', '.btnEditSession', function() {

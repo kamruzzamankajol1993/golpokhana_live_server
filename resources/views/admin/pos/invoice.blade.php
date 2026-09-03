@@ -501,6 +501,7 @@
         {!! nl2br(e($invoiceSettingFooterNote ?? "Tech Partner — {$restaurantSettingName}\nVisit our website to know more!")) !!}
       </div>
       <div class="bill-partner">::::::::::::::::::::::::::::::::::::::::::::</div>
+      <div style="margin-top:6px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $restaurantSettingName ?? ($restaurant->name ?? '') }}</span></div>
     </div>
 
   </div><div class="btn-print-wrap no-print">

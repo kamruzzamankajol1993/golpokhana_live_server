@@ -92,7 +92,7 @@
     <table class="report-table">
         <tr>
             <td>Outlet Sales</td>
-            <td class="text-end fw-bold">{{ round($salesSummary['sales_total'] ?? $session->sales_total ?? 0) }}</td>
+            <td class="text-end fw-bold">{{ round($salesSummary['outlet_sales'] ?? $salesSummary['sales_total'] ?? $session->sales_total ?? 0) }}</td>
         </tr>
         @foreach(($deliveryPartnerIncome ?? []) as $partner)
         <tr>
@@ -101,18 +101,6 @@
         </tr>
         @endforeach
         <tr>
-            <td>Product Discount</td>
-            <td class="text-end">{{ round($salesSummary['product_discount'] ?? 0) }}</td>
-        </tr>
-        <tr>
-            <td>Honored</td>
-            <td class="text-end">{{ round($salesSummary['honored'] ?? 0) }}</td>
-        </tr>
-        <tr>
-            <td>Discount Total</td>
-            <td class="text-end">{{ round($salesSummary['discount_total'] ?? 0) }}</td>
-        </tr>
-        <tr>
             <td>Service Charge ({{ $serviceRate }}%)</td>
             <td class="text-end">{{ round($salesSummary['service_charge'] ?? $session->service_charge ?? 0) }}</td>
         </tr>
@@ -120,7 +108,19 @@
             <td>{{ $vatLabel }} ({{ $vatRate }}%)</td>
             <td class="text-end">{{ round($salesSummary['vat_total'] ?? $session->vat_total ?? 0) }}</td>
         </tr>
-        <tr class="fw-bold" style="font-size: 14px;">
+        <tr style="border-top: 1px dotted #000;">
+            <td style="padding-top: 8px;">(Product Discount)</td>
+            <td class="text-end" style="padding-top: 8px;">({{ round($salesSummary['product_discount'] ?? 0) }})</td>
+        </tr>
+        <tr>
+            <td>(Honored)</td>
+            <td class="text-end">({{ round($salesSummary['honored'] ?? 0) }})</td>
+        </tr>
+        <tr>
+            <td>(Discount Total)</td>
+            <td class="text-end">({{ round($salesSummary['discount_total'] ?? 0) }})</td>
+        </tr>
+        <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total Sales</td>
             <td class="text-end" style="padding-top: 8px;">{{ round($salesSummary['grand_total'] ?? $session->grand_total ?? 0) }}</td>
         </tr>
@@ -154,7 +154,7 @@
         @foreach(($deliveryPartnerDue ?? []) as $partnerDue)
         <tr><td>{{ $partnerDue['name'] }} Due</td><td class="text-end fw-bold">{{ round($partnerDue['due']) }}</td></tr>
         @endforeach
-        <tr><td>Total Due</td><td class="text-end fw-bold">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
+        <tr style="border-top: 1px solid #000;"><td style="padding-top: 8px;">Total Due</td><td class="text-end fw-bold" style="padding-top: 8px;">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
     </table>
 
     <div class="dashed-line"></div>
@@ -171,7 +171,7 @@
                 <td class="text-end fw-bold">{{ round($amount) }}</td>
             </tr>
         @endforeach
-        <tr class="fw-bold" style="font-size: 14px; border-top: 1px dotted #000;">
+        <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total collection</td>
             <td class="text-end" style="padding-top: 8px;">{{ round($totalIncome) }}</td>
         </tr>
@@ -188,6 +188,10 @@
             <tr><td>Dine In</td><td class="text-end fw-bold">{{ round($departmentIncome['dine_in'] ?? 0) }}</td></tr>
             <tr><td>Delivery</td><td class="text-end fw-bold">{{ round($departmentIncome['delivery'] ?? 0) }}</td></tr>
             <tr><td>Take Away</td><td class="text-end fw-bold">{{ round($departmentIncome['takeaway'] ?? 0) }}</td></tr>
+            <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
+                <td style="padding-top: 8px;">Total</td>
+                <td class="text-end" style="padding-top: 8px;">{{ round(array_sum($departmentIncome ?? [])) }}</td>
+            </tr>
         </tbody>
     </table>
 
@@ -198,6 +202,7 @@
         <div>*** This is computer generated report and does not require any signature</div>
         <div style="margin-top: 5px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
     </div>
+    <div style="margin-top:8px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $restaurant->name ?? $restaurantSettingName ?? '' }}</span></div>
   </div>
 
 </body>

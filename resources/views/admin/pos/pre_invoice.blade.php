@@ -388,6 +388,8 @@
       </div>
       @endif
 
+      <div style="margin-top:10px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $restaurantSettingName ?? ($restaurant->name ?? '') }}</span></div>
+
     </div>
   </div>
 

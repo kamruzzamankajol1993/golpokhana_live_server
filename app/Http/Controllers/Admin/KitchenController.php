@@ -135,7 +135,9 @@ class KitchenController extends Controller
             ->where('kitchen_status', '!=', 'Hold')
             ->exists();
 
-        return view('admin.kitchen.print_kot', compact('kot', 'isRunningOrder'));
+        $poweredBySystemName = \App\Models\RestaurantSetting::query()->value('name');
+
+        return view('admin.kitchen.print_kot', compact('kot', 'isRunningOrder', 'poweredBySystemName'));
     }
 
     // AJAX: Mark Item as Unavailable & Recalculate Bill

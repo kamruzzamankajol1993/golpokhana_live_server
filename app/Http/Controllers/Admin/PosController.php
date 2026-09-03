@@ -189,8 +189,29 @@ public function index(\Illuminate\Http\Request $request)
 public function sessionList(Request $request)
 {
     $businessDayWindow = $this->getPosBusinessDayWindow();
-    $sessions = PosSession::with('user')
-        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
+    $search = trim((string) $request->query('search', ''));
+
+    $sessionsQuery = PosSession::with('user')
+        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']]);
+
+    if ($search !== '') {
+        $like = '%' . $search . '%';
+        $sessionsQuery->where(function ($query) use ($like) {
+            $query->where('id', 'like', $like)
+                ->orWhere('weekday', 'like', $like)
+                ->orWhere('start_time', 'like', $like)
+                ->orWhere('end_time', 'like', $like)
+                ->orWhere('duration', 'like', $like)
+                ->orWhere('status', 'like', $like)
+                ->orWhere('sales_total', 'like', $like)
+                ->orWhere('grand_total', 'like', $like)
+                ->orWhereHas('user', function ($userQuery) use ($like) {
+                    $userQuery->where('name', 'like', $like);
+                });
+        });
+    }
+
+    $sessions = $sessionsQuery
         ->orderByDesc('id')
         ->paginate(15)
         ->appends($request->query());
@@ -219,7 +240,9 @@ public function sessionList(Request $request)
 public function kotList(Request $request)
 {
     $businessDayWindow = $this->getPosBusinessDayWindow();
-    $kots = OrderKot::with([
+    $search = trim((string) $request->query('search', ''));
+
+    $kotQuery = OrderKot::with([
             'order.table',
             'order.waiter',
             'orderDetails',
@@ -232,7 +255,32 @@ public function kotList(Request $request)
                 'Cancelled', 'cancelled',
                 'Delivered', 'delivered',
             ]);
-        })
+        });
+
+    if ($search !== '') {
+        $like = '%' . $search . '%';
+        $kotQuery->where(function ($query) use ($like) {
+            $query->where('id', 'like', $like)
+                ->orWhere('kot_number', 'like', $like)
+                ->orWhere('kitchen_status', 'like', $like)
+                ->orWhere('created_at', 'like', $like)
+                ->orWhereHas('order', function ($orderQuery) use ($like) {
+                    $orderQuery->where(function ($orderSearch) use ($like) {
+                        $orderSearch->where('order_number', 'like', $like)
+                            ->orWhere('order_type', 'like', $like)
+                            ->orWhere('status', 'like', $like)
+                            ->orWhereHas('table', function ($tableQuery) use ($like) {
+                                $tableQuery->where('table_number', 'like', $like);
+                            })
+                            ->orWhereHas('waiter', function ($waiterQuery) use ($like) {
+                                $waiterQuery->where('name', 'like', $like);
+                            });
+                    });
+                });
+        });
+    }
+
+    $kots = $kotQuery
         ->orderByDesc('id')
         ->paginate(15)
         ->appends($request->query());
@@ -890,14 +938,28 @@ public function printSessionReport($id)
         return (float) ($order->discount_amount ?? 0);
     });
 
+    // Session closing report keeps outlet sales and delivery-partner sales as
+    // separate components so the printed Total Sales can include both without
+    // double-counting partner orders.
+    $outletOrders = $orders->filter(function ($order) {
+        return empty($order->delivery_partner_id);
+    });
+    $deliveryPartnerOrders = $orders->filter(function ($order) {
+        return !empty($order->delivery_partner_id);
+    });
+
     $salesSummary = [
         'sales_total' => (float) $orders->sum('subtotal'),
+        'outlet_sales' => (float) $outletOrders->sum('subtotal'),
+        'delivery_partner_sales' => (float) $deliveryPartnerOrders->sum('subtotal'),
         'product_discount' => (float) $productDiscount,
         'honored' => (float) $honored,
         'discount_total' => (float) ($productDiscount + $honored),
         'service_charge' => (float) $orders->sum('service_charge'),
         'vat_total' => (float) $orders->sum('vat_tax'),
-        'grand_total' => (float) $orders->sum('grand_total'),
+        // Explicitly combine outlet + delivery-partner final totals. This keeps
+        // per-order rounding intact and guarantees partner sales are included.
+        'grand_total' => (float) ($outletOrders->sum('grand_total') + $deliveryPartnerOrders->sum('grand_total')),
     ];
 
     $reportIncomes = ['Cash' => 0, 'Card' => 0, 'MFC' => 0];
@@ -908,7 +970,23 @@ public function printSessionReport($id)
     ];
 
     $deliveryPartnerDue = [];
-    $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get();
+    $usedDeliveryPartnerIds = $deliveryPartnerOrders
+        ->pluck('delivery_partner_id')
+        ->filter()
+        ->unique()
+        ->values();
+
+    $deliveryPartnerQuery = DeliveryPartner::query();
+    if ($usedDeliveryPartnerIds->isNotEmpty()) {
+        $deliveryPartnerQuery->where(function ($query) use ($usedDeliveryPartnerIds) {
+            $query->where('status', 1)
+                ->orWhereIn('id', $usedDeliveryPartnerIds->all());
+        });
+    } else {
+        $deliveryPartnerQuery->where('status', 1);
+    }
+
+    $deliveryPartners = $deliveryPartnerQuery->orderBy('name')->get();
     foreach ($deliveryPartners as $partner) {
         $deliveryPartnerDue[$partner->id] = [
             'name' => $partner->name,
@@ -925,14 +1003,20 @@ public function printSessionReport($id)
     }
 
     foreach ($orders as $order) {
-        $closingExtraSummary['due'] += max(0, (float) ($order->due ?? 0));
+        $orderDue = max(0, (float) ($order->due ?? 0));
 
         if (!empty($order->delivery_partner_id) && isset($deliveryPartnerDue[$order->delivery_partner_id])) {
-            $deliveryPartnerDue[$order->delivery_partner_id]['due'] += max(0, (float) ($order->due ?? 0));
+            $deliveryPartnerDue[$order->delivery_partner_id]['due'] += $orderDue;
+        } else {
+            // Keep outlet/customer due separate from delivery-partner due so
+            // the Total Due row does not count partner due twice.
+            $closingExtraSummary['due'] += $orderDue;
         }
 
         if (!empty($order->delivery_partner_id) && isset($deliveryPartnerIncome[$order->delivery_partner_id])) {
-            $deliveryPartnerIncome[$order->delivery_partner_id]['amount'] += (float) ($order->grand_total ?? 0);
+            // Sales section is a component breakdown. Use subtotal here so
+            // Service Charge, VAT and discounts can be shown separately below.
+            $deliveryPartnerIncome[$order->delivery_partner_id]['amount'] += (float) ($order->subtotal ?? 0);
         }
 
         foreach ($order->orderDetails as $detail) {

@@ -1320,7 +1320,33 @@ class ReportController extends Controller
     /** KOT Report — complete historical list, including delivered/completed KOTs. */
     public function kotReport(Request $request)
     {
-        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
+        $search = trim((string) $request->query('search', ''));
+        $kotQuery = OrderKot::with(['order.table', 'order.waiter', 'orderDetails']);
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $kotQuery->where(function ($query) use ($like) {
+                $query->where('id', 'like', $like)
+                    ->orWhere('kot_number', 'like', $like)
+                    ->orWhere('kitchen_status', 'like', $like)
+                    ->orWhere('created_at', 'like', $like)
+                    ->orWhereHas('order', function ($orderQuery) use ($like) {
+                        $orderQuery->where(function ($orderSearch) use ($like) {
+                            $orderSearch->where('order_number', 'like', $like)
+                                ->orWhere('order_type', 'like', $like)
+                                ->orWhere('status', 'like', $like)
+                                ->orWhereHas('table', function ($tableQuery) use ($like) {
+                                    $tableQuery->where('table_number', 'like', $like);
+                                })
+                                ->orWhereHas('waiter', function ($waiterQuery) use ($like) {
+                                    $waiterQuery->where('name', 'like', $like);
+                                });
+                        });
+                    });
+            });
+        }
+
+        $kots = $kotQuery
             ->orderByDesc('id')
             ->paginate(20)
             ->appends($request->query());
@@ -1338,7 +1364,27 @@ class ReportController extends Controller
     /** POS Session Report — complete historical session list. */
     public function posSessionReport(Request $request)
     {
-        $sessions = PosSession::with('user')
+        $search = trim((string) $request->query('search', ''));
+        $sessionQuery = PosSession::with('user');
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $sessionQuery->where(function ($query) use ($like) {
+                $query->where('id', 'like', $like)
+                    ->orWhere('weekday', 'like', $like)
+                    ->orWhere('start_time', 'like', $like)
+                    ->orWhere('end_time', 'like', $like)
+                    ->orWhere('duration', 'like', $like)
+                    ->orWhere('status', 'like', $like)
+                    ->orWhere('sales_total', 'like', $like)
+                    ->orWhere('grand_total', 'like', $like)
+                    ->orWhereHas('user', function ($userQuery) use ($like) {
+                        $userQuery->where('name', 'like', $like);
+                    });
+            });
+        }
+
+        $sessions = $sessionQuery
             ->orderByDesc('id')
             ->paginate(20)
             ->appends($request->query());

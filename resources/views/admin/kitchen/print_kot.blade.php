@@ -287,6 +287,7 @@
         <div class="kot-sign-box"><div class="kot-sign-line"></div><div class="kot-sign-label">Checked By</div></div>
       </div>
     </div>
+    <div style="padding:8px 10px 10px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $poweredBySystemName ?? $restaurantSettingName ?? '' }}</span></div>
   </div>
 
   <div class="btn-print-wrap no-print" style="gap: 10px; flex-wrap: wrap;">

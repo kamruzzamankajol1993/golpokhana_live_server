@@ -25,16 +25,34 @@
 
 <div class="progga-oc-header">
     <div>
-        <div class="progga-oc-table-label">{{ $orderHeaderLabel }}</div>
-        <div class="progga-oc-table-num" id="ocTableNum">{{ $orderDisplayName }}</div>
-        <div class="progga-oc-table-meta" id="ocTableMeta">{{ $orderDisplayMeta }}</div>
-        <div class="progga-oc-chips" id="ocChips">
-            <span class="progga-oc-chip"><i class="bi bi-receipt"></i> #{{ $order->order_number }}</span>
-            <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> {{ $order->order_type }}</span>
-            @if($jsOrderType === 'delivery' && !empty($deliveryPartnerName))
-                <span class="progga-oc-chip"><i class="bi bi-truck"></i> {{ $deliveryPartnerName }}</span>
+        @if($jsOrderType === 'dine_in')
+            <div class="progga-oc-chips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap; margin-bottom: 6px;">
+                <span class="progga-oc-chip"><i class="bi bi-receipt"></i> #{{ $order->order_number }}</span>
+                <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> Dine-In</span>
+            </div>
+        @else
+            <div class="progga-oc-chips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap; margin-bottom: 6px;">
+                <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> {{ $jsOrderType === 'delivery' ? 'Delivery' : 'Takeaway' }}</span>
+                @if(!empty($deliveryPartnerName))
+                    <span class="progga-oc-chip"><i class="bi bi-truck"></i> {{ $deliveryPartnerName }}</span>
+                @endif
+            </div>
+        @endif
+
+        @if($jsOrderType === 'dine_in')
+            <div style="display:flex; align-items:baseline; gap:8px; white-space:nowrap; margin-bottom:14px;">
+                <div class="progga-oc-table-num" id="ocTableNum" style="font-size:24px; margin-bottom:0;">{{ $orderDisplayName }}</div>
+                <div class="progga-oc-table-meta" id="ocTableMeta" style="margin-bottom:0;">{{ $orderDisplayMeta }}</div>
+            </div>
+        @else
+            <div class="progga-oc-table-num" id="ocTableNum" style="font-size:24px; margin-bottom:14px;">{{ $orderDisplayName }}</div>
+            <div class="progga-oc-table-meta" id="ocTableMeta" style="display:none;">{{ $orderDisplayMeta }}</div>
+        @endif
+        <div class="progga-oc-chips" id="ocChips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap;">
+            @if(!empty($order->waiter_id) && !empty($order->waiter))
+                <span class="progga-oc-chip"><i class="bi bi-person"></i> <span id="ocWaiterName">{{ $order->waiter->name }}</span></span>
             @endif
-            <span class="progga-oc-chip"><i class="bi bi-person"></i> <span id="ocWaiterName">{{ $order->waiter->name ?? 'Unassigned' }}</span></span>
+
             <span class="progga-oc-chip"><i class="bi bi-person-check"></i> <span id="ocCustomerName">{{ $order->customer->name ?? 'Walk-in' }}</span></span>
         </div>
     </div>
@@ -210,7 +228,7 @@
         </div>
     @endif
 
-    <div class="progga-oc-actions">
+    <div class="progga-oc-actions" style="grid-template-columns: {{ $order->status == 'Waiter_Hold' ? '1fr' : 'minmax(0, .85fr) minmax(0, 1.2fr) minmax(0, .95fr)' }};">
         @if($order->status == 'Waiter_Hold')
             <button class="progga-btn progga-btn-secondary" disabled style="flex: 1; opacity: 0.8; cursor: not-allowed; font-weight:bold; font-size: 13px; padding: 10px 5px; white-space: normal; line-height: 1.2;">
                 <i class="bi bi-check2-all"></i> Sent to Desk (Pending)
@@ -227,10 +245,10 @@
                     data-waiter-name="{{ $order->waiter->name ?? '' }}"
                     data-customer-id="{{ $order->customer_id }}"
                     data-customer-name="{{ $order->customer->name ?? '' }}">
-                <i class="bi bi-plus-circle"></i> Add More Food
+                <i class="bi bi-plus-circle"></i> Food
             </button>
 
-            <button class="progga-btn progga-btn-secondary" id="btnAddComplimentary" style="flex: 1;"
+            <button class="progga-btn progga-btn-secondary" id="btnAddComplimentary" style="flex: 1; font-size: 13px; padding-left: 5px; padding-right: 5px; white-space: nowrap;"
                     data-order-id="{{ $order->id }}"
                     data-table-id="{{ $order->table_id }}"
                     data-order-type="{{ $jsOrderType }}"
@@ -241,7 +259,7 @@
                     data-waiter-name="{{ $order->waiter->name ?? '' }}"
                     data-customer-id="{{ $order->customer_id }}"
                     data-customer-name="{{ $order->customer->name ?? '' }}">
-                <i class="bi bi-gift"></i> Add Complimentary
+                <i class="bi bi-gift"></i> Complimentary
             </button>
 
             @if(auth()->user()->hasRole('waiter'))
@@ -427,6 +445,19 @@
 </div>
 
 <style>
+
+    .progga-oc-actions > .progga-btn {
+        min-width: 0;
+        padding-left: 8px;
+        padding-right: 8px;
+        white-space: nowrap;
+    }
+
+    #btnAddComplimentary {
+        font-size: 13px;
+        padding-left: 5px;
+        padding-right: 5px;
+    }
 
     .progga-oc-header-actions {
         display: flex;
