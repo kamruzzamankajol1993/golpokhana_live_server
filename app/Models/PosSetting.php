@@ -16,6 +16,7 @@ class PosSetting extends Model
         'auto_print_invoice'      => 'boolean',
         'require_table_selection' => 'boolean',
         'show_out_of_stock'                => 'boolean',
+        'given_money_manual_toggle_enabled' => 'boolean',
         'order_list_random_half_enabled'    => 'boolean',
         'random_half_order_button_visible'  => 'boolean',
         'random_order_hide_percentage'      => 'integer',

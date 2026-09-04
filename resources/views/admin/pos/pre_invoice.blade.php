@@ -285,7 +285,7 @@
         </thead>
         <tbody>
 
-          @foreach($order->orderDetails as $item)
+          @foreach(($mergedOrderItems ?? $order->orderDetails) as $item)
 
               {{-- যদি Unavailable না হয়, তবেই ইনভয়েসে প্রিন্ট হবে --}}
               @if(!$item->is_unavailable)
@@ -393,6 +393,7 @@
     </div>
   </div>
 
+  @unless(request()->boolean('embedded'))
   <div class="btn-print-wrap no-print">
     <a href="{{ route('pos.index') }}" class="btn-print outline" style="text-decoration: none; display: inline-flex; align-items: center; gap: 7px;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;">
@@ -410,6 +411,7 @@
       Print Bill
     </button>
   </div>
+  @endunless
 
 </body>
 </html>

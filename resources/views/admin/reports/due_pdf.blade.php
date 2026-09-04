@@ -65,16 +65,7 @@
                     ];
                     $partnerKey = strtolower(trim((string) ($order->delivery_partner ?? '')));
                     $partnerLabel = $partnerKey !== '' ? ($partnerLabels[$partnerKey] ?? $order->delivery_partner) : '—';
-                    $payment = $order->payment_type ?: '—';
-                    if ($payment === 'Card') $payment = 'Bank / Card';
-                    if ($payment === 'Mobile Banking') $payment = 'MFS';
-                    if ($payment === 'Split') {
-                        $parts = [];
-                        if ((float)($order->paid_in_cash ?? 0) > 0) $parts[] = 'Cash ' . number_format($order->paid_in_cash, 0);
-                        if ((float)($order->paid_in_card ?? 0) > 0) $parts[] = 'Bank / Card ' . number_format($order->paid_in_card, 0);
-                        if ((float)($order->paid_in_mfc ?? 0) > 0) $parts[] = 'MFS ' . number_format($order->paid_in_mfc, 0);
-                        if ($parts) $payment .= ' (' . implode(', ', $parts) . ')';
-                    }
+                    $payment = $order->reportPaymentText(0, true);
                 @endphp
                 <tr>
                     <td><strong>#{{ $order->order_number }}</strong></td>

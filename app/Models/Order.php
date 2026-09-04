@@ -12,6 +12,11 @@ class Order extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'pre_invoice_snapshot' => 'array',
+        'pre_invoice_printed_at' => 'datetime',
+    ];
+
     // ইনভয়েস সেটিং অনুযায়ী অর্ডার আইডি জেনারেট করার লজিক
     protected static function boot()
     {
@@ -169,6 +174,67 @@ class Order extends Model
     public function duePayments()
     {
         return $this->hasMany(OrderDuePayment::class)->orderByDesc('paid_at')->orderByDesc('id');
+    }
+
+    /**
+     * Human-readable Bank / Card label used by reports.
+     * New orders store the selected card provider in `card_type`; legacy rows
+     * safely fall back to the generic label.
+     */
+    public function getReportCardLabelAttribute(): string
+    {
+        $provider = trim((string) ($this->attributes['card_type'] ?? ''));
+
+        return $provider !== '' ? 'Bank / Card (' . $provider . ')' : 'Bank / Card';
+    }
+
+    /** Human-readable MFS label used by reports. */
+    public function getReportMfsLabelAttribute(): string
+    {
+        $provider = trim((string) ($this->attributes['mfs_provider'] ?? ''));
+
+        return $provider !== '' ? 'MFS (' . $provider . ')' : 'MFS';
+    }
+
+    /**
+     * Consistent report payment text for single and split payments.
+     */
+    public function reportPaymentText(int $decimals = 0, bool $includeSplitAmounts = true): string
+    {
+        $paymentType = trim((string) ($this->attributes['payment_type'] ?? ''));
+
+        if ($paymentType === 'Card') {
+            return $this->report_card_label;
+        }
+
+        if ($paymentType === 'Mobile Banking') {
+            return $this->report_mfs_label;
+        }
+
+        if ($paymentType !== 'Split') {
+            return $paymentType !== '' ? $paymentType : 'N/A';
+        }
+
+        $parts = [];
+        $cash = max(0, (float) ($this->attributes['paid_in_cash'] ?? 0));
+        $card = max(0, (float) ($this->attributes['paid_in_card'] ?? 0));
+        $mfs = max(0, (float) ($this->attributes['paid_in_mfc'] ?? 0));
+
+        if ($cash > 0) {
+            $parts[] = $includeSplitAmounts ? 'Cash: ' . number_format($cash, $decimals) : 'Cash';
+        }
+        if ($card > 0) {
+            $parts[] = $includeSplitAmounts
+                ? $this->report_card_label . ': ' . number_format($card, $decimals)
+                : $this->report_card_label;
+        }
+        if ($mfs > 0) {
+            $parts[] = $includeSplitAmounts
+                ? $this->report_mfs_label . ': ' . number_format($mfs, $decimals)
+                : $this->report_mfs_label;
+        }
+
+        return $parts ? 'Split (' . implode(', ', $parts) . ')' : 'Split';
     }
     public function ensureFeedbackToken(): string
     {

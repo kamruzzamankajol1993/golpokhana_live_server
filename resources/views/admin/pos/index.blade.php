@@ -323,6 +323,7 @@
 @include('admin.pos.modals.addon')
 @include('admin.pos.modals.payment')
 @include('admin.pos.partials.offcanvas_wrapper')
+@include('admin.pos.partials.print_preview_modal')
 
 <div class="modal fade progga-modal" id="sessionHistoryModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -461,6 +462,8 @@
     const serverOpenPosSessionStart = @json($activeSession && $activeSession->start_time ? $activeSession->start_time->format('Y-m-d H:i:s') : null);
     const forceUnfinishedSessionPrompt = @json((bool) ($forceUnfinishedSessionPrompt ?? false));
     const posSessionAckStorageKey = 'pos_acknowledged_session_id';
+    const posSessionStatusUrl = @json(route('pos.session.status'));
+    const posSessionStatusPollMs = 10000;
 
     function getAcknowledgedPosSessionId() {
         try {
@@ -483,9 +486,106 @@
         } catch (ignore) {}
     }
 
-    let hasActivePosSession = !!serverOpenPosSessionId
-        && !forceUnfinishedSessionPrompt
-        && String(getAcknowledgedPosSessionId() || '') === String(serverOpenPosSessionId);
+    // A server-known Manager-owned work period is shared across users/browsers.
+    // Do not require this browser to acknowledge/start the same session again.
+    let hasActivePosSession = !!serverOpenPosSessionId && !forceUnfinishedSessionPrompt;
+    let knownPosSessionId = serverOpenPosSessionId ? String(serverOpenPosSessionId) : null;
+    let posSessionStatusRequestInFlight = false;
+    let posSessionStatusReloading = false;
+
+    if (hasActivePosSession) {
+        acknowledgePosSession(serverOpenPosSessionId);
+    }
+
+    function reloadPosForSharedSessionChange(title, message, icon, delay) {
+        if (posSessionStatusReloading) return;
+        posSessionStatusReloading = true;
+
+        if (!window.Swal) {
+            window.location.reload();
+            return;
+        }
+
+        window.Swal.fire({
+            icon: icon || 'info',
+            title: title,
+            text: message,
+            timer: delay || 1400,
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        }).then(function() {
+            window.location.reload();
+        });
+    }
+
+    function refreshSharedPosSessionStatus() {
+        if (!posSessionStatusUrl || posSessionStatusRequestInFlight || posSessionStatusReloading) {
+            return;
+        }
+
+        posSessionStatusRequestInFlight = true;
+
+        $.ajax({
+            url: posSessionStatusUrl,
+            method: 'GET',
+            dataType: 'json',
+            cache: false
+        }).done(function(res) {
+            if (!res || res.status !== 'success') return;
+
+            const nextSessionId = res.active && res.session_id ? String(res.session_id) : null;
+            const previousSessionId = knownPosSessionId;
+
+            if (nextSessionId === previousSessionId) {
+                hasActivePosSession = !!nextSessionId;
+                return;
+            }
+
+            knownPosSessionId = nextSessionId;
+            hasActivePosSession = !!nextSessionId;
+
+            if (nextSessionId) {
+                acknowledgePosSession(nextSessionId);
+            } else {
+                clearAcknowledgedPosSession();
+            }
+
+            if (previousSessionId && !nextSessionId) {
+                reloadPosForSharedSessionChange(
+                    'POS Session Ended',
+                    'The shared POS session was ended from another browser. POS will refresh now.',
+                    'warning',
+                    1600
+                );
+                return;
+            }
+
+            if (!previousSessionId && nextSessionId) {
+                reloadPosForSharedSessionChange(
+                    'POS Session Started',
+                    'A shared POS session was started from another browser. POS will refresh now.',
+                    'success',
+                    1200
+                );
+                return;
+            }
+
+            reloadPosForSharedSessionChange(
+                'POS Session Changed',
+                'The shared POS work period changed in another browser. POS will refresh now.',
+                'info',
+                1200
+            );
+        }).always(function() {
+            posSessionStatusRequestInFlight = false;
+        });
+    }
+
+    // Keep every logged-in POS browser synchronized with the shared Manager session.
+    // First check happens quickly after load, then every 10 seconds.
+    setTimeout(refreshSharedPosSessionStatus, 2500);
+    setInterval(refreshSharedPosSessionStatus, posSessionStatusPollMs);
 
     function formatUnfinishedSessionStart(startText) {
         if (!startText) return '';
@@ -549,6 +649,7 @@
                 }
 
                 acknowledgePosSession(res.session_id);
+                knownPosSessionId = res.session_id ? String(res.session_id) : knownPosSessionId;
                 hasActivePosSession = true;
 
                 if (tableIdAfterStart) {
@@ -618,6 +719,7 @@
                 .done(function(res) {
                     if (res && res.status === 'success') {
                         clearAcknowledgedPosSession();
+                        knownPosSessionId = null;
                         hasActivePosSession = false;
                         window.Swal.fire({
                             icon: 'success',
@@ -1730,7 +1832,11 @@
             },
             success: function(res) {
                 if(res.status === 'success') {
-                    window.location.href = res.redirect_url || "{{ route('pos.index') }}";
+                    if (!isWaiter && res.kot_id && res.redirect_url && typeof window.openPosPrintPreview === 'function') {
+                        window.openPosPrintPreview(res.redirect_url, 'KOT', { returnToPos: true });
+                    } else {
+                        window.location.href = "{{ route('pos.index') }}";
+                    }
                 } else {
                     window.Swal.fire('Error', res.message, 'error');
                     btn.html(originalHtml).prop('disabled', false);
@@ -1751,6 +1857,9 @@
         e.preventDefault();
         $('#btnSendToKitchen').trigger('click');
     });
+
+    const givenMoneyManualToggleEnabled = @json((bool) ($posSetting->given_money_manual_toggle_enabled ?? true));
+    window.givenMoneyWasManuallyEdited = false;
 
     function posPaymentNumber(value) {
         return parseFloat(String(value || 0).replace(/[^0-9.-]/g, '')) || 0;
@@ -1812,6 +1921,15 @@
         let method = $('input[name="payment_method"]:checked').val() || 'Cash';
         let isSplit = method === 'Split';
         let showReferenceField = method === 'Card' || method === 'Mobile Banking';
+        let isCard = method === 'Card';
+        let isMfs = method === 'Mobile Banking';
+
+        $('#cardTypeDiv').toggle(isCard);
+        $('#mfsProviderDiv').toggle(isMfs);
+        $('#cardTypeSelect').prop('disabled', !isCard).prop('required', isCard);
+        $('#mfsProviderSelect').prop('disabled', !isMfs).prop('required', isMfs);
+        if (!isCard) $('#cardTypeSelect').val('').removeClass('is-invalid');
+        if (!isMfs) $('#mfsProviderSelect').val('').removeClass('is-invalid');
 
         $('#normalPaidRow').css('display', isSplit ? 'none' : 'flex');
         $('#splitPaidDisplayRow').css('display', isSplit ? 'flex' : 'none');
@@ -1829,14 +1947,21 @@
         $('#splitMfsReference')
             .prop('disabled', !isSplit)
             .prop('required', requireSplitMfsReference);
-        $('#splitCardReferenceRequired').toggle(requireSplitCardReference);
-        $('#splitMfsReferenceRequired').toggle(requireSplitMfsReference);
+        $('#splitCardType')
+            .prop('disabled', !isSplit)
+            .prop('required', requireSplitCardReference);
+        $('#splitMfsProvider')
+            .prop('disabled', !isSplit)
+            .prop('required', requireSplitMfsReference);
+        $('#splitCardReferenceRequired, #splitCardTypeRequired').toggle(requireSplitCardReference);
+        $('#splitMfsReferenceRequired, #splitMfsProviderRequired').toggle(requireSplitMfsReference);
 
         if (!isSplit) {
             $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
+            $('#splitCardType, #splitMfsProvider').val('').removeClass('is-invalid');
         } else {
-            if (!requireSplitCardReference) $('#splitCardReference').removeClass('is-invalid');
-            if (!requireSplitMfsReference) $('#splitMfsReference').removeClass('is-invalid');
+            if (!requireSplitCardReference) $('#splitCardReference, #splitCardType').val('').removeClass('is-invalid');
+            if (!requireSplitMfsReference) $('#splitMfsReference, #splitMfsProvider').val('').removeClass('is-invalid');
         }
 
         let transactionInput = $('#transactionDiv').find('input[name="transaction_id"]');
@@ -1846,11 +1971,11 @@
             .prop('required', showReferenceField);
 
         if (method === 'Card') {
-            $('#transactionReferenceLabel').html('Bank / Card Reference Number <span class="text-danger">*</span>');
-            transactionInput.attr('placeholder', 'Bank / Card Reference Number');
+            $('#transactionReferenceLabel').html('Reference <span class="text-danger">*</span>');
+            transactionInput.attr('placeholder', 'Card Reference');
         } else if (method === 'Mobile Banking') {
-            $('#transactionReferenceLabel').html('MFS Reference Number <span class="text-danger">*</span>');
-            transactionInput.attr('placeholder', 'MFS Reference Number');
+            $('#transactionReferenceLabel').html('Reference <span class="text-danger">*</span>');
+            transactionInput.attr('placeholder', 'MFS Reference');
         }
 
         if (!showReferenceField) {
@@ -1885,6 +2010,14 @@
         return Math.max(0, Math.min(grand - advance, totalPaid - advance));
     };
 
+    window.syncAutoGivenMoney = function(force) {
+        if (givenMoneyManualToggleEnabled) return;
+        if (!force && window.givenMoneyWasManuallyEdited) return;
+
+        let autoGivenMoney = window.getCurrentPaymentAmount();
+        $('#payGivenMoney').val(posMoney(autoGivenMoney)).removeClass('is-invalid');
+    };
+
     window.updateDueAmount = function() {
         let grand = posPaymentNumber($('#payTotalAmount').text());
         let totalPaid = window.getFinalPaymentBillPaid();
@@ -1894,10 +2027,10 @@
         let givenMoney = posPaymentNumber(givenMoneyRaw);
 
         // Total Paid is the combined bill payment, including reservation advance.
-        // Given Money must be entered manually by the client/operator.
-        // Keep Change at 0 until an amount is actually typed or pasted.
+        // Given Money may be manual/toggle mode or legacy auto-fill mode, based on POS Settings.
         let due = Math.max(0, grand - totalPaid);
-        let changeAmount = givenMoneyRaw === '' ? 0 : (givenMoney - currentPayment - tips);
+        let hasGivenMoney = givenMoneyRaw !== '' && givenMoney > 0;
+        let changeAmount = hasGivenMoney ? (givenMoney - currentPayment - tips) : 0;
         let isNegativeChange = changeAmount < 0;
 
         $('#payDueAmount').text('৳' + posMoney(due));
@@ -1915,14 +2048,21 @@
         $('#splitCash, #splitCard, #splitMfc').val(0);
         $('#payTotalPaidAmount').prop('disabled', false).val(grand);
         $('#payTipsAmount').val(0);
-        // Given Money is intentionally blank; it must be typed or pasted manually.
-        $('#payGivenMoney').val('');
+        window.givenMoneyWasManuallyEdited = false;
+        // Setting ON: manual mode starts at 0 and exposes the Auto/Reset button.
+        // Setting OFF: old behavior is restored and the payable amount is auto-filled.
+        $('#payGivenMoney').val(0);
+        $('#btnToggleGivenMoney').data('auto-active', false);
         $('#payChangeAmount').val(0);
         $('#transactionDiv').find('input[name="transaction_id"]').val('');
         $('#splitCardReference, #splitMfsReference').val('').removeClass('is-invalid');
+        $('#cardTypeSelect, #mfsProviderSelect, #splitCardType, #splitMfsProvider').val('').removeClass('is-invalid');
         $('#paymentRemark').val('').removeClass('is-invalid');
         window.syncPaymentRemarkRequirement();
         window.syncFinalPaymentFields();
+        if (!givenMoneyManualToggleEnabled) {
+            window.syncAutoGivenMoney(true);
+        }
         window.updateDueAmount();
     };
 
@@ -1943,8 +2083,12 @@
         $('#payAdvanceAmount').val(posMoney(hasTableBooking ? (data.booking_advance || 0) : 0));
         $('#bookingAdvanceRow').css('display', hasTableBooking ? 'flex' : 'none');
 
-        $('#modal_discount_type').val('fixed');
-        $('#modal_discount_value').val('');
+        let preInvoiceSnapshot = data.pre_invoice_snapshot && typeof data.pre_invoice_snapshot === 'object'
+            ? data.pre_invoice_snapshot
+            : null;
+        $('#modal_discount_type').val(preInvoiceSnapshot && preInvoiceSnapshot.discount_type === 'percentage' ? 'percentage' : 'fixed');
+        let savedOrderDiscountValue = preInvoiceSnapshot ? posPaymentNumber(preInvoiceSnapshot.discount_value) : 0;
+        $('#modal_discount_value').val(savedOrderDiscountValue > 0 ? savedOrderDiscountValue : '');
 
         let escapeHtml = function(value) {
             return $('<div>').text(value == null ? '' : String(value)).html();
@@ -2010,7 +2154,7 @@
 
     window.calculateModalTotal = function() {
         // Track whether Total Paid is still on its automatic full-payment default.
-        // Given Money is always manual and is never recalculated here.
+        // Given Money follows the selected setting: manual/toggle mode or legacy auto-fill mode.
         let previousGrand = posPaymentNumber($('#payTotalAmount').text());
         let previousAdvance = Math.min(previousGrand, posPaymentNumber($('#payAdvanceAmount').val()));
         let previousTotalPaid = posPaymentNumber($('#payTotalPaidAmount').val());
@@ -2060,6 +2204,9 @@
         if(typeof window.syncFinalPaymentFields === 'function') {
             window.syncFinalPaymentFields();
         }
+        if (!givenMoneyManualToggleEnabled && typeof window.syncAutoGivenMoney === 'function') {
+            window.syncAutoGivenMoney(false);
+        }
         if(typeof window.updateDueAmount === 'function') {
             window.updateDueAmount();
         }
@@ -2069,8 +2216,43 @@
         window.calculateModalTotal();
     });
 
-    $(document).on('keyup change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
+    $(document).on('input change', '#payTotalPaidAmount, #payTipsAmount, #payGivenMoney, .split-input', function() {
+        let isGivenMoneyInput = $(this).is('#payGivenMoney');
+
+        if (isGivenMoneyInput) {
+            if (givenMoneyManualToggleEnabled) {
+                // Any manual type/paste exits the button's auto-filled state.
+                $('#btnToggleGivenMoney').data('auto-active', false);
+            } else {
+                // Legacy auto-fill mode remains editable. Once the operator types/pastes,
+                // later total/discount changes must not overwrite their manual amount.
+                window.givenMoneyWasManuallyEdited = true;
+            }
+        }
+
         if ($(this).hasClass('split-input')) window.syncFinalPaymentFields();
+        if (!isGivenMoneyInput && !givenMoneyManualToggleEnabled) {
+            window.syncAutoGivenMoney(false);
+        }
+        window.updateDueAmount();
+    });
+
+    $(document).on('click', '#btnToggleGivenMoney', function() {
+        if (!givenMoneyManualToggleEnabled) return;
+        let button = $(this);
+        let isAutoActive = button.data('auto-active') === true;
+
+        if (isAutoActive) {
+            $('#payGivenMoney').val(0).removeClass('is-invalid');
+            button.data('auto-active', false);
+        } else {
+            // Match the old automatic behavior: fill the amount being collected now,
+            // excluding any booking advance already paid.
+            let autoGivenMoney = window.getCurrentPaymentAmount();
+            $('#payGivenMoney').val(posMoney(autoGivenMoney)).removeClass('is-invalid');
+            button.data('auto-active', true);
+        }
+
         window.updateDueAmount();
     });
 
@@ -2080,6 +2262,9 @@
             $('#payTotalPaidAmount').val(grand);
         }
         window.syncFinalPaymentFields();
+        if (!givenMoneyManualToggleEnabled) {
+            window.syncAutoGivenMoney(false);
+        }
         window.updateDueAmount();
     });
 
@@ -2106,6 +2291,20 @@
         let referenceInput = $('#transactionDiv').find('input[name="transaction_id"]');
         let requiresReference = paymentMethod === 'Card' || paymentMethod === 'Mobile Banking';
 
+        if (paymentMethod === 'Card' && !$.trim($('#cardTypeSelect').val())) {
+            $('#cardTypeSelect').addClass('is-invalid').trigger('focus');
+            Swal.fire('Card Type Required', 'Please select the card type before completing payment.', 'warning');
+            return;
+        }
+        $('#cardTypeSelect').removeClass('is-invalid');
+
+        if (paymentMethod === 'Mobile Banking' && !$.trim($('#mfsProviderSelect').val())) {
+            $('#mfsProviderSelect').addClass('is-invalid').trigger('focus');
+            Swal.fire('MFS Service Required', 'Please select the MFS service before completing payment.', 'warning');
+            return;
+        }
+        $('#mfsProviderSelect').removeClass('is-invalid');
+
         if (requiresReference && !$.trim(referenceInput.val())) {
             referenceInput.addClass('is-invalid').trigger('focus');
             let referenceName = paymentMethod === 'Card' ? 'Bank / Card Reference Number' : 'MFS Reference Number';
@@ -2124,6 +2323,22 @@
             let splitMfsAmount = posPaymentNumber($('#splitMfc').val());
             let splitCardReference = $('#splitCardReference');
             let splitMfsReference = $('#splitMfsReference');
+            let splitCardType = $('#splitCardType');
+            let splitMfsProvider = $('#splitMfsProvider');
+
+            if (splitCardAmount > 0 && !$.trim(splitCardType.val())) {
+                splitCardType.addClass('is-invalid').trigger('focus');
+                Swal.fire('Card Type Required', 'Please select the card type for the split card amount.', 'warning');
+                return;
+            }
+            splitCardType.removeClass('is-invalid');
+
+            if (splitMfsAmount > 0 && !$.trim(splitMfsProvider.val())) {
+                splitMfsProvider.addClass('is-invalid').trigger('focus');
+                Swal.fire('MFS Service Required', 'Please select the MFS service for the split MFS amount.', 'warning');
+                return;
+            }
+            splitMfsProvider.removeClass('is-invalid');
 
             if (splitCardAmount > 0 && !$.trim(splitCardReference.val())) {
                 splitCardReference.addClass('is-invalid').trigger('focus');
@@ -2199,8 +2414,12 @@
             data: formData + '&_token=' + $('meta[name="csrf-token"]').attr('content'),
             success: function(res) {
                 if(res.status === 'success') {
-                    Swal.fire({ icon: 'success', title: 'Paid!', timer: 1500, showConfirmButton: false }).then(() => {
-                        window.location.href = res.redirect_url;
+                    Swal.fire({ icon: 'success', title: 'Paid!', timer: 900, showConfirmButton: false }).then(() => {
+                        if (res.redirect_url && typeof window.openPosPrintPreview === 'function') {
+                            window.openPosPrintPreview(res.redirect_url, 'Invoice', { returnToPos: true });
+                        } else {
+                            window.location.href = "{{ route('pos.index') }}";
+                        }
                     });
                 } else {
                     Swal.fire('Error', res.message, 'error');
@@ -2320,9 +2539,15 @@
         });
     }
 
-    window.openOrderItemDeleteModal = function(orderId, orderDetailId, itemName, maxQty) {
+    window.openOrderItemDeleteModal = function(orderId, orderDetailIds, itemName, maxQty) {
+        const ids = String(orderDetailIds || '')
+            .split(',')
+            .map(id => parseInt(id, 10))
+            .filter(id => id > 0);
+
         $('#deleteOrderId').val(orderId);
-        $('#deleteOrderDetailId').val(orderDetailId);
+        $('#deleteOrderDetailIds').val(ids.join(','));
+        $('#deleteOrderDetailId').val(ids.length ? ids[ids.length - 1] : '');
         $('#deleteOrderItemName').text(itemName);
         $('#deleteOrderItemMaxQty').text(maxQty);
         $('#deleteOrderItemQty').attr('max', maxQty).val(1);
@@ -2808,6 +3033,7 @@
         const $btn = $(this);
         const orderId = $btn.data('order-id');
         const orderDetailId = $btn.data('order-detail-id');
+        const orderDetailIds = String($btn.attr('data-order-detail-ids') || orderDetailId || '');
         const tableId = $btn.data('table-id');
         const orderType = $btn.data('order-type') || 'dine_in';
         const productName = $btn.data('product-name') || 'this food';
@@ -2835,6 +3061,7 @@
                 $.post("{{ route('pos.order_item.complimentary') }}", {
                 order_id: orderId,
                 order_detail_id: orderDetailId,
+                order_detail_ids: orderDetailIds,
                 is_complimentary: makeComplimentary ? 1 : 0,
                 action_password: pass
             }).done(function(res) {
@@ -3091,8 +3318,8 @@
             return;
         }
 
-        const needsUnfinishedChoice = !!openSessionId
-            && (forceUnfinishedPrompt || String(acknowledgedSessionId() || '') !== String(openSessionId));
+        // Shared Manager sessions are accepted automatically in every browser.
+        const needsUnfinishedChoice = !!openSessionId && forceUnfinishedPrompt;
 
         if (needsUnfinishedChoice) {
             openUnfinishedPrompt();

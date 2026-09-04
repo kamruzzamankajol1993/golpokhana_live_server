@@ -6,15 +6,7 @@
             ?? ((ctype_digit($partnerRaw) && isset($deliveryPartnerNameMap[(int)$partnerRaw])) ? $deliveryPartnerNameMap[(int)$partnerRaw] : null)
             ?? ($legacyPartnerLabels[strtolower($partnerRaw)] ?? ($partnerRaw !== '' ? $partnerRaw : 'N/A'));
         $discount = max(0, (float) ($order->product_discount_amount ?? 0)) + max(0, (float) ($order->discount_amount ?? 0));
-        $paymentText = $order->payment_type ?? 'N/A';
-        if ($paymentText === 'Card') $paymentText = 'Bank / Card';
-        if ($paymentText === 'Split') {
-            $parts = [];
-            if ((float) ($order->paid_in_cash ?? 0) > 0) $parts[] = 'Cash ' . number_format($order->paid_in_cash, 0);
-            if ((float) ($order->paid_in_card ?? 0) > 0) $parts[] = 'Bank / Card ' . number_format($order->paid_in_card, 0);
-            if ((float) ($order->paid_in_mfc ?? 0) > 0) $parts[] = 'MFS ' . number_format($order->paid_in_mfc, 0);
-            if ($parts) $paymentText .= ' (' . implode(', ', $parts) . ')';
-        }
+        $paymentText = $order->reportPaymentText(0, true);
     @endphp
     <tr>
         <td><strong>#{{ $order->order_number }}</strong></td>

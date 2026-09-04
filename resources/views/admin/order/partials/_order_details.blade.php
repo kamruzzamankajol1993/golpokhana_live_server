@@ -1,6 +1,10 @@
 @php
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
     $deliveryPartnerName = $order->delivery_partner_display_name ?: 'Not selected';
+    $paymentType = trim((string) ($order->payment_type ?? ''));
+    $cardTypeName = trim((string) ($order->card_type ?? ''));
+    $mfsProviderName = trim((string) ($order->mfs_provider ?? ''));
+    $paymentMethodLabel = $paymentType === 'Card' ? 'Bank / Card' : ($paymentType === 'Mobile Banking' ? 'MFS / Mobile Banking' : $paymentType);
 @endphp
 <div class="modal-header">
   <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Order #{{ $order->order_number }} — Details</h5>
@@ -143,8 +147,28 @@
         </div>
         @endif
       </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
-        <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-cash me-1"></i> Paid by {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : $order->payment_type }}</span>
+      @if($paymentType === 'Split')
+        <div style="margin-top:12px;padding:10px 12px;border:1px dashed var(--progga-border);border-radius:8px;background:rgba(33,53,42,.04);font-size:12px;line-height:1.7;">
+          <div class="fw-bold" style="color:var(--progga-primary);margin-bottom:2px;">Payment Breakdown</div>
+          @if((float)($order->paid_in_cash ?? 0) > 0)
+            <div>Cash: <strong>৳{{ number_format($order->paid_in_cash, 0) }}</strong></div>
+          @endif
+          @if((float)($order->paid_in_card ?? 0) > 0)
+            <div>Bank / Card{{ $cardTypeName !== '' ? ' — ' . $cardTypeName : '' }}: <strong>৳{{ number_format($order->paid_in_card, 0) }}</strong></div>
+          @endif
+          @if((float)($order->paid_in_mfc ?? 0) > 0)
+            <div>MFS{{ $mfsProviderName !== '' ? ' — ' . $mfsProviderName : '' }}: <strong>৳{{ number_format($order->paid_in_mfc, 0) }}</strong></div>
+          @endif
+        </div>
+      @endif
+      <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-cash me-1"></i> Paid by {{ $paymentMethodLabel }}</span>
+        @if($paymentType === 'Card' && $cardTypeName !== '')
+          <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-credit-card me-1"></i> {{ $cardTypeName }}</span>
+        @endif
+        @if($paymentType === 'Mobile Banking' && $mfsProviderName !== '')
+          <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-phone me-1"></i> {{ $mfsProviderName }}</span>
+        @endif
         <span class="progga-badge progga-badge-neutral" style="font-size:12px;padding:6px 12px;"><i class="bi bi-clock me-1"></i> {{ $order->created_at->format('h:i A, M d') }}</span>
       </div>
     </div>

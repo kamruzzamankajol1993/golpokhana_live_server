@@ -100,6 +100,7 @@ class SettingController extends Controller
         $data['auto_print_invoice'] = $request->has('auto_print_invoice');
         $data['require_table_selection'] = $request->has('require_table_selection');
         $data['show_out_of_stock'] = $request->has('show_out_of_stock');
+        $data['given_money_manual_toggle_enabled'] = $request->has('given_money_manual_toggle_enabled');
         $data['final_payment_depends_on_kitchen_status'] = $request->has('final_payment_depends_on_kitchen_status');
 
         if ($this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {

@@ -321,7 +321,7 @@
         </thead>
         <tbody>
 
-          @foreach($order->orderDetails as $item)
+          @foreach(($mergedOrderItems ?? $order->orderDetails) as $item)
 
               {{-- যদি Unavailable না হয়, তবেই ইনভয়েসে প্রিন্ট হবে --}}
               @if(!$item->is_unavailable)
@@ -421,8 +421,14 @@
             </div>
           </div>
           <div class="bill-total-row"><span>Cash</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_cash ?? $order->paid_in_cash ?? 0, 0) }}</span></div>
-          <div class="bill-total-row"><span>Bank / Card</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0, 0) }}</span></div>
-          <div class="bill-total-row"><span>MFS / Mobile</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0, 0) }}</span></div>
+          <div class="bill-total-row"><span>Bank / Card{{ !empty($order->card_type) ? ' (' . $order->card_type . ')' : '' }}</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0, 0) }}</span></div>
+          @if(!empty($order->split_card_reference) && ($order->invoice_paid_in_card ?? $order->paid_in_card ?? 0) > 0)
+            <div class="bill-total-row"><span>Card Ref</span><span>{{ $order->split_card_reference }}</span></div>
+          @endif
+          <div class="bill-total-row"><span>MFS / Mobile{{ !empty($order->mfs_provider) ? ' (' . $order->mfs_provider . ')' : '' }}</span><span>{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0, 0) }}</span></div>
+          @if(!empty($order->split_mfs_reference) && ($order->invoice_paid_in_mfc ?? $order->paid_in_mfc ?? 0) > 0)
+            <div class="bill-total-row"><span>MFS Ref</span><span>{{ $order->split_mfs_reference }}</span></div>
+          @endif
 
           @if($invoiceGivenAmount > 0 || $invoiceTipsAmount > 0)
             <div class="bill-payment-adjustments">
@@ -453,13 +459,25 @@
           <div class="bill-payment-top">
             <div>
               <div class="bill-payment-label">Paid By</div>
-              <div class="bill-payment-val">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'Cash') }}</div>
+              <div class="bill-payment-val">
+                @if(($order->payment_type ?? '') === 'Card')
+                  Bank / Card{{ !empty($order->card_type) ? ' - ' . $order->card_type : '' }}
+                @elseif(($order->payment_type ?? '') === 'Mobile Banking')
+                  MFS{{ !empty($order->mfs_provider) ? ' - ' . $order->mfs_provider : '' }}
+                @else
+                  {{ $order->payment_type ?? 'Cash' }}
+                @endif
+              </div>
             </div>
             <div style="text-align:right;">
               <div class="bill-payment-label">Total Paid</div>
               <div class="bill-payment-val">{{ $restaurantSettingCurrency ?? '৳' }} {{ number_format($order->total_paid_amount ?? 0, 0) }}</div>
             </div>
           </div>
+
+          @if(in_array(($order->payment_type ?? ''), ['Card', 'Mobile Banking'], true) && !empty($order->transaction_id))
+            <div class="bill-total-row"><span>Reference</span><span>{{ $order->transaction_id }}</span></div>
+          @endif
 
           @if($invoiceGivenAmount > 0 || $invoiceTipsAmount > 0)
             <div class="bill-payment-adjustments">
@@ -504,7 +522,8 @@
       <div style="margin-top:6px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $restaurantSettingName ?? ($restaurant->name ?? '') }}</span></div>
     </div>
 
-  </div><div class="btn-print-wrap no-print">
+  </div>@unless(request()->boolean('embedded'))
+  <div class="btn-print-wrap no-print">
     <a href="{{ route('pos.index') }}" class="btn-print outline">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;">
           <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -520,6 +539,7 @@
       Print Invoice
     </button>
   </div>
+  @endunless
 
 </body>
 </html>

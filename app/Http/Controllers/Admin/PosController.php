@@ -20,6 +20,7 @@ use App\Models\DeliveryPartner; // ফাইলের উপরে এটি য
 use App\Models\TableBooking;
 use App\Models\PosSetting;
 use App\Models\RestaurantSetting;
+use App\Services\PosSessionManagerResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
 use App\Exports\ArrayReportExport;
@@ -29,23 +30,28 @@ class PosController extends Controller
 {
 public function index(\Illuminate\Http\Request $request)
 {
-    if (auth()->check()) {
-        $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
+    $user = auth()->user();
+    $sessionManagerId = $user
+        ? app(PosSessionManagerResolver::class)->resolveId($user)
+        : null;
+
+    if ($sessionManagerId) {
+        $this->closeTimedOutOpenSessionsForUser($sessionManagerId);
     }
 
-    // An unfinished POS session is independent from restaurant order hours.
-    // It can be continued/replaced even when the restaurant is currently closed.
-    $activeSession = PosSession::where('user_id', auth()->id())
-        ->where('status', 'Open')
-        ->orderByDesc('id')
-        ->first();
+    // POS work periods are shared under the Manager account. Any POS user sees
+    // the same running Manager-owned session instead of getting a user-wise session.
+    $activeSession = $sessionManagerId
+        ? PosSession::where('user_id', $sessionManagerId)
+            ->where('status', 'Open')
+            ->orderByDesc('id')
+            ->first()
+        : null;
 
-    $forceUnfinishedSessionPrompt = $activeSession
-        && (int) session('force_pos_unfinished_prompt', 0) === (int) $activeSession->id;
-
-    if (!$activeSession) {
-        session()->forget('force_pos_unfinished_prompt');
-    }
+    // A shared Manager session is immediately active in every browser/user login.
+    // There is no Continue Previous / Start New prompt per individual user anymore.
+    $forceUnfinishedSessionPrompt = false;
+    session()->forget('force_pos_unfinished_prompt');
 
     $posOrderWindow = $this->getPosOrderWindowStatus();
     $isPosOrderTimeOpen = $posOrderWindow['is_open'];
@@ -598,7 +604,7 @@ private function reportableOrdersForSessionWindow(Carbon $start, Carbon $end)
         ->whereBetween('created_at', [$start, $end]);
 }
 
-private function closePosSessionAt(PosSession $session, Carbon $endTime): PosSession
+private function closePosSessionAt(PosSession $session, Carbon $endTime, ?int $endedByUserId = null): PosSession
 {
     $startTime = Carbon::parse($session->start_time, 'Asia/Dhaka');
     $endTime = $endTime->copy()->setTimezone('Asia/Dhaka');
@@ -641,7 +647,7 @@ private function closePosSessionAt(PosSession $session, Carbon $endTime): PosSes
         ->cascade()
         ->forHumans(['short' => true]);
 
-    $session->update([
+    $updatePayload = [
         'end_time' => $endTime,
         'duration' => $duration,
         'status' => 'Closed',
@@ -654,7 +660,13 @@ private function closePosSessionAt(PosSession $session, Carbon $endTime): PosSes
             'Card' => $card,
             'MFC' => $mfc,
         ],
-    ]);
+    ];
+
+    if ($endedByUserId && Schema::hasColumn('pos_sessions', 'ended_by_user_id')) {
+        $updatePayload['ended_by_user_id'] = $endedByUserId;
+    }
+
+    $session->update($updatePayload);
 
     return $session->fresh();
 }
@@ -699,10 +711,55 @@ private function touchOpenPosSessionActivity(int $userId): void
 
 public function touchSessionActivity(Request $request)
 {
-    $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
-    $this->touchOpenPosSessionActivity((int) auth()->id());
+    $user = auth()->user();
+    $sessionManagerId = $user
+        ? app(PosSessionManagerResolver::class)->resolveId($user)
+        : null;
+
+    if ($sessionManagerId) {
+        $this->closeTimedOutOpenSessionsForUser($sessionManagerId);
+        $this->touchOpenPosSessionActivity($sessionManagerId);
+    }
 
     return response()->json(['status' => 'success']);
+}
+
+/**
+ * Read-only shared work-period status for POS browser synchronization.
+ * This intentionally does not update last_activity_at; the existing heartbeat
+ * remains responsible for activity while this endpoint only reports state.
+ */
+public function sessionStatus(Request $request)
+{
+    $user = auth()->user();
+    $sessionManagerId = $user
+        ? app(PosSessionManagerResolver::class)->resolveId($user)
+        : null;
+
+    if (!$sessionManagerId) {
+        return response()->json([
+            'status' => 'success',
+            'active' => false,
+            'session_id' => null,
+            'start_time' => null,
+        ]);
+    }
+
+    $this->closeTimedOutOpenSessionsForUser($sessionManagerId);
+
+    $activeSession = PosSession::where('user_id', $sessionManagerId)
+        ->where('status', 'Open')
+        ->orderByDesc('id')
+        ->first();
+
+    return response()->json([
+        'status' => 'success',
+        'active' => (bool) $activeSession,
+        'session_id' => $activeSession?->id,
+        'start_time' => $activeSession && $activeSession->start_time
+            ? $activeSession->start_time->format('Y-m-d H:i:s')
+            : null,
+    ]);
 }
 
 private function getPosSessionCloseBlockers(PosSession $session, ?Carbon $checkTime = null): array
@@ -821,61 +878,70 @@ private function sessionCloseBlockedResponse(array $blockers)
 
 public function startSession(Request $request)
 {
-    $userId = (int) auth()->id();
-    $this->closeTimedOutOpenSessionsForUser($userId);
+    $actor = auth()->user();
+    $actorId = (int) $actor->id;
+    $manager = app(PosSessionManagerResolver::class)->resolve($actor);
+
+    if (!$manager) {
+        return response()->json([
+            'status' => 'error',
+            'code' => 'pos_manager_not_found',
+            'message' => 'Manager user not found. Please assign the Manager/manager role to one user first.',
+        ], 422);
+    }
+
+    $managerId = (int) $manager->id;
+    $this->closeTimedOutOpenSessionsForUser($managerId);
     $action = strtolower((string) $request->input('action', 'start'));
 
-    return DB::transaction(function () use ($userId, $action) {
-        // Prevent duplicate sessions from two tabs clicking at the same time.
-        DB::table('users')->where('id', $userId)->lockForUpdate()->first();
+    return DB::transaction(function () use ($actorId, $managerId, $action) {
+        // Lock the Manager row, not the logged-in user. This guarantees that two
+        // different users/browsers cannot create two shared work periods at once.
+        DB::table('users')->where('id', $managerId)->lockForUpdate()->first();
 
-        $activeSession = PosSession::where('user_id', $userId)
+        $activeSession = PosSession::where('user_id', $managerId)
             ->where('status', 'Open')
             ->orderByDesc('id')
             ->lockForUpdate()
             ->first();
 
+        if ($activeSession && $action === 'new') {
+            $blockers = $this->getPosSessionCloseBlockers($activeSession);
+            if ($blockers['blocked']) {
+                return $this->sessionCloseBlockedResponse($blockers);
+            }
+
+            $this->closePosSessionAt($activeSession, Carbon::now('Asia/Dhaka'), $actorId);
+            $activeSession = null;
+        }
+
         if ($activeSession) {
-            if ($action === 'continue') {
-                $this->touchOpenPosSessionActivity($userId);
-                session()->forget('force_pos_unfinished_prompt');
+            $this->touchOpenPosSessionActivity($managerId);
+            session()->forget('force_pos_unfinished_prompt');
 
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Previous unfinished POS session continued.',
-                    'session_id' => $activeSession->id,
-                    'start_time' => optional($activeSession->start_time)->format('Y-m-d H:i:s'),
-                    'already_active' => true,
-                ]);
-            }
-
-            if ($action === 'new') {
-                $blockers = $this->getPosSessionCloseBlockers($activeSession);
-                if ($blockers['blocked']) {
-                    return $this->sessionCloseBlockedResponse($blockers);
-                }
-
-                $this->closePosSessionAt($activeSession, Carbon::now('Asia/Dhaka'));
-                $activeSession = null;
-            } else {
-                return response()->json([
-                    'status' => 'unfinished',
-                    'code' => 'unfinished_pos_session',
-                    'message' => 'An unfinished POS session was found.',
-                    'session_id' => $activeSession->id,
-                    'start_time' => optional($activeSession->start_time)->format('Y-m-d H:i:s'),
-                ]);
-            }
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Manager work period is already running.',
+                'session_id' => $activeSession->id,
+                'start_time' => optional($activeSession->start_time)->format('Y-m-d H:i:s'),
+                'already_active' => true,
+            ]);
         }
 
         $now = Carbon::now('Asia/Dhaka');
         $payload = [
-            'user_id' => $userId,
+            'user_id' => $managerId,
             'weekday' => $now->format('l'),
             'start_time' => $now,
             'status' => 'Open',
         ];
 
+        if (Schema::hasColumn('pos_sessions', 'started_by_user_id')) {
+            $payload['started_by_user_id'] = $actorId;
+        }
+        if (Schema::hasColumn('pos_sessions', 'ended_by_user_id')) {
+            $payload['ended_by_user_id'] = null;
+        }
         if (Schema::hasColumn('pos_sessions', 'last_activity_at')) {
             $payload['last_activity_at'] = $now;
         }
@@ -886,8 +952,8 @@ public function startSession(Request $request)
         return response()->json([
             'status' => 'success',
             'message' => $action === 'new'
-                ? 'Previous session closed and a new POS session started.'
-                : 'POS session started successfully!',
+                ? 'Previous work period closed and a new Manager work period started.'
+                : 'Manager work period started successfully!',
             'session_id' => $session->id,
             'start_time' => $now->format('Y-m-d H:i:s'),
             'already_active' => false,
@@ -897,8 +963,20 @@ public function startSession(Request $request)
 
 public function endSession(Request $request)
 {
+    $actor = auth()->user();
+    $actorId = (int) $actor->id;
+    $managerId = app(PosSessionManagerResolver::class)->resolveId($actor);
+
+    if (!$managerId) {
+        return response()->json([
+            'status' => 'error',
+            'code' => 'pos_manager_not_found',
+            'message' => 'Manager user not found.',
+        ], 422);
+    }
+
     $session = PosSession::where('id', $request->session_id)
-        ->where('user_id', auth()->id())
+        ->where('user_id', $managerId)
         ->where('status', 'Open')
         ->firstOrFail();
 
@@ -907,7 +985,8 @@ public function endSession(Request $request)
         return $this->sessionCloseBlockedResponse($blockers);
     }
 
-    $session = $this->closePosSessionAt($session, Carbon::now('Asia/Dhaka'));
+    $session = $this->closePosSessionAt($session, Carbon::now('Asia/Dhaka'), $actorId);
+    session()->forget('force_pos_unfinished_prompt');
 
     return response()->json([
         'status' => 'success',
@@ -963,6 +1042,8 @@ public function printSessionReport($id)
     ];
 
     $reportIncomes = ['Cash' => 0, 'Card' => 0, 'MFC' => 0];
+    $cardProviderIncome = [];
+    $mfsProviderIncome = [];
     $departmentIncome = ['dine_in' => 0, 'delivery' => 0, 'takeaway' => 0];
     $closingExtraSummary = [
         'complimentary' => 0,
@@ -1058,10 +1139,15 @@ public function printSessionReport($id)
         }
 
         // total_paid_amount may include booking advance. Method-wise fields are the money paid now.
+        $cardContribution = 0;
+        $mfsContribution = 0;
         if ($order->payment_type === 'Split') {
-            $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0);
-            $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0);
-            $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0);
+            $cashContribution = (float) ($order->paid_in_cash ?? 0);
+            $cardContribution = (float) ($order->paid_in_card ?? 0);
+            $mfsContribution = (float) ($order->paid_in_mfc ?? 0);
+            $reportIncomes['Cash'] += $cashContribution;
+            $reportIncomes['Card'] += $cardContribution;
+            $reportIncomes['MFC'] += $mfsContribution;
         } else {
             $advance = max(0, (float) ($order->booking_advance ?? 0));
             $fallbackPaid = max(0, (float) ($order->total_paid_amount ?? 0) - $advance);
@@ -1071,14 +1157,25 @@ public function printSessionReport($id)
                     ? (float) $order->paid_in_cash
                     : $fallbackPaid;
             } elseif ($order->payment_type === 'Card') {
-                $reportIncomes['Card'] += (float) ($order->paid_in_card ?? 0) > 0
+                $cardContribution = (float) ($order->paid_in_card ?? 0) > 0
                     ? (float) $order->paid_in_card
                     : $fallbackPaid;
+                $reportIncomes['Card'] += $cardContribution;
             } elseif ($order->payment_type === 'Mobile Banking') {
-                $reportIncomes['MFC'] += (float) ($order->paid_in_mfc ?? 0) > 0
+                $mfsContribution = (float) ($order->paid_in_mfc ?? 0) > 0
                     ? (float) $order->paid_in_mfc
                     : $fallbackPaid;
+                $reportIncomes['MFC'] += $mfsContribution;
             }
+        }
+
+        if ($cardContribution > 0) {
+            $provider = trim((string) ($order->card_type ?? '')) ?: 'Unspecified';
+            $cardProviderIncome[$provider] = ($cardProviderIncome[$provider] ?? 0) + $cardContribution;
+        }
+        if ($mfsContribution > 0) {
+            $provider = trim((string) ($order->mfs_provider ?? '')) ?: 'Unspecified';
+            $mfsProviderIncome[$provider] = ($mfsProviderIncome[$provider] ?? 0) + $mfsContribution;
         }
 
         $departmentKey = $this->normalizePosOrderType($order->order_type ?? 'dine_in');
@@ -1119,8 +1216,10 @@ public function printSessionReport($id)
             $reportIncomes['Cash'] += $advance;
         } elseif ($method === 'card') {
             $reportIncomes['Card'] += $advance;
+            $cardProviderIncome['Unspecified'] = ($cardProviderIncome['Unspecified'] ?? 0) + $advance;
         } elseif (in_array($method, ['mfs', 'mobile banking', 'mobile_banking'], true)) {
             $reportIncomes['MFC'] += $advance;
+            $mfsProviderIncome['Unspecified'] = ($mfsProviderIncome['Unspecified'] ?? 0) + $advance;
         }
     }
 
@@ -1139,12 +1238,17 @@ public function printSessionReport($id)
         return max(0, (float) $booking->advance_amount - (float) ($consumed[$booking->id] ?? 0));
     });
 
+    arsort($cardProviderIncome);
+    arsort($mfsProviderIncome);
+
     return view('admin.pos.session_report', compact(
         'session',
         'restaurant',
         'taxSetting',
         'salesSummary',
         'reportIncomes',
+        'cardProviderIncome',
+        'mfsProviderIncome',
         'departmentIncome',
         'closingExtraSummary',
         'customerAdvance',
@@ -1233,7 +1337,7 @@ public function printSessionReport($id)
             }
 
             // ডাটাবেজে আপডেট
-            $session->update([
+            $updatePayload = [
                 'start_time' => $startTime,
                 'end_time' => $endTime,
                 'weekday' => $startTime->format('l'),
@@ -1243,8 +1347,16 @@ public function printSessionReport($id)
                 'service_charge' => $request->status == 'Closed' ? $service_charge : 0,
                 'vat_total' => $request->status == 'Closed' ? $vat_total : 0,
                 'grand_total' => $request->status == 'Closed' ? $grand_total : 0,
-                'incomes_summary' => $request->status == 'Closed' ? $incomes : null
-            ]);
+                'incomes_summary' => $request->status == 'Closed' ? $incomes : null,
+            ];
+
+            if (Schema::hasColumn('pos_sessions', 'ended_by_user_id')) {
+                $updatePayload['ended_by_user_id'] = $request->status == 'Closed'
+                    ? (int) auth()->id()
+                    : null;
+            }
+
+            $session->update($updatePayload);
 
             // Closing/editing a session must never auto-start another one.
             // The next work period is started explicitly from the POS Start Session button.
@@ -1355,6 +1467,104 @@ public function printSessionReport($id)
         unset($item);
 
         return $cart;
+    }
+
+    /**
+     * Build a stable key for customer-facing order rows.
+     * Add More Food keeps separate KOT detail rows for kitchen history, while
+     * identical food configurations are merged into one POS/invoice row.
+     */
+    private function orderDetailDisplayMergeKey(OrderDetail $detail): string
+    {
+        $addons = json_decode($detail->addons ?? '[]', true);
+        if (!is_array($addons)) {
+            $addons = [];
+        }
+
+        $addons = array_values(array_map(function ($addon) {
+            return [
+                'id' => (int) ($addon['id'] ?? 0),
+                'name' => (string) ($addon['name'] ?? ''),
+                'price' => round((float) ($addon['price'] ?? 0), 4),
+            ];
+        }, array_filter($addons, 'is_array')));
+
+        usort($addons, function ($a, $b) {
+            return [$a['id'], $a['name'], $a['price']] <=> [$b['id'], $b['name'], $b['price']];
+        });
+
+        $isComplimentary = !empty($detail->is_complimentary)
+            || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+
+        return sha1(json_encode([
+            'product_id' => (int) ($detail->product_id ?? 0),
+            'product_name' => (string) ($detail->product_name ?? ''),
+            'price' => round((float) ($detail->price ?? 0), 4),
+            'addons' => $addons,
+            'note' => trim((string) ($detail->food_note ?? '')),
+            'complimentary' => $isComplimentary ? 1 : 0,
+            'unavailable' => !empty($detail->is_unavailable) ? 1 : 0,
+            'product_discount_type' => (string) ($detail->product_discount_type ?? ''),
+            'product_discount_value' => round((float) ($detail->product_discount_value ?? 0), 4),
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Merge identical order detail rows for POS/offcanvas and invoice display only.
+     * The original per-KOT rows remain untouched so every kitchen KOT stays accurate.
+     */
+    private function mergeOrderDetailsForDisplay($details)
+    {
+        $groups = [];
+
+        foreach (collect($details)->sortBy('id') as $detail) {
+            $key = $this->orderDetailDisplayMergeKey($detail);
+
+            if (!isset($groups[$key])) {
+                $groups[$key] = (object) [
+                    'id' => (int) $detail->id,
+                    'detail_ids' => [(int) $detail->id],
+                    'order_kot_id' => $detail->order_kot_id ? (int) $detail->order_kot_id : null,
+                    'display_kot_id' => $detail->order_kot_id ? (int) $detail->order_kot_id : null,
+                    'product_id' => (int) ($detail->product_id ?? 0),
+                    'product_name' => (string) ($detail->product_name ?? ''),
+                    'quantity' => (int) ($detail->quantity ?? 0),
+                    'price' => (float) ($detail->price ?? 0),
+                    'subtotal' => (float) ($detail->subtotal ?? 0),
+                    'addons' => $detail->addons ?? '[]',
+                    'food_note' => $detail->food_note ?? null,
+                    'is_complimentary' => !empty($detail->is_complimentary) ? 1 : 0,
+                    'is_unavailable' => !empty($detail->is_unavailable) ? 1 : 0,
+                    'product_discount_type' => $detail->product_discount_type ?? null,
+                    'product_discount_value' => (float) ($detail->product_discount_value ?? 0),
+                    'product_discount_amount' => (float) ($detail->product_discount_amount ?? 0),
+                ];
+                continue;
+            }
+
+            $row = $groups[$key];
+            $row->id = (int) $detail->id;
+            $row->detail_ids[] = (int) $detail->id;
+            $row->display_kot_id = $detail->order_kot_id ? (int) $detail->order_kot_id : $row->display_kot_id;
+            $row->quantity += (int) ($detail->quantity ?? 0);
+            $row->subtotal += (float) ($detail->subtotal ?? 0);
+            $row->product_discount_amount += (float) ($detail->product_discount_amount ?? 0);
+        }
+
+        return collect(array_values($groups));
+    }
+
+    private function requestedOrderDetailIds(Request $request): array
+    {
+        $ids = collect(explode(',', (string) $request->input('order_detail_ids', '')))
+            ->map(fn ($id) => (int) trim($id))
+            ->filter(fn ($id) => $id > 0);
+
+        if ($request->filled('order_detail_id')) {
+            $ids->push((int) $request->input('order_detail_id'));
+        }
+
+        return $ids->unique()->values()->all();
     }
 
     public function addToCart(Request $request)
@@ -1538,10 +1748,18 @@ public function placeOrder(Request $request)
             return $this->posOrderClosedResponse();
         }
 
-        $this->closeTimedOutOpenSessionsForUser((int) auth()->id());
-        $activeSession = PosSession::where('user_id', auth()->id())
-            ->where('status', 'Open')
-            ->exists();
+        $actor = auth()->user();
+        $sessionManagerId = app(PosSessionManagerResolver::class)->resolveId($actor);
+
+        if ($sessionManagerId) {
+            $this->closeTimedOutOpenSessionsForUser($sessionManagerId);
+        }
+
+        $activeSession = $sessionManagerId
+            ? PosSession::where('user_id', $sessionManagerId)
+                ->where('status', 'Open')
+                ->exists()
+            : false;
 
         if (!$activeSession) {
             return response()->json([
@@ -1963,8 +2181,10 @@ public function placeOrder(Request $request)
             : Customer::orderBy('name', 'asc')->get(['id', 'name', 'phone']);
         $waiters = Waiter::where('status', 1)->orderBy('name')->get(['id', 'name']);
         $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
+        $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
+        $mergedOrderItemsByKot = $mergedOrderItems->groupBy('display_kot_id');
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners'))->render();
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot'))->render();
     }
 
 public function tableReservationStatuses()
@@ -2453,8 +2673,10 @@ public function tableReservationStatuses()
             : Customer::orderBy('name', 'asc')->get(['id', 'name', 'phone']);
         $waiters = Waiter::where('status', 1)->orderBy('name')->get(['id', 'name']);
         $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
+        $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
+        $mergedOrderItemsByKot = $mergedOrderItems->groupBy('display_kot_id');
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'customers', 'waiters', 'deliveryPartners'))->render();
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot'))->render();
     }
 
     public function holdWebOrder(Request $request)
@@ -2775,6 +2997,133 @@ public function tableReservationStatuses()
         return false;
     }
 
+    /**
+     * Build the exact billing snapshot used by a pre-invoice.
+     * When $persist is true, the discount/tax totals are saved so reopening POS
+     * and the later final invoice keep the pre-invoice calculation.
+     */
+    private function buildPreInvoiceSnapshot(Order $order, array $input, bool $persist = false): array
+    {
+        $order->loadMissing(['orderDetails', 'customer', 'waiter', 'table', 'deliveryPartner']);
+
+        $taxSetting = DB::table('tax_settings')->first();
+        $subtotal = (float) ($order->subtotal ?? 0);
+        $discType = (($input['disc_type'] ?? $input['discount_type'] ?? 'fixed') === 'percentage') ? 'percentage' : 'fixed';
+        $discValue = max(0, (float) ($input['disc_val'] ?? $input['discount_value'] ?? 0));
+        $requestedProductDiscounts = $input['product_discounts'] ?? [];
+        if (!is_array($requestedProductDiscounts)) {
+            $requestedProductDiscounts = [];
+        }
+
+        $productDiscountResult = $this->calculateProductWiseDiscounts($order, $requestedProductDiscounts, $persist);
+        $productDiscountAmount = (float) ($productDiscountResult['total'] ?? 0);
+
+        $vatRate = (float) ($taxSetting->vat_rate ?? 0);
+        $normalizedOrderType = strtolower(str_replace([' ', '-'], '_', (string) ($order->order_type ?? '')));
+        $serviceRate = in_array($normalizedOrderType, ['dine_in', 'dinein'], true)
+            ? (float) ($taxSetting->service_charge ?? 0)
+            : 0;
+
+        $serviceCharge = round(($subtotal * $serviceRate) / 100);
+        $vatTax = round((($subtotal + $serviceCharge) * $vatRate) / 100);
+        $discountAmount = round($discType === 'percentage'
+            ? ($subtotal * min($discValue, 100)) / 100
+            : min($discValue, $subtotal));
+        $grandTotal = max(0, round(($subtotal + $vatTax + $serviceCharge) - $discountAmount - $productDiscountAmount));
+
+        $snapshotItems = $order->orderDetails
+            ->filter(fn ($detail) => empty($detail->is_unavailable))
+            ->map(function ($detail) {
+                return [
+                    'order_detail_id' => (int) $detail->id,
+                    'product_id' => $detail->product_id ? (int) $detail->product_id : null,
+                    'product_name' => (string) ($detail->product_name ?? ''),
+                    'quantity' => (int) ($detail->quantity ?? 0),
+                    'price' => (float) ($detail->price ?? 0),
+                    'subtotal' => (float) ($detail->subtotal ?? 0),
+                    'addons' => json_decode($detail->addons ?? '[]', true) ?: [],
+                    'food_note' => $detail->food_note,
+                    'is_complimentary' => !empty($detail->is_complimentary),
+                    'product_discount_type' => $detail->product_discount_type,
+                    'product_discount_value' => (float) ($detail->product_discount_value ?? 0),
+                    'product_discount_amount' => (float) ($detail->product_discount_amount ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $snapshot = [
+            'version' => 1,
+            'printed_at' => now()->toIso8601String(),
+            'order_number' => $order->order_number,
+            'order_type' => $order->order_type,
+            'table' => optional($order->table)->table_number,
+            'customer' => optional($order->customer)->name ?: 'Walk-in Customer',
+            'waiter' => optional($order->waiter)->name,
+            'delivery_partner' => $order->delivery_partner_display_name,
+            'items' => $snapshotItems,
+            'subtotal' => $subtotal,
+            'discount_type' => $discType,
+            'discount_value' => $discValue,
+            'discount_amount' => $discountAmount,
+            'product_discounts' => $productDiscountResult['items'] ?? [],
+            'product_discount_amount' => $productDiscountAmount,
+            'service_charge_rate' => $serviceRate,
+            'service_charge' => $serviceCharge,
+            'vat_rate' => $vatRate,
+            'vat_tax' => $vatTax,
+            'grand_total' => $grandTotal,
+        ];
+
+        if ($persist) {
+            $order->discount_type = $discType;
+            $order->discount_amount = $discountAmount;
+            $order->product_discount_amount = $productDiscountAmount;
+            $order->service_charge = $serviceCharge;
+            $order->vat_tax = $vatTax;
+            $order->grand_total = $grandTotal;
+
+            if (Schema::hasColumn('orders', 'pre_invoice_snapshot')) {
+                $order->pre_invoice_snapshot = $snapshot;
+            }
+            if (Schema::hasColumn('orders', 'pre_invoice_printed_at')) {
+                $order->pre_invoice_printed_at = now();
+            }
+
+            $order->save();
+        }
+
+        return $snapshot;
+    }
+
+    public function savePreInvoiceSnapshot(Request $request, $id)
+    {
+        $request->validate([
+            'disc_type' => 'nullable|in:fixed,percentage',
+            'disc_val' => 'nullable|numeric|min:0',
+            'product_discounts' => 'nullable|array',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $order = Order::with('orderDetails')->lockForUpdate()->findOrFail($id);
+            $snapshot = $this->buildPreInvoiceSnapshot($order, $request->all(), true);
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'snapshot' => $snapshot,
+                'preview_url' => route('pos.pre_invoice', ['id' => $order->id]),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Pre-invoice could not be saved. ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function completePayment(Request $request)
     {
         if (!$request->filled('order_id')) {
@@ -2785,6 +3134,25 @@ public function tableReservationStatuses()
         }
 
         $selectedPaymentMethod = $request->input('payment_method');
+        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
+        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+
+        if ($selectedPaymentMethod === 'Card'
+            && !in_array(trim((string) $request->input('card_type')), $allowedCardTypes, true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please select a valid card type.'
+            ], 422);
+        }
+
+        if ($selectedPaymentMethod === 'Mobile Banking'
+            && !in_array(trim((string) $request->input('mfs_provider')), $allowedMfsProviders, true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please select a valid MFS service.'
+            ], 422);
+        }
+
         if (in_array($selectedPaymentMethod, ['Card', 'Mobile Banking'], true)
             && trim((string) $request->input('transaction_id')) === '') {
             $referenceLabel = $selectedPaymentMethod === 'Card'
@@ -2800,6 +3168,22 @@ public function tableReservationStatuses()
         if ($selectedPaymentMethod === 'Split') {
             $splitCardAmount = max(0, (float) $request->input('paid_in_card', 0));
             $splitMfsAmount = max(0, (float) $request->input('paid_in_mfc', 0));
+
+            if ($splitCardAmount > 0
+                && !in_array(trim((string) $request->input('split_card_type')), $allowedCardTypes, true)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please select a valid card type for the split card amount.'
+                ], 422);
+            }
+
+            if ($splitMfsAmount > 0
+                && !in_array(trim((string) $request->input('split_mfs_provider')), $allowedMfsProviders, true)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please select a valid MFS service for the split MFS amount.'
+                ], 422);
+            }
 
             if ($splitCardAmount > 0 && trim((string) $request->input('split_card_reference')) === '') {
                 return response()->json([
@@ -2992,6 +3376,16 @@ public function tableReservationStatuses()
             $order->grand_total       = $grand_total;
             $order->payment_type      = $paymentMethod;
             $order->transaction_id    = in_array($paymentMethod, ['Card', 'Mobile Banking'], true) ? trim((string) $request->transaction_id) : null;
+            if (Schema::hasColumn('orders', 'card_type')) {
+                $order->card_type = $paymentMethod === 'Card'
+                    ? trim((string) $request->input('card_type'))
+                    : ($paymentMethod === 'Split' && $card > 0 ? trim((string) $request->input('split_card_type')) : null);
+            }
+            if (Schema::hasColumn('orders', 'mfs_provider')) {
+                $order->mfs_provider = $paymentMethod === 'Mobile Banking'
+                    ? trim((string) $request->input('mfs_provider'))
+                    : ($paymentMethod === 'Split' && $mfc > 0 ? trim((string) $request->input('split_mfs_provider')) : null);
+            }
             if (Schema::hasColumn('orders', 'payment_remark')) {
                 $remark = trim((string) $request->input('remark', ''));
                 $order->payment_remark = $remark !== '' ? $remark : null;
@@ -3311,10 +3705,20 @@ public function tableReservationStatuses()
     {
         $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'order_detail_id' => 'required|exists:order_details,id',
+            'order_detail_id' => 'nullable|integer|exists:order_details,id',
+            'order_detail_ids' => 'nullable|string',
             'is_complimentary' => 'nullable|boolean',
             'action_password' => 'required|string',
         ]);
+
+        $detailIds = $this->requestedOrderDetailIds($request);
+        if (empty($detailIds)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No order item was selected.'
+            ], 422);
+        }
+
         if ($passwordError = $this->validatePosActionPassword($request->input('action_password'))) {
             return $passwordError;
         }
@@ -3342,11 +3746,22 @@ public function tableReservationStatuses()
                 ], 422);
             }
 
-            $detail = OrderDetail::where('order_id', $order->id)
+            $details = OrderDetail::where('order_id', $order->id)
+                ->whereIn('id', $detailIds)
                 ->lockForUpdate()
-                ->findOrFail($request->order_detail_id);
+                ->get()
+                ->sortBy('id')
+                ->values();
 
-            if (!empty($detail->is_unavailable)) {
+            if ($details->count() !== count($detailIds)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'One or more order item rows could not be found.'
+                ], 422);
+            }
+
+            if ($details->contains(fn ($detail) => !empty($detail->is_unavailable))) {
                 DB::rollBack();
                 return response()->json([
                     'status' => 'error',
@@ -3354,87 +3769,110 @@ public function tableReservationStatuses()
                 ], 422);
             }
 
-            $alreadyComplimentary = !empty($detail->is_complimentary)
-                || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+            // Only rows that are identical in the merged POS view may be changed together.
+            $mergeKey = $this->orderDetailDisplayMergeKey($details->first());
+            if ($details->contains(fn ($detail) => $this->orderDetailDisplayMergeKey($detail) !== $mergeKey)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The selected merged item is no longer identical. Please refresh the POS and try again.'
+                ], 422);
+            }
 
-            if ($makeComplimentary) {
-                $addons = json_decode($detail->addons ?? '[]', true);
-                if (!is_array($addons)) {
-                    $addons = [];
-                }
+            $alreadyComplimentary = $details->every(function ($detail) {
+                return !empty($detail->is_complimentary)
+                    || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+            });
 
-                foreach ($addons as &$addon) {
-                    if (is_array($addon)) {
-                        $addon['price'] = 0;
-                    }
-                }
-                unset($addon);
+            $restoreFood = null;
+            $restoreAddons = collect();
+            $normalFoodPrice = 0;
 
-                // Normalize both newly converted and legacy complimentary rows to a true zero-value line.
-                $detail->price = 0;
-                $detail->subtotal = 0;
-                $detail->addons = json_encode($addons);
-                $detail->product_discount_type = null;
-                $detail->product_discount_value = 0;
-                $detail->product_discount_amount = 0;
-
-                if (Schema::hasColumn('order_details', 'is_complimentary')) {
-                    $detail->is_complimentary = 1;
-                }
-
-                $detail->save();
-            } elseif ($alreadyComplimentary) {
-                // Complimentary conversion overwrites saved values with zero, so restore from the current food/addon prices.
-                $food = FoodItem::with('addons')->find($detail->product_id);
-                if (!$food) {
+            if (!$makeComplimentary && $alreadyComplimentary) {
+                $restoreFood = FoodItem::with('addons')->find($details->first()->product_id);
+                if (!$restoreFood) {
                     throw new \RuntimeException('Normal price could not be restored because the food item no longer exists.');
                 }
 
-                $normalFoodPrice = (float) ($food->discount_price ?? $food->base_price ?? 0);
-                $currentAddons = $food->addons->keyBy('id');
-                $addons = json_decode($detail->addons ?? '[]', true);
-                if (!is_array($addons)) {
-                    $addons = [];
-                }
+                $normalFoodPrice = (float) ($restoreFood->discount_price ?? $restoreFood->base_price ?? 0);
+                $restoreAddons = $restoreFood->addons->keyBy('id');
+            }
 
-                $addonTotal = 0;
-                foreach ($addons as &$addon) {
-                    if (!is_array($addon)) {
-                        continue;
+            foreach ($details as $detail) {
+                if ($makeComplimentary) {
+                    $addons = json_decode($detail->addons ?? '[]', true);
+                    if (!is_array($addons)) {
+                        $addons = [];
                     }
 
-                    $addonId = (int) ($addon['id'] ?? 0);
-                    if ($addonId > 0 && $currentAddons->has($addonId)) {
-                        $currentAddon = $currentAddons->get($addonId);
-                        $addon['name'] = $currentAddon->name ?? ($addon['name'] ?? 'Addon');
-                        $addon['price'] = (float) ($currentAddon->price ?? 0);
-                    } else {
-                        // If an old addon was removed from the menu, do not invent a price for it.
-                        $addon['price'] = max(0, (float) ($addon['price'] ?? 0));
+                    foreach ($addons as &$addon) {
+                        if (is_array($addon)) {
+                            $addon['price'] = 0;
+                        }
+                    }
+                    unset($addon);
+
+                    $detail->price = 0;
+                    $detail->subtotal = 0;
+                    $detail->addons = json_encode($addons);
+                    $detail->product_discount_type = null;
+                    $detail->product_discount_value = 0;
+                    $detail->product_discount_amount = 0;
+
+                    if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                        $detail->is_complimentary = 1;
                     }
 
-                    $addonTotal += (float) ($addon['price'] ?? 0);
-                }
-                unset($addon);
-
-                $quantity = max(1, (int) ($detail->quantity ?? 1));
-                $detail->price = $normalFoodPrice;
-                $detail->subtotal = round(($normalFoodPrice + $addonTotal) * $quantity, 2);
-                $detail->addons = json_encode($addons);
-                $detail->product_discount_type = null;
-                $detail->product_discount_value = 0;
-                $detail->product_discount_amount = 0;
-
-                if (Schema::hasColumn('order_details', 'is_complimentary')) {
-                    $detail->is_complimentary = 0;
+                    $detail->save();
+                    continue;
                 }
 
-                // A whole complimentary order stops being whole-complimentary as soon as one item returns to normal.
-                if (Schema::hasColumn('orders', 'is_complimentary_order') && !empty($order->is_complimentary_order)) {
-                    $order->is_complimentary_order = 0;
-                }
+                if ($alreadyComplimentary) {
+                    $addons = json_decode($detail->addons ?? '[]', true);
+                    if (!is_array($addons)) {
+                        $addons = [];
+                    }
 
-                $detail->save();
+                    $addonTotal = 0;
+                    foreach ($addons as &$addon) {
+                        if (!is_array($addon)) {
+                            continue;
+                        }
+
+                        $addonId = (int) ($addon['id'] ?? 0);
+                        if ($addonId > 0 && $restoreAddons->has($addonId)) {
+                            $currentAddon = $restoreAddons->get($addonId);
+                            $addon['name'] = $currentAddon->name ?? ($addon['name'] ?? 'Addon');
+                            $addon['price'] = (float) ($currentAddon->price ?? 0);
+                        } else {
+                            $addon['price'] = max(0, (float) ($addon['price'] ?? 0));
+                        }
+
+                        $addonTotal += (float) ($addon['price'] ?? 0);
+                    }
+                    unset($addon);
+
+                    $quantity = max(1, (int) ($detail->quantity ?? 1));
+                    $detail->price = $normalFoodPrice;
+                    $detail->subtotal = round(($normalFoodPrice + $addonTotal) * $quantity, 2);
+                    $detail->addons = json_encode($addons);
+                    $detail->product_discount_type = null;
+                    $detail->product_discount_value = 0;
+                    $detail->product_discount_amount = 0;
+
+                    if (Schema::hasColumn('order_details', 'is_complimentary')) {
+                        $detail->is_complimentary = 0;
+                    }
+
+                    $detail->save();
+                }
+            }
+
+            // A whole complimentary order stops being whole-complimentary as soon as this merged item returns to normal.
+            if (!$makeComplimentary && $alreadyComplimentary
+                && Schema::hasColumn('orders', 'is_complimentary_order')
+                && !empty($order->is_complimentary_order)) {
+                $order->is_complimentary_order = 0;
             }
 
             $remainingDetails = OrderDetail::where('order_id', $order->id)
@@ -3490,9 +3928,6 @@ public function tableReservationStatuses()
 
             $serviceCharge = round(($newSubtotal * $serviceRate) / 100);
             $vatTax = round((($newSubtotal + $serviceCharge) * $vatRate) / 100);
-
-            // orders.discount_amount stores the already-calculated other discount amount.
-            // Keep that amount, but cap it against the newly recalculated bill.
             $discountAmount = min(
                 max(0, round((float) ($order->discount_amount ?? 0))),
                 round($newSubtotal + $serviceCharge + $vatTax)
@@ -3529,7 +3964,8 @@ public function tableReservationStatuses()
                 'message' => $message,
                 'is_complimentary' => $makeComplimentary ? 1 : 0,
                 'order_id' => $order->id,
-                'order_detail_id' => $detail->id,
+                'order_detail_id' => $details->last()->id,
+                'order_detail_ids' => $details->pluck('id')->values()->all(),
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -3546,19 +3982,39 @@ public function tableReservationStatuses()
     {
         $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'order_detail_id' => 'required|exists:order_details,id',
+            'order_detail_id' => 'nullable|integer|exists:order_details,id',
+            'order_detail_ids' => 'nullable|string',
             'qty' => 'required|integer|min:1',
             'reason' => 'nullable|string|max:1000',
             'action_password' => 'nullable|string',
         ]);
 
+        $detailIds = $this->requestedOrderDetailIds($request);
+        if (empty($detailIds)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No order item was selected.'
+            ], 422);
+        }
+
         DB::beginTransaction();
 
         try {
             $order = Order::lockForUpdate()->findOrFail($request->order_id);
-            $detail = OrderDetail::where('order_id', $order->id)
+            $details = OrderDetail::where('order_id', $order->id)
+                ->whereIn('id', $detailIds)
                 ->lockForUpdate()
-                ->findOrFail($request->order_detail_id);
+                ->get()
+                ->sortByDesc('id')
+                ->values();
+
+            if ($details->count() !== count($detailIds)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'One or more order item rows could not be found.'
+                ], 422);
+            }
 
             // Anything already sent to the kitchen is a saved order item and must stay
             // password protected. Add More food is password-free only while it is still
@@ -3568,62 +4024,89 @@ public function tableReservationStatuses()
                 return $passwordError;
             }
 
-            if (!empty($detail->is_unavailable)) {
+            if ($details->contains(fn ($detail) => !empty($detail->is_unavailable))) {
                 DB::rollBack();
                 return response()->json(['status' => 'error', 'message' => 'Unavailable item cannot be deleted again.']);
             }
 
-            $currentQty = max(1, (int) $detail->quantity);
-            $deleteQty = min((int) $request->qty, $currentQty);
+            // Prevent a stale/tampered merged row from deleting unrelated order items together.
+            $mergeKey = $this->orderDetailDisplayMergeKey($details->first());
+            if ($details->contains(fn ($detail) => $this->orderDetailDisplayMergeKey($detail) !== $mergeKey)) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The selected merged item is no longer identical. Please refresh the POS and try again.'
+                ], 422);
+            }
+
+            $availableQty = $details->sum(fn ($detail) => max(0, (int) ($detail->quantity ?? 0)));
+            $remainingDeleteQty = min((int) $request->qty, $availableQty);
+            $requestedDeleteQty = $remainingDeleteQty;
             $deleteReason = trim((string) ($request->reason ?? ''));
-            $unitTotal = $currentQty > 0 ? ((float) $detail->subtotal / $currentQty) : 0;
-            $removeAmount = round($unitTotal * $deleteQty, 2);
-            $addons = json_decode($detail->addons ?? '[]', true);
-            if (!is_array($addons)) $addons = [];
-            $addonTotal = 0;
-            foreach ($addons as $addon) {
-                $addonTotal += (float) ($addon['price'] ?? 0);
-            }
+            $totalRemoveAmount = 0.0;
 
-            $this->logDeletedCartOrOrderItem([
-                'source' => 'ordered_item',
-                'order_id' => $order->id,
-                'order_detail_id' => $detail->id,
-                'order_kot_id' => $detail->order_kot_id,
-                'food_id' => $detail->product_id,
-                'product_name' => $detail->product_name,
-                'unit_price' => $detail->price ?? 0,
-                'addon_total' => $addonTotal,
-                'deleted_quantity' => $deleteQty,
-                'previous_quantity' => $currentQty,
-                'remaining_quantity' => max(0, $currentQty - $deleteQty),
-                'subtotal_removed' => $removeAmount,
-                'order_type' => $order->order_type,
-                'table_id' => $order->table_id,
-                'addons' => $addons,
-                'note' => $detail->food_note ?? null,
-                'reason' => $deleteReason !== ''
-                    ? $deleteReason
-                    : ($deleteQty >= $currentQty ? 'Ordered item fully deleted from offcanvas' : 'Ordered item quantity deleted from offcanvas'),
-            ]);
-
-            if ($deleteQty >= $currentQty) {
-                $kotId = $detail->order_kot_id;
-                $detail->delete();
-
-                if ($kotId) {
-                    $hasDetails = OrderDetail::where('order_kot_id', $kotId)->exists();
-                    if (!$hasDetails) {
-                        OrderKot::where('id', $kotId)->delete();
-                    }
+            foreach ($details as $detail) {
+                if ($remainingDeleteQty <= 0) {
+                    break;
                 }
-            } else {
-                $detail->quantity = $currentQty - $deleteQty;
-                $detail->subtotal = max(0, round((float) $detail->subtotal - $removeAmount, 2));
-                $detail->save();
+
+                $currentQty = max(1, (int) $detail->quantity);
+                $deleteQty = min($remainingDeleteQty, $currentQty);
+                $unitTotal = $currentQty > 0 ? ((float) $detail->subtotal / $currentQty) : 0;
+                $removeAmount = round($unitTotal * $deleteQty, 2);
+                $totalRemoveAmount += $removeAmount;
+                $addons = json_decode($detail->addons ?? '[]', true);
+                if (!is_array($addons)) {
+                    $addons = [];
+                }
+
+                $addonTotal = 0;
+                foreach ($addons as $addon) {
+                    $addonTotal += (float) ($addon['price'] ?? 0);
+                }
+
+                $this->logDeletedCartOrOrderItem([
+                    'source' => 'ordered_item',
+                    'order_id' => $order->id,
+                    'order_detail_id' => $detail->id,
+                    'order_kot_id' => $detail->order_kot_id,
+                    'food_id' => $detail->product_id,
+                    'product_name' => $detail->product_name,
+                    'unit_price' => $detail->price ?? 0,
+                    'addon_total' => $addonTotal,
+                    'deleted_quantity' => $deleteQty,
+                    'previous_quantity' => $currentQty,
+                    'remaining_quantity' => max(0, $currentQty - $deleteQty),
+                    'subtotal_removed' => $removeAmount,
+                    'order_type' => $order->order_type,
+                    'table_id' => $order->table_id,
+                    'addons' => $addons,
+                    'note' => $detail->food_note ?? null,
+                    'reason' => $deleteReason !== ''
+                        ? $deleteReason
+                        : ($deleteQty >= $currentQty ? 'Merged ordered item row fully deleted from offcanvas' : 'Merged ordered item quantity deleted from offcanvas'),
+                ]);
+
+                if ($deleteQty >= $currentQty) {
+                    $kotId = $detail->order_kot_id;
+                    $detail->delete();
+
+                    if ($kotId) {
+                        $hasDetails = OrderDetail::where('order_kot_id', $kotId)->exists();
+                        if (!$hasDetails) {
+                            OrderKot::where('id', $kotId)->delete();
+                        }
+                    }
+                } else {
+                    $detail->quantity = $currentQty - $deleteQty;
+                    $detail->subtotal = max(0, round((float) $detail->subtotal - $removeAmount, 2));
+                    $detail->save();
+                }
+
+                $remainingDeleteQty -= $deleteQty;
             }
 
-            $newSubtotal = max(0, round((float) $order->subtotal - $removeAmount, 2));
+            $newSubtotal = max(0, round((float) $order->subtotal - $totalRemoveAmount, 2));
             $taxSetting = DB::table('tax_settings')->first();
             $vatRate = $taxSetting->vat_rate ?? 0;
             $serviceRate = (strtolower($order->order_type) == 'dine-in' || strtolower($order->order_type) == 'dine_in')
@@ -3632,6 +4115,7 @@ public function tableReservationStatuses()
 
             $serviceCharge = round(($newSubtotal * $serviceRate) / 100);
             $vatTax = round((($newSubtotal + $serviceCharge) * $vatRate) / 100);
+
             // Existing product-wise discount settings are recalculated against the changed line subtotals.
             $productDiscountTotal = 0;
             $remainingDetails = OrderDetail::where('order_id', $order->id)
@@ -3658,7 +4142,6 @@ public function tableReservationStatuses()
                 $productDiscountTotal += $lineProductDiscount;
             }
 
-            // orders.discount_amount-এ calculated other discount amount থাকে, তাই item delete হলেও একই amount cap করে রাখা হলো
             $discountAmount = min(round((float) ($order->discount_amount ?? 0)), round($newSubtotal + $serviceCharge + $vatTax));
             $productDiscountTotal = min(max(0, round($productDiscountTotal)), round($newSubtotal));
             $grandTotal = max(0, round(($newSubtotal + $serviceCharge + $vatTax) - $discountAmount - $productDiscountTotal));
@@ -3676,7 +4159,7 @@ public function tableReservationStatuses()
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Item quantity deleted successfully.'
+                'message' => $requestedDeleteQty . ' item quantity deleted successfully.'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -3719,7 +4202,9 @@ public function tableReservationStatuses()
         $order->invoice_paid_in_card = (float) ($order->paid_in_card ?? 0);
         $order->invoice_paid_in_mfc = (float) ($order->paid_in_mfc ?? 0);
 
-        return view('admin.pos.invoice', compact('order', 'restaurant'));
+        $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
+
+        return view('admin.pos.invoice', compact('order', 'restaurant', 'mergedOrderItems'));
     }
 
     public function printPreInvoice(Request $request, $id)
@@ -3727,41 +4212,51 @@ public function tableReservationStatuses()
         $order = Order::with(['orderDetails', 'customer', 'waiter', 'user', 'deliveryPartner'])->findOrFail($id);
         $order->ensureFeedbackToken();
         $restaurant = \App\Models\RestaurantSetting::first();
-        $taxSetting = DB::table('tax_settings')->first();
         $invoiceSetting = \App\Models\InvoiceSetting::first();
 
-        // মোডালে দেওয়া লাইভ ডিসকাউন্টটি রিসিভ করে ক্যালকুলেশন করা হচ্ছে
-        // (যাতে সেভ না করলেও প্রি-ইনভয়েসে ডিসকাউন্ট দেখায়)
-        $subtotal = $order->subtotal;
-        $disc_type = $request->disc_type ?? 'fixed';
-        $disc_val = $request->disc_val ?? 0;
-        $requestedProductDiscounts = $request->input('product_discounts', []);
-        if (!is_array($requestedProductDiscounts)) {
-            $requestedProductDiscounts = [];
+        $hasLiveInputs = $request->has('disc_type')
+            || $request->has('disc_val')
+            || $request->has('product_discounts');
+
+        if ($hasLiveInputs) {
+            // Backward-compatible direct URL usage: calculate from the provided query values.
+            $snapshot = $this->buildPreInvoiceSnapshot($order, $request->all(), false);
+        } else {
+            $snapshot = is_array($order->pre_invoice_snapshot ?? null)
+                ? $order->pre_invoice_snapshot
+                : null;
+
+            if (!$snapshot) {
+                $snapshot = [
+                    'subtotal' => (float) ($order->subtotal ?? 0),
+                    'discount_type' => $order->discount_type ?: 'fixed',
+                    'discount_value' => 0,
+                    'discount_amount' => (float) ($order->discount_amount ?? 0),
+                    'product_discount_amount' => (float) ($order->product_discount_amount ?? 0),
+                    'service_charge' => (float) ($order->service_charge ?? 0),
+                    'vat_tax' => (float) ($order->vat_tax ?? 0),
+                    'grand_total' => (float) ($order->grand_total ?? 0),
+                ];
+            }
         }
-        $productDiscountResult = $this->calculateProductWiseDiscounts($order, $requestedProductDiscounts, false);
-        $product_discount_amount = (float) $productDiscountResult['total'];
 
-        $discount_amount = ($disc_type == 'percentage') ? ($subtotal * $disc_val) / 100 : $disc_val;
-        $vat_rate = $taxSetting->vat_rate ?? 0;
-        $service_rate = (strtolower((string) $order->order_type) === 'dine-in' || strtolower((string) $order->order_type) === 'dine_in')
-            ? ($taxSetting->service_charge ?? 0)
-            : 0;
+        // Render the saved pre-invoice numbers exactly as they were calculated.
+        $order->discount_type = $snapshot['discount_type'] ?? 'fixed';
+        $order->discount_amount = (float) ($snapshot['discount_amount'] ?? 0);
+        $order->product_discount_amount = (float) ($snapshot['product_discount_amount'] ?? 0);
+        $order->vat_tax = (float) ($snapshot['vat_tax'] ?? 0);
+        $order->service_charge = (float) ($snapshot['service_charge'] ?? 0);
+        $order->grand_total = (float) ($snapshot['grand_total'] ?? 0);
 
-        $service = round(($subtotal * $service_rate) / 100);
-$tax = round((($subtotal + $service) * $vat_rate) / 100);
-$discount_amount = round(($disc_type == 'percentage') ? ($subtotal * $disc_val) / 100 : $disc_val);
-$grand_total = max(0, round(($subtotal + $tax + $service) - $discount_amount - $product_discount_amount));
+        $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
 
-        // শুধু ভিউয়ের জন্য সাময়িকভাবে ডাটাগুলো ওভাররাইড করা হলো (ডাটাবেজে সেভ হবে না)
-        $order->discount_type = $disc_type;
-        $order->discount_amount = $discount_amount;
-        $order->product_discount_amount = $product_discount_amount;
-        $order->vat_tax = $tax;
-        $order->service_charge = $service;
-        $order->grand_total = $grand_total;
-
-        return view('admin.pos.pre_invoice', compact('order', 'restaurant', 'invoiceSetting'));
+        return view('admin.pos.pre_invoice', compact(
+            'order',
+            'restaurant',
+            'invoiceSetting',
+            'mergedOrderItems',
+            'snapshot'
+        ));
     }
 
 }

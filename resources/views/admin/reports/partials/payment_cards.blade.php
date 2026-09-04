@@ -16,6 +16,16 @@
             <span>{{ $row['orders_count'] }} order(s)</span>
             <span>{{ number_format($row['percentage'], 1) }}%</span>
         </div>
+        @if(!empty($row['providers']))
+            <div style="margin-top:8px;padding-top:7px;border-top:1px dashed #ddd;font-size:10px;color:#555;line-height:1.55;">
+                @foreach($row['providers'] as $providerName => $providerAmount)
+                    <div style="display:flex;justify-content:space-between;gap:8px;">
+                        <span style="font-weight:800;">{{ $providerName }}</span>
+                        <span>৳{{ number_format($providerAmount, 2) }}</span>
+                    </div>
+                @endforeach
+            </div>
+        @endif
     </div>
 </div>
 @endforeach

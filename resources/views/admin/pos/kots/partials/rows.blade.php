@@ -17,7 +17,7 @@
     <td><span class="progga-badge {{ $kot->kitchen_status === 'Delivered' ? 'progga-badge-success' : 'progga-badge-warning' }}">{{ $kot->kitchen_status }}</span></td>
     <td><span class="progga-badge progga-badge-secondary">{{ optional($order)->status ?? 'N/A' }}</span></td>
     <td>
-        <a href="{{ route('kitchen.print_kot', ['id' => $kot->id, 'source' => 'pos']) }}" target="_blank" class="progga-btn progga-btn-primary progga-btn-sm">
+        <a href="{{ route('kitchen.print_kot', ['id' => $kot->id, 'source' => 'pos']) }}" class="progga-btn progga-btn-primary progga-btn-sm js-pos-print-preview" data-title="KOT" data-return-pos="1">
             <i class="bi bi-printer"></i> Print
         </a>
     </td>

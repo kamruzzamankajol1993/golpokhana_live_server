@@ -209,7 +209,7 @@
     }
   </style>
 </head>
-<body onload="window.print()">
+<body @unless(request()->boolean('embedded')) onload="window.print()" @endunless>
 
   <div class="page-label no-print">👨‍🍳 Kitchen Order Ticket</div>
 
@@ -290,14 +290,16 @@
     <div style="padding:8px 10px 10px;text-align:center;font-size:10px;font-weight:700 !important;">Powered by : <span style="font-size:12px;font-weight:900 !important;">{{ $poweredBySystemName ?? $restaurantSettingName ?? '' }}</span></div>
   </div>
 
-  <div class="btn-print-wrap no-print" style="gap: 10px; flex-wrap: wrap;">
-    <button class="btn-print" onclick="window.print()">Print KOT</button>
+  @unless(request()->boolean('embedded'))
+    <div class="btn-print-wrap no-print" style="gap: 10px; flex-wrap: wrap;">
+      <button class="btn-print" onclick="window.print()">Print KOT</button>
 
-    @if(request()->query('source') === 'pos')
-      <a href="{{ route('pos.index') }}" class="btn-print">
-        Return to POS
-      </a>
-    @endif
-  </div>
+      @if(request()->query('source') === 'pos')
+        <a href="{{ route('pos.index') }}" class="btn-print">
+          Return to POS
+        </a>
+      @endif
+    </div>
+  @endunless
 </body>
 </html>

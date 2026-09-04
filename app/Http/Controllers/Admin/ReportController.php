@@ -628,17 +628,9 @@ class ReportController extends Controller
 
     private function displayPaymentText($order): string
     {
-        $paymentText = (string) ($order->payment_type ?? 'N/A');
-        if ($paymentText === 'Card') $paymentText = 'Bank / Card';
-        if ($paymentText === 'Mobile Banking') $paymentText = 'MFS';
-        if (($order->payment_type ?? '') === 'Split') {
-            $parts = [];
-            if ((float) ($order->paid_in_cash ?? 0) > 0) $parts[] = 'Cash: ' . number_format((float) $order->paid_in_cash, 2, '.', '');
-            if ((float) ($order->paid_in_card ?? 0) > 0) $parts[] = 'Bank / Card: ' . number_format((float) $order->paid_in_card, 2, '.', '');
-            if ((float) ($order->paid_in_mfc ?? 0) > 0) $parts[] = 'MFS: ' . number_format((float) $order->paid_in_mfc, 2, '.', '');
-            if ($parts) $paymentText = 'Split (' . implode(', ', $parts) . ')';
-        }
-        return $paymentText;
+        return $order instanceof Order
+            ? $order->reportPaymentText(2, true)
+            : (string) ($order->payment_type ?? 'N/A');
     }
 
     private function simpleReportPdfResponse(string $title, array $headings, array $rows, array $meta, string $fileName, string $format = 'A4', string $orientation = 'L')
@@ -1020,6 +1012,8 @@ class ReportController extends Controller
         $cashOrders = 0;
         $cardOrders = 0;
         $mfcOrders = 0;
+        $cardProviderAmounts = [];
+        $mfsProviderAmounts = [];
 
         foreach ($orders as $order) {
             $cash = (float) ($order->paid_in_cash ?? 0);
@@ -1041,10 +1035,20 @@ class ReportController extends Controller
             $mfcAmount += (!$paymentMethod || $paymentMethod === 'Mobile Banking') ? $mfc : 0;
 
             if ($cash > 0 && (!$paymentMethod || $paymentMethod === 'Cash')) $cashOrders++;
-            if ($card > 0 && (!$paymentMethod || $paymentMethod === 'Card')) $cardOrders++;
-            if ($mfc > 0 && (!$paymentMethod || $paymentMethod === 'Mobile Banking')) $mfcOrders++;
+            if ($card > 0 && (!$paymentMethod || $paymentMethod === 'Card')) {
+                $cardOrders++;
+                $provider = trim((string) ($order->card_type ?? '')) ?: 'Unspecified';
+                $cardProviderAmounts[$provider] = ($cardProviderAmounts[$provider] ?? 0) + $card;
+            }
+            if ($mfc > 0 && (!$paymentMethod || $paymentMethod === 'Mobile Banking')) {
+                $mfcOrders++;
+                $provider = trim((string) ($order->mfs_provider ?? '')) ?: 'Unspecified';
+                $mfsProviderAmounts[$provider] = ($mfsProviderAmounts[$provider] ?? 0) + $mfc;
+            }
         }
 
+        arsort($cardProviderAmounts);
+        arsort($mfsProviderAmounts);
         $totalCollected = $cashAmount + $cardAmount + $mfcAmount;
 
         $paymentRows = [];
@@ -1052,10 +1056,10 @@ class ReportController extends Controller
             $paymentRows[] = ['label' => 'Cash', 'icon' => 'bi-cash-coin', 'amount' => $cashAmount, 'orders_count' => $cashOrders, 'percentage' => $totalCollected > 0 ? ($cashAmount / $totalCollected) * 100 : 0];
         }
         if (!$paymentMethod || $paymentMethod == 'Card') {
-            $paymentRows[] = ['label' => 'Bank / Card', 'icon' => 'bi-credit-card', 'amount' => $cardAmount, 'orders_count' => $cardOrders, 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0];
+            $paymentRows[] = ['label' => 'Bank / Card', 'icon' => 'bi-credit-card', 'amount' => $cardAmount, 'orders_count' => $cardOrders, 'percentage' => $totalCollected > 0 ? ($cardAmount / $totalCollected) * 100 : 0, 'providers' => $cardProviderAmounts];
         }
         if (!$paymentMethod || $paymentMethod == 'Mobile Banking') {
-            $paymentRows[] = ['label' => 'Mobile Banking / MFC', 'icon' => 'bi-phone', 'amount' => $mfcAmount, 'orders_count' => $mfcOrders, 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0];
+            $paymentRows[] = ['label' => 'Mobile Banking / MFC', 'icon' => 'bi-phone', 'amount' => $mfcAmount, 'orders_count' => $mfcOrders, 'percentage' => $totalCollected > 0 ? ($mfcAmount / $totalCollected) * 100 : 0, 'providers' => $mfsProviderAmounts];
         }
 
         $paymentOrders = Order::with(['customer', 'table'])
@@ -1205,16 +1209,16 @@ class ReportController extends Controller
                 $paymentText = 'Cash';
                 $rowTotal = $cashAmount;
             } elseif ($paymentMethod === 'Card') {
-                $paymentText = 'Bank / Card';
+                $paymentText = $order->report_card_label;
                 $rowTotal = $cardAmount;
             } elseif ($paymentMethod === 'Mobile Banking') {
-                $paymentText = 'Mobile Banking';
+                $paymentText = $order->report_mfs_label;
                 $rowTotal = $mfcAmount;
             } else {
                 $paymentParts = [];
                 if ($cashAmount > 0) $paymentParts[] = 'Cash';
-                if ($cardAmount > 0) $paymentParts[] = 'Bank / Card';
-                if ($mfcAmount > 0) $paymentParts[] = 'Mobile Banking';
+                if ($cardAmount > 0) $paymentParts[] = $order->report_card_label;
+                if ($mfcAmount > 0) $paymentParts[] = $order->report_mfs_label;
 
                 $paymentText = count($paymentParts) > 0
                     ? implode(' + ', $paymentParts)
@@ -1234,6 +1238,8 @@ class ReportController extends Controller
                 'cash' => $cashAmount,
                 'card' => $cardAmount,
                 'mfc' => $mfcAmount,
+                'card_provider' => trim((string) ($order->card_type ?? '')),
+                'mfs_provider' => trim((string) ($order->mfs_provider ?? '')),
                 'total_paid' => $rowTotal,
             ];
         });
@@ -1434,6 +1440,39 @@ class ReportController extends Controller
         return Excel::download(new ArrayReportExport($headings, $rows, 'KOT Report'), 'kot-report-' . now()->format('Y-m-d-His') . '.xlsx');
     }
 
+    private function sessionProviderAmountText($session, string $method, float $amount): string
+    {
+        if ($amount <= 0) {
+            return '0';
+        }
+
+        $start = $session->start_time ? Carbon::parse($session->start_time) : null;
+        $end = $session->end_time ? Carbon::parse($session->end_time) : now();
+        if (!$start) {
+            return number_format($amount, 2);
+        }
+
+        $column = $method === 'Card' ? 'card_type' : 'mfs_provider';
+        $amountColumn = $method === 'Card' ? 'paid_in_card' : 'paid_in_mfc';
+        $paymentType = $method === 'Card' ? 'Card' : 'Mobile Banking';
+
+        $names = Order::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->where(function ($query) use ($amountColumn, $paymentType) {
+                $query->where($amountColumn, '>', 0)
+                    ->orWhere('payment_type', $paymentType);
+            })
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->pluck($column)
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return number_format($amount, 2) . ($names->isNotEmpty() ? ' (' . $names->implode(', ') . ')' : '');
+    }
+
     private function posSessionExportData(): array
     {
         $sessions = PosSession::with('user')->orderByDesc('id')->get();
@@ -1452,8 +1491,8 @@ class ReportController extends Controller
                 (float) ($session->vat_total ?? 0),
                 (float) ($session->grand_total ?? 0),
                 (float) ($income['Cash'] ?? 0),
-                (float) ($income['Card'] ?? 0),
-                (float) ($income['MFC'] ?? 0),
+                $this->sessionProviderAmountText($session, 'Card', (float) ($income['Card'] ?? 0)),
+                $this->sessionProviderAmountText($session, 'MFS', (float) ($income['MFC'] ?? 0)),
                 $session->status ?? 'N/A',
             ];
         })->all();

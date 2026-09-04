@@ -45,16 +45,26 @@
     <td>
         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
             @if($showCash) <span class="progga-badge progga-badge-neutral">Cash</span> @endif
-            @if($showCard) <span class="progga-badge progga-badge-neutral">Bank / Card</span> @endif
-            @if($showMfc) <span class="progga-badge progga-badge-neutral">MFS</span> @endif
+            @if($showCard) <span class="progga-badge progga-badge-neutral">{{ $order->report_card_label }}</span> @endif
+            @if($showMfc) <span class="progga-badge progga-badge-neutral">{{ $order->report_mfs_label }}</span> @endif
             @if(!$showCash && !$showCard && !$showMfc)
-                <span class="progga-badge progga-badge-neutral">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : (($order->payment_type ?? '') === 'Mobile Banking' ? 'MFS' : ($order->payment_type ?? 'N/A')) }}</span>
+                <span class="progga-badge progga-badge-neutral">{{ $order->reportPaymentText(0, false) }}</span>
             @endif
         </div>
     </td>
     <td>৳{{ number_format($cashAmount, 2) }}</td>
-    <td>৳{{ number_format($cardAmount, 2) }}</td>
-    <td>৳{{ number_format($mfcAmount, 2) }}</td>
+    <td>
+        ৳{{ number_format($cardAmount, 2) }}
+        @if($cardAmount > 0 && trim((string) ($order->card_type ?? '')) !== '')
+            <div class="text-muted" style="font-size:10px;font-weight:700;">{{ $order->card_type }}</div>
+        @endif
+    </td>
+    <td>
+        ৳{{ number_format($mfcAmount, 2) }}
+        @if($mfcAmount > 0 && trim((string) ($order->mfs_provider ?? '')) !== '')
+            <div class="text-muted" style="font-size:10px;font-weight:700;">{{ $order->mfs_provider }}</div>
+        @endif
+    </td>
     <td class="text-primary"><strong>৳{{ number_format($rowTotal, 2) }}</strong></td>
 </tr>
 @empty

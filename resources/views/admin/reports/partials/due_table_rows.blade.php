@@ -19,7 +19,7 @@
         <td><strong>৳{{ number_format((float) ($order->grand_total ?? 0), 0) }}</strong></td>
         <td>৳{{ number_format($paidAmount, 0) }}</td>
         <td><strong class="text-danger">৳{{ number_format(max(0, (float) ($order->due ?? 0)), 0) }}</strong></td>
-        <td>{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : (($order->payment_type ?? '') === 'Mobile Banking' ? 'MFS' : ($order->payment_type ?: 'N/A')) }}</td>
+        <td>{{ $order->reportPaymentText(0, true) }}</td>
         <td><span class="progga-badge progga-badge-warning">{{ $order->status ?? 'N/A' }}</span></td>
         <td><a href="{{ route('order.show', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-eye"></i> View</a></td>
     </tr>

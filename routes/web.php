@@ -125,6 +125,7 @@ Route::get('/refresh-csrf-token', function () {
 Route::post('pos-session-start', [App\Http\Controllers\Admin\PosController::class, 'startSession'])->name('pos.session.start');
 Route::post('pos-session-end', [App\Http\Controllers\Admin\PosController::class, 'endSession'])->name('pos.session.end');
 Route::post('pos-session-activity', [App\Http\Controllers\Admin\PosController::class, 'touchSessionActivity'])->name('pos.session.activity');
+Route::get('pos-session-status', [App\Http\Controllers\Admin\PosController::class, 'sessionStatus'])->name('pos.session.status');
 
 // POS Session History & Report Routes
 Route::get('/pos/session/report/{id}', [App\Http\Controllers\Admin\PosController::class, 'printSessionReport'])->name('pos.session.report');
@@ -174,7 +175,8 @@ Route::get('reviews', [App\Http\Controllers\Admin\ReviewController::class, 'inde
     Route::post('/pos/payment', [App\Http\Controllers\Admin\PosController::class, 'completePayment'])->name('pos.complete_payment');
 Route::get('orders/{id}/details', [App\Http\Controllers\Admin\OrderController::class, 'details'])->name('order.details');
 Route::get('/pos/invoice/{id}', [App\Http\Controllers\Admin\PosController::class, 'printInvoice'])->name('pos.invoice');
-// নতুন রাউট: প্রি-পেমেন্ট ইনভয়েস (Guest Bill)
+// Pre-payment invoice (Guest Bill)
+    Route::post('/pos/pre-invoice/{id}/snapshot', [App\Http\Controllers\Admin\PosController::class, 'savePreInvoiceSnapshot'])->name('pos.pre_invoice.snapshot');
     Route::get('/pos/pre-invoice/{id}', [App\Http\Controllers\Admin\PosController::class, 'printPreInvoice'])->name('pos.pre_invoice');
    // ==========================================
     // Kitchen (KOT) Routes
@@ -185,6 +187,7 @@ Route::get('/pos/invoice/{id}', [App\Http\Controllers\Admin\PosController::class
 
     // KOT প্রিন্ট করার জন্য নতুন রাউট
     Route::get('/kitchen/print-kot/{id}', [App\Http\Controllers\Admin\KitchenController::class, 'printKot'])->name('kitchen.print_kot');
+    Route::get('/kitchen/print-order-kot/{id}', [App\Http\Controllers\Admin\KitchenController::class, 'printMergedOrderKot'])->name('kitchen.print_order_kot');
 
 Route::get('get-subcategories/{id}', [App\Http\Controllers\Admin\FoodCategoryController::class, 'getSubcategories']);
 // Food Item Routes

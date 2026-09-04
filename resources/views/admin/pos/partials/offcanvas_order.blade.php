@@ -58,6 +58,14 @@
     </div>
     <div class="progga-oc-header-actions">
         <button type="button"
+                class="btn btn-sm btn-light fw-bold js-pos-print-preview"
+                data-url="{{ route('kitchen.print_order_kot', ['id' => $order->id]) }}"
+                data-title="KOT — Order #{{ $order->order_number }}"
+                title="Print merged KOT"
+                style="padding-left:10px;padding-right:10px;">
+            <i class="bi bi-printer me-1"></i> KOT
+        </button>
+        <button type="button"
                 class="btn btn-sm btn-light fw-bold progga-oc-meta-trigger"
                 data-bs-toggle="modal"
                 data-bs-target="#activeOrderMetaModal"
@@ -72,7 +80,22 @@
 
     <div class="progga-oc-section-label" style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #888; margin-bottom: 12px; letter-spacing: 0.5px;">Current Order Items</div>
 
+    @php
+        // Keep each KOT visually separate in the POS offcanvas.
+        // Identical foods from different KOTs are merged only by the dedicated
+        // merged-KOT print action, never in this operational order view.
+        $displayItemsByKot = $order->orderDetails->groupBy('order_kot_id');
+    @endphp
+
     @foreach($order->kots as $kot)
+        @php
+            $displayItems = $displayItemsByKot->get($kot->id, collect());
+        @endphp
+
+        @if($displayItems->isEmpty())
+            @continue
+        @endif
+
         <div class="progga-oc-kot">
             <div class="progga-oc-kot-head">
                 <div>
@@ -90,17 +113,18 @@
                 @endif
             </div>
 
-           @foreach($kot->orderDetails as $item)
+            @foreach($displayItems as $item)
                 @php
                     $addons = json_decode($item->addons, true) ?? [];
                     $isComplimentaryItem = (isset($item->is_complimentary) && $item->is_complimentary)
                         || ((float) $item->price <= 0 && (float) $item->subtotal <= 0);
+                    // Offcanvas rows are KOT-specific, so actions must target only
+                    // this exact order-detail row rather than matching rows in other KOTs.
+                    $mergedDetailIds = (string) $item->id;
                 @endphp
 
-                {{-- POS UI note. --}}
                 <div class="progga-oc-item {{ $item->is_unavailable ? 'opacity-50' : '' }}">
                     <span class="progga-oc-item-name">
-
                         @if($item->is_unavailable)
                             <span class="badge bg-danger" style="font-size: 9px; margin-right: 5px;">Unavailable</span>
                             <del class="text-muted">{{ $item->product_name }}</del>
@@ -121,7 +145,7 @@
                             <div style="font-size: 10px; color: #d33; font-style: italic; margin-top: 2px;">* {{ $item->food_note }}</div>
                         @endif
                     </span>
-                    <span class="progga-oc-item-qty">×{{ $item->quantity }}</span>
+                    <span class="progga-oc-item-qty">&times;{{ $item->quantity }}</span>
 
                     <span class="progga-oc-item-price">
                         @if($item->is_unavailable)
@@ -137,6 +161,7 @@
                                 title="{{ $isComplimentaryItem ? 'Return to normal food' : 'Convert to complimentary' }}"
                                 data-order-id="{{ $order->id }}"
                                 data-order-detail-id="{{ $item->id }}"
+                                data-order-detail-ids="{{ $mergedDetailIds }}"
                                 data-table-id="{{ $order->table_id }}"
                                 data-order-type="{{ $jsOrderType }}"
                                 data-is-complimentary="{{ $isComplimentaryItem ? 1 : 0 }}"
@@ -149,7 +174,7 @@
                         <button type="button"
                                 class="btn btn-sm btn-outline-danger progga-oc-item-delete"
                                 title="Delete item quantity"
-                                onclick="openOrderItemDeleteModal({{ $order->id }}, {{ $item->id }}, '{{ addslashes($item->product_name) }}', {{ (int) $item->quantity }})">
+                                onclick="openOrderItemDeleteModal({{ $order->id }}, '{{ $mergedDetailIds }}', '{{ addslashes($item->product_name) }}', {{ (int) $item->quantity }})">
                             <i class="bi bi-trash"></i>
                         </button>
                     @endif
@@ -301,6 +326,7 @@
                         table_booking_id: {{ $order->table_booking_id ?? 'null' }},
                         booking_advance: {{ $order->tableBooking->advance_amount ?? $order->booking_advance ?? 0 }},
                         items: @json($payItems),
+                        pre_invoice_snapshot: @json($order->pre_invoice_snapshot ?? null),
                         is_complimentary_order: {{ !empty($order->is_complimentary_order) ? 1 : 0 }}
                     })'>
                         <i class="bi bi-credit-card"></i> Payment
@@ -745,6 +771,7 @@
                 <div class="modal-body">
                     <input type="hidden" id="deleteOrderId" name="order_id">
                     <input type="hidden" id="deleteOrderDetailId" name="order_detail_id">
+                    <input type="hidden" id="deleteOrderDetailIds" name="order_detail_ids">
 
                     <div class="fw-bold mb-1" id="deleteOrderItemName"></div>
                     <div class="text-muted mb-3" style="font-size: 12px;">Available quantity: <strong id="deleteOrderItemMaxQty">0</strong></div>

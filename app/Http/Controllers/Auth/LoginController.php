@@ -11,6 +11,7 @@ use App\Models\Table;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use App\Services\PosSessionManagerResolver;
 
 class LoginController extends Controller
 {
@@ -41,22 +42,16 @@ class LoginController extends Controller
             ]);
         }
 
-        // Login never starts a POS session. It only expires an unfinished POS
-        // session when its last activity is older than Laravel's session lifetime.
-        $this->closeTimedOutPosSessionsForUser((int) $user->id);
-
-        $unfinishedSession = PosSession::where('user_id', $user->id)
-            ->where('status', 'Open')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($unfinishedSession) {
-            // Force the choice after a fresh login even if this browser tab still
-            // happens to contain old sessionStorage from a previous page.
-            $request->session()->put('force_pos_unfinished_prompt', $unfinishedSession->id);
-        } else {
-            $request->session()->forget('force_pos_unfinished_prompt');
+        // The POS work period is Manager-owned and shared. Any user's browser
+        // activity participates in the same Manager session timeout window.
+        $sessionManagerId = app(PosSessionManagerResolver::class)->resolveId($user);
+        if ($sessionManagerId) {
+            $this->closeTimedOutPosSessionsForUser($sessionManagerId);
         }
+
+        // A running shared Manager session is accepted automatically after login;
+        // do not ask each user/browser to Continue Previous or Start New.
+        $request->session()->forget('force_pos_unfinished_prompt');
 
         if ($user->hasRole('waiter')) {
             return redirect()->route('pos.index');
@@ -124,14 +119,9 @@ class LoginController extends Controller
                 return back()->with('error', $blockers['message']);
             }
 
-            $openSessions = PosSession::where('user_id', $user->id)
-                ->where('status', 'Open')
-                ->orderBy('id', 'asc')
-                ->get();
-
-            foreach ($openSessions as $session) {
-                $this->closePosSession($session, Carbon::now('Asia/Dhaka'));
-            }
+            // Do not close the shared Manager work period on user logout.
+            // It stays available to the Manager and other POS users until someone
+            // explicitly presses End Session or the inactivity timeout expires.
         }
 
         Auth::logout();

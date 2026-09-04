@@ -188,6 +188,21 @@
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Final Payment Depends on Kitchen Ready Status</label><label class="progga-toggle" style="margin-top:8px;"><input type="checkbox" name="final_payment_depends_on_kitchen_status" {{ ($pos->final_payment_depends_on_kitchen_status ?? false) ? 'checked' : '' }} data-on="Yes" data-off="No"><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ ($pos->final_payment_depends_on_kitchen_status ?? false) ? 'Yes—Ready required' : 'No—Pay anytime' }}</span></label>
 
                         </div></div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Given Money Manual Toggle Button</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox"
+                                           id="givenMoneyManualToggleEnabled"
+                                           name="given_money_manual_toggle_enabled"
+                                           value="1"
+                                           {{ ($pos->given_money_manual_toggle_enabled ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="givenMoneyManualToggleEnabledLabel">{{ ($pos->given_money_manual_toggle_enabled ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">On: Given Money starts at 0 and shows the manual Auto/Reset button. Off: the button is hidden and the payable amount is auto-filled, but the field remains editable.</small>
+                            </div>
+                        </div>
                         @if(auth()->user()->hasRole('Super Admin'))
                         <div class="col-md-6">
                             <div class="progga-form-group">
@@ -413,6 +428,14 @@
         randomHalfButtonVisibilityToggle.addEventListener('change', function () {
             var label = document.getElementById('randomHalfOrderButtonVisibleLabel');
             if (label) label.textContent = randomHalfButtonVisibilityToggle.checked ? 'On' : 'Off';
+        });
+    }
+
+    var givenMoneyManualToggleSetting = document.getElementById('givenMoneyManualToggleEnabled');
+    if (givenMoneyManualToggleSetting) {
+        givenMoneyManualToggleSetting.addEventListener('change', function () {
+            var label = document.getElementById('givenMoneyManualToggleEnabledLabel');
+            if (label) label.textContent = givenMoneyManualToggleSetting.checked ? 'On' : 'Off';
         });
     }
 

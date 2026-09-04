@@ -32,9 +32,11 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // Keep authenticated users signed in for 24 hours using Laravel's session lifetime.
+    'lifetime' => 60 * 24,
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    // Do not expire the login merely because the browser window is closed.
+    'expire_on_close' => false,
 
     /*
     |--------------------------------------------------------------------------

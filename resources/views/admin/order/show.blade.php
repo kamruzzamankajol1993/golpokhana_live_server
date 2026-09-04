@@ -5,6 +5,10 @@
 @php
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
     $deliveryPartnerName = $order->delivery_partner_display_name ?: 'Not selected';
+    $paymentType = trim((string) ($order->payment_type ?? ''));
+    $cardTypeName = trim((string) ($order->card_type ?? ''));
+    $mfsProviderName = trim((string) ($order->mfs_provider ?? ''));
+    $paymentMethodLabel = $paymentType === 'Card' ? 'Bank / Card' : ($paymentType === 'Mobile Banking' ? 'MFS / Mobile Banking' : $paymentType);
 @endphp
 <main class="progga-content">
     <div class="progga-page-header d-flex justify-content-between align-items-center mb-4">
@@ -64,7 +68,13 @@
         <div class="col-md-4">
             <div class="progga-card h-100 p-4" style="border-top: 4px solid var(--progga-success);">
                 <h5 class="mb-3" style="font-weight: 800; color: var(--progga-primary);"><i class="bi bi-credit-card me-2"></i> Payment Info</h5>
-                <p class="mb-2" style="font-size: 14px;"><strong>Method:</strong> <span class="badge bg-secondary px-2 py-1">{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : $order->payment_type }}</span></p>
+                <p class="mb-2" style="font-size: 14px;"><strong>Method:</strong> <span class="badge bg-secondary px-2 py-1">{{ $paymentMethodLabel }}</span></p>
+                @if($paymentType === 'Card' && $cardTypeName !== '')
+                    <p class="mb-2" style="font-size: 14px;"><strong>Card:</strong> <span class="badge bg-light text-dark border px-2 py-1">{{ $cardTypeName }}</span></p>
+                @endif
+                @if($paymentType === 'Mobile Banking' && $mfsProviderName !== '')
+                    <p class="mb-2" style="font-size: 14px;"><strong>MFS:</strong> <span class="badge bg-light text-dark border px-2 py-1">{{ $mfsProviderName }}</span></p>
+                @endif
                 <p class="mb-2" style="font-size: 14px;"><strong>Trx ID:</strong> {{ $order->transaction_id ?? 'N/A' }}</p>
                 @if(!empty($order->payment_remark))
                     <p class="mb-2" style="font-size: 14px;"><strong>Remark:</strong> {{ $order->payment_remark }}</p>
@@ -85,9 +95,9 @@
                     <div class="mt-3 p-2" style="background: rgba(33, 53, 42, 0.05); border-radius: 6px; font-size: 13px; border: 1px dashed var(--progga-border);">
                         <strong style="color: var(--progga-primary);">Split Breakdown:</strong><br>
                         Cash: <span style="font-weight:700;">৳{{ number_format($order->paid_in_cash, 0) }}</span> <br>
-                        Bank / Card: <span style="font-weight:700;">৳{{ number_format($order->paid_in_card, 0) }}</span> <br>
+                        Bank / Card{{ $cardTypeName !== '' ? ' (' . $cardTypeName . ')' : '' }}: <span style="font-weight:700;">৳{{ number_format($order->paid_in_card, 0) }}</span> <br>
                         Bank / Card Ref: <span style="font-weight:700;">{{ $order->split_card_reference ?? 'N/A' }}</span> <br>
-                        MFS: <span style="font-weight:700;">৳{{ number_format($order->paid_in_mfc, 0) }}</span> <br>
+                        MFS{{ $mfsProviderName !== '' ? ' (' . $mfsProviderName . ')' : '' }}: <span style="font-weight:700;">৳{{ number_format($order->paid_in_mfc, 0) }}</span> <br>
                         MFS Ref: <span style="font-weight:700;">{{ $order->split_mfs_reference ?? 'N/A' }}</span>
                     </div>
                 @endif

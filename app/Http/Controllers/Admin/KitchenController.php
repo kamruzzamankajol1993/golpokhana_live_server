@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\OrderKot;
+use App\Models\Order;
 
 class KitchenController extends Controller
 {
@@ -138,6 +139,83 @@ class KitchenController extends Controller
         $poweredBySystemName = \App\Models\RestaurantSetting::query()->value('name');
 
         return view('admin.kitchen.print_kot', compact('kot', 'isRunningOrder', 'poweredBySystemName'));
+    }
+
+    /**
+     * Print one order-level KOT by merging all sent KOTs for the order.
+     * Identical food configuration (food/addons/note/complimentary state) is shown once
+     * with the quantity summed across KOT-1, KOT-2, KOT-3, ...
+     */
+    public function printMergedOrderKot($id)
+    {
+        $order = Order::with([
+                'table',
+                'waiter',
+                'customer',
+                'kots.orderDetails',
+            ])
+            ->findOrFail($id);
+
+        // The merged KOT is an order-level print, so every KOT created for
+        // this order is included. Individual unavailable items are still skipped.
+        $kots = $order->kots
+            ->sortBy('id')
+            ->values();
+
+        $merged = [];
+        foreach ($kots as $kot) {
+            foreach ($kot->orderDetails as $item) {
+                if ((int) ($item->is_unavailable ?? 0) === 1) {
+                    continue;
+                }
+
+                $addons = json_decode($item->addons ?? '[]', true);
+                if (!is_array($addons)) {
+                    $addons = [];
+                }
+
+                $normalizedAddons = collect($addons)->map(function ($addon) {
+                    return [
+                        'name' => trim((string) ($addon['name'] ?? '')),
+                        'price' => (float) ($addon['price'] ?? 0),
+                    ];
+                })->values()->all();
+
+                $key = implode('|', [
+                    (string) ($item->product_id ?? ''),
+                    strtolower(trim((string) ($item->product_name ?? ''))),
+                    json_encode($normalizedAddons),
+                    trim((string) ($item->food_note ?? '')),
+                    !empty($item->is_complimentary) ? '1' : '0',
+                ]);
+
+                if (!isset($merged[$key])) {
+                    $merged[$key] = (object) [
+                        'product_id' => $item->product_id,
+                        'product_name' => $item->product_name,
+                        'quantity' => 0,
+                        'addons' => json_encode($normalizedAddons),
+                        'food_note' => $item->food_note,
+                        'is_complimentary' => !empty($item->is_complimentary),
+                    ];
+                }
+
+                $merged[$key]->quantity += max(1, (int) ($item->quantity ?? 1));
+            }
+        }
+
+        $mergedKotItems = collect(array_values($merged));
+        $kotNumbers = $kots->pluck('kot_number')->filter()->values();
+        $lastKotAt = optional($kots->last())->created_at ?: $order->updated_at ?: $order->created_at;
+        $poweredBySystemName = \App\Models\RestaurantSetting::query()->value('name');
+
+        return view('admin.kitchen.print_merged_kot', compact(
+            'order',
+            'mergedKotItems',
+            'kotNumbers',
+            'lastKotAt',
+            'poweredBySystemName'
+        ));
     }
 
     // AJAX: Mark Item as Unavailable & Recalculate Bill

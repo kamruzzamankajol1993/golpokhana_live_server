@@ -70,6 +70,7 @@
         </div>
     </div>
 </main>
+@include('admin.pos.partials.print_preview_modal')
 @endsection
 
 @section('script')

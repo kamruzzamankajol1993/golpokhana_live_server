@@ -165,11 +165,20 @@
             @php
                 $amount = (float) ($incomeRows[$methodKey] ?? 0);
                 $percentage = $totalIncome > 0 ? ($amount / $totalIncome) * 100 : 0;
+                $providerRows = $methodKey === 'Card'
+                    ? ($cardProviderIncome ?? [])
+                    : ($methodKey === 'MFC' ? ($mfsProviderIncome ?? []) : []);
             @endphp
             <tr>
                 <td>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
                 <td class="text-end fw-bold">{{ round($amount) }}</td>
             </tr>
+            @foreach($providerRows as $providerName => $providerAmount)
+                <tr style="font-size:11px;color:#444;">
+                    <td style="padding-left:12px;">↳ {{ $providerName }}</td>
+                    <td class="text-end">{{ round($providerAmount) }}</td>
+                </tr>
+            @endforeach
         @endforeach
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total collection</td>

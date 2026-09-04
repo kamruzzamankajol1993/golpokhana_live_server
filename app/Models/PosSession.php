@@ -13,6 +13,8 @@ class PosSession extends Model
 
     protected $fillable = [
         'user_id',
+        'started_by_user_id',
+        'ended_by_user_id',
         'weekday',
         'start_time',
         'last_activity_at',
@@ -36,6 +38,16 @@ class PosSession extends Model
     /**
      * রিলেশনশিপ: সেশনটি কোন ইউজারের
      */
+    public function startedBy()
+    {
+        return $this->belongsTo(User::class, 'started_by_user_id');
+    }
+
+    public function endedBy()
+    {
+        return $this->belongsTo(User::class, 'ended_by_user_id');
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');

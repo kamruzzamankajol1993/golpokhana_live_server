@@ -100,6 +100,51 @@
                 </label>
               </div>
 
+              <div class="row g-2 align-items-end mb-3" id="singlePaymentProviderRow">
+                  <div id="cardTypeDiv" class="col-6" style="display:none;">
+                      <label style="font-size:12px;font-weight:700;color:#555;margin-bottom:5px;">Card Name <span class="text-danger">*</span></label>
+                      <select name="card_type" id="cardTypeSelect" class="form-select" style="border:1.5px solid var(--progga-border);border-radius:8px;font-size:13px;">
+                          <option value="">— Select Card —</option>
+                          <option value="Visa">Visa</option>
+                          <option value="Mastercard">Mastercard</option>
+                          <option value="American Express">American Express</option>
+                          <option value="UnionPay">UnionPay</option>
+                          <option value="JCB">JCB</option>
+                          <option value="Nexus">Nexus</option>
+                          <option value="Diners Club">Diners Club</option>
+                          <option value="GPay">GPay</option>
+                          <option value="Other">Other</option>
+                      </select>
+                  </div>
+
+                  <div id="mfsProviderDiv" class="col-6" style="display:none;">
+                      <label style="font-size:12px;font-weight:700;color:#555;margin-bottom:5px;">MFS Name <span class="text-danger">*</span></label>
+                      <select name="mfs_provider" id="mfsProviderSelect" class="form-select" style="border:1.5px solid var(--progga-border);border-radius:8px;font-size:13px;">
+                          <option value="">— Select MFS —</option>
+                          <option value="Rocket">Rocket</option>
+                          <option value="bKash">bKash</option>
+                          <option value="MYCash">MYCash</option>
+                          <option value="Islami Bank mCash">Islami Bank mCash</option>
+                          <option value="tap">tap</option>
+                          <option value="FirstCash">FirstCash</option>
+                          <option value="Upay">Upay</option>
+                          <option value="OK Wallet">OK Wallet</option>
+                          <option value="RUPALICASH">RUPALICASH</option>
+                          <option value="TeleCash">TeleCash</option>
+                          <option value="Islamic Wallet">Islamic Wallet</option>
+                          <option value="Meghna Pay">Meghna Pay</option>
+                          <option value="Nagad">Nagad</option>
+                          <option value="LENDEN">LENDEN</option>
+                          <option value="Other">Other</option>
+                      </select>
+                  </div>
+
+                  <div class="progga-pm-ref col-6" id="transactionDiv" style="display:none;">
+                      <label id="transactionReferenceLabel" style="font-size:12px;font-weight:700;color:#555;margin-bottom:5px;">Reference <span class="text-danger">*</span></label>
+                      <input type="text" name="transaction_id" class="form-control" placeholder="Reference Number" style="border:1.5px solid var(--progga-border);border-radius:8px;font-size:13px;">
+                  </div>
+              </div>
+
               <div id="splitPaymentDiv" style="display: none; background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed #ccc;">
                   <div class="row g-2">
                       <div class="col-4">
@@ -115,6 +160,44 @@
                           <input type="number" name="paid_in_mfc" id="splitMfc" class="form-control split-input p-1 text-center" value="0" min="0" step="0.01">
                       </div>
                   </div>
+                  <div class="row g-2 mt-1" id="splitProviderFields">
+                      <div class="col-6">
+                          <label style="font-size:11px;font-weight:700;color:#555;">Card Type <span id="splitCardTypeRequired" class="text-danger" style="display:none;">*</span></label>
+                          <select name="split_card_type" id="splitCardType" class="form-select form-select-sm">
+                              <option value="">— Select Card —</option>
+                              <option value="Visa">Visa</option>
+                              <option value="Mastercard">Mastercard</option>
+                              <option value="American Express">American Express</option>
+                              <option value="UnionPay">UnionPay</option>
+                              <option value="JCB">JCB</option>
+                              <option value="Nexus">Nexus</option>
+                              <option value="Diners Club">Diners Club</option>
+                              <option value="GPay">GPay</option>
+                              <option value="Other">Other</option>
+                          </select>
+                      </div>
+                      <div class="col-6">
+                          <label style="font-size:11px;font-weight:700;color:#555;">MFS Service <span id="splitMfsProviderRequired" class="text-danger" style="display:none;">*</span></label>
+                          <select name="split_mfs_provider" id="splitMfsProvider" class="form-select form-select-sm">
+                              <option value="">— Select MFS —</option>
+                              <option value="Rocket">Rocket</option>
+                              <option value="bKash">bKash</option>
+                              <option value="MYCash">MYCash</option>
+                              <option value="Islami Bank mCash">Islami Bank mCash</option>
+                              <option value="tap">tap</option>
+                              <option value="FirstCash">FirstCash</option>
+                              <option value="Upay">Upay</option>
+                              <option value="OK Wallet">OK Wallet</option>
+                              <option value="RUPALICASH">RUPALICASH</option>
+                              <option value="TeleCash">TeleCash</option>
+                              <option value="Islamic Wallet">Islamic Wallet</option>
+                              <option value="Meghna Pay">Meghna Pay</option>
+                              <option value="Nagad">Nagad</option>
+                              <option value="LENDEN">LENDEN</option>
+                              <option value="Other">Other</option>
+                          </select>
+                      </div>
+                  </div>
                   <div class="row g-2 mt-1" id="splitReferenceFields">
                       <div class="col-6">
                           <label style="font-size: 11px; font-weight: 700; color: #555;">Bank / Card Reference Number <span id="splitCardReferenceRequired" class="text-danger" style="display:none;">*</span></label>
@@ -125,11 +208,6 @@
                           <input type="text" name="split_mfs_reference" id="splitMfsReference" class="form-control" maxlength="255" placeholder="MFS Reference Number">
                       </div>
                   </div>
-              </div>
-
-              <div class="progga-pm-ref" id="transactionDiv" style="display: none; margin-bottom: 15px;">
-                  <label id="transactionReferenceLabel" style="font-size: 12px; font-weight: 700; color: #555;">Bank / Card Reference Number <span class="text-danger">*</span></label>
-                  <input type="text" name="transaction_id" class="form-control" placeholder="Bank / Card Reference Number" style="border: 1.5px solid var(--progga-border); border-radius: 8px;">
               </div>
 
               <div class="progga-form-label" style="font-weight:700; margin:16px 0 10px; font-size: 14px; color: var(--progga-primary);">
@@ -157,7 +235,14 @@
 
                 <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; color: #333; margin-bottom:10px;">
                   <span>Given Money</span>
-                  <input type="number" id="payGivenMoney" name="given_money" class="form-control form-control-sm text-end" style="width: 140px; font-weight:bold; border: 1.5px solid var(--progga-border);" value="" placeholder="Enter amount" autocomplete="off" min="0" step="0.01">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <input type="number" id="payGivenMoney" name="given_money" class="form-control form-control-sm text-end" style="width: 140px; font-weight:bold; border: 1.5px solid var(--progga-border);" value="0" placeholder="0" autocomplete="off" min="0" step="0.01">
+                    @if(($posSetting->given_money_manual_toggle_enabled ?? true))
+                    <button type="button" id="btnToggleGivenMoney" class="btn btn-outline-secondary btn-sm" style="width:32px; height:31px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px;" title="Auto / Reset Given Money" aria-label="Auto or reset Given Money">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    @endif
+                  </div>
                 </div>
 
                 <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 900; color: #198754; margin-bottom:10px;">
@@ -251,24 +336,51 @@ $(document).on('click', '#btnPreInvoice', function() {
         return;
     }
 
-    let discType = $('#modal_discount_type').val();
-    let discVal = $('#modal_discount_value').val() || 0;
-    let params = new URLSearchParams();
-    params.set('disc_type', discType);
-    params.set('disc_val', discVal);
+    let payload = {
+        disc_type: $('#modal_discount_type').val() || 'fixed',
+        disc_val: $('#modal_discount_value').val() || 0,
+        product_discounts: {},
+        _token: $('meta[name="csrf-token"]').attr('content')
+    };
 
     $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
         let row = $(this);
         let detailId = parseInt(row.data('detail-id') || 0, 10);
         let value = Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()));
 
-        if (detailId > 0 && value > 0) {
-            params.set('product_discounts[' + detailId + '][type]', row.find('.product-discount-type').val() || 'fixed');
-            params.set('product_discounts[' + detailId + '][value]', value);
+        if (detailId > 0) {
+            payload.product_discounts[detailId] = {
+                type: row.find('.product-discount-type').val() || 'fixed',
+                value: value
+            };
         }
     });
 
-    let url = "{{ url('/pos/pre-invoice') }}/" + orderId + "?" + params.toString();
-    window.open(url, '_blank');
+    let btn = $(this);
+    let oldHtml = btn.html();
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Saving...');
+
+    $.ajax({
+        url: "{{ url('/pos/pre-invoice') }}/" + orderId + '/snapshot',
+        type: 'POST',
+        data: payload,
+        success: function(res) {
+            if (res.status === 'success' && res.preview_url) {
+                window.openPosPrintPreview(res.preview_url, 'Pre-Invoice', { returnToPos: true });
+                return;
+            }
+
+            Swal.fire('Error', res.message || 'Could not prepare pre-invoice.', 'error');
+        },
+        error: function(xhr) {
+            let message = xhr.responseJSON && xhr.responseJSON.message
+                ? xhr.responseJSON.message
+                : 'Could not prepare pre-invoice.';
+            Swal.fire('Error', message, 'error');
+        },
+        complete: function() {
+            btn.prop('disabled', false).html(oldHtml);
+        }
+    });
 });
 </script>
