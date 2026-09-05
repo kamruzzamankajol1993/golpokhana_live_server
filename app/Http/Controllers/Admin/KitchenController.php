@@ -196,6 +196,7 @@ class KitchenController extends Controller
                         'quantity' => 0,
                         'addons' => json_encode($normalizedAddons),
                         'food_note' => $item->food_note,
+                        'complimentary_note' => $item->complimentary_note ?? null,
                         'is_complimentary' => !empty($item->is_complimentary),
                     ];
                 }

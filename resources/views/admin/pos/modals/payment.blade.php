@@ -3,8 +3,8 @@
     <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
 
       <div class="modal-header" style="background: var(--progga-primary); padding: 16px 20px;">
-        <h5 class="modal-title" style="color: #fff; font-size: 15px; font-weight: 800;">
-          <i class="bi bi-credit-card me-2"></i>Checkout &amp; Payment — Table <span id="payTableLabel">—</span>
+        <h5 class="modal-title" id="paymentModalTitle" style="color: #fff; font-size: 15px; font-weight: 800;">
+          <i id="paymentModalTitleIcon" class="bi bi-credit-card me-2"></i><span id="paymentModalTitleText">Checkout &amp; Payment</span> — Table <span id="payTableLabel">—</span>
         </h5>
         <button type="button" class="btn-close" style="filter: invert(1) brightness(2);" data-bs-dismiss="modal"></button>
       </div>
@@ -70,6 +70,7 @@
                 <textarea name="remark" id="paymentRemark" class="form-control" rows="2" maxlength="1000" placeholder="Referred by Whom" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px; resize: vertical;"></textarea>
               </div>
 
+              <div id="paymentMethodSection">
               <div class="progga-form-label" style="font-weight:700; margin-bottom:10px; font-size: 14px; color: var(--progga-primary);">
                 Payment Method
               </div>
@@ -209,7 +210,9 @@
                       </div>
                   </div>
               </div>
+              </div>
 
+              <div id="paymentAmountSection">
               <div class="progga-form-label" style="font-weight:700; margin:16px 0 10px; font-size: 14px; color: var(--progga-primary);">
                 Payment Amount
               </div>
@@ -254,12 +257,10 @@
                   <span>DUE AMOUNT</span><span id="payDueAmount">৳0</span>
                 </div>
               </div>
+              </div>
 
               <div class="d-flex gap-2" style="margin-top:20px;">
-                <button type="button" id="btnPreInvoice" class="progga-btn progga-btn-outline w-50" style="padding: 12px; font-size: 13px; font-weight: 700; border-radius: 10px;">
-                  <i class="bi bi-printer"></i> Print Pre-Invoice
-                </button>
-                <button type="submit" class="progga-btn progga-btn-secondary w-50" style="padding: 12px; font-size: 13px; font-weight: 700; border-radius: 10px; border: none;">
+                <button type="submit" id="payFormSubmitBtn" class="progga-btn progga-btn-secondary w-100" style="padding: 12px; font-size: 13px; font-weight: 700; border-radius: 10px; border: none;">
                   <i class="bi bi-check-circle-fill"></i> Confirm Payment
                 </button>
               </div>
@@ -327,60 +328,5 @@ function posMoney(value) {
     return Math.round(posPaymentNumber(value));
 }
 
-// Payment state/calculation is owned by the POS page script. Keep only the
-// pre-invoice action here because this modal partial owns that button.
-$(document).on('click', '#btnPreInvoice', function() {
-    let orderId = $('#payOrderId').val();
-    if(!orderId) {
-        Swal.fire('Info', 'Please send the order to kitchen first to generate a pre-invoice.', 'info');
-        return;
-    }
-
-    let payload = {
-        disc_type: $('#modal_discount_type').val() || 'fixed',
-        disc_val: $('#modal_discount_value').val() || 0,
-        product_discounts: {},
-        _token: $('meta[name="csrf-token"]').attr('content')
-    };
-
-    $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
-        let row = $(this);
-        let detailId = parseInt(row.data('detail-id') || 0, 10);
-        let value = Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()));
-
-        if (detailId > 0) {
-            payload.product_discounts[detailId] = {
-                type: row.find('.product-discount-type').val() || 'fixed',
-                value: value
-            };
-        }
-    });
-
-    let btn = $(this);
-    let oldHtml = btn.html();
-    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Saving...');
-
-    $.ajax({
-        url: "{{ url('/pos/pre-invoice') }}/" + orderId + '/snapshot',
-        type: 'POST',
-        data: payload,
-        success: function(res) {
-            if (res.status === 'success' && res.preview_url) {
-                window.openPosPrintPreview(res.preview_url, 'Pre-Invoice', { returnToPos: true });
-                return;
-            }
-
-            Swal.fire('Error', res.message || 'Could not prepare pre-invoice.', 'error');
-        },
-        error: function(xhr) {
-            let message = xhr.responseJSON && xhr.responseJSON.message
-                ? xhr.responseJSON.message
-                : 'Could not prepare pre-invoice.';
-            Swal.fire('Error', message, 'error');
-        },
-        complete: function() {
-            btn.prop('disabled', false).html(oldHtml);
-        }
-    });
-});
+// Payment state/calculation is owned by the POS page script.
 </script>

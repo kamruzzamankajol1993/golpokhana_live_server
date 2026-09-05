@@ -203,6 +203,54 @@
                                 <small class="d-block text-muted mt-2">On: Given Money starts at 0 and shows the manual Auto/Reset button. Off: the button is hidden and the payable amount is auto-filled, but the field remains editable.</small>
                             </div>
                         </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Show Discount Percentage on Invoice</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox"
+                                           name="show_honored_percentage_on_invoice"
+                                           value="1"
+                                           {{ ($pos->show_honored_percentage_on_invoice ?? true) ? 'checked' : '' }}
+                                           data-on="On"
+                                           data-off="Off">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->show_honored_percentage_on_invoice ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">On: Product Discount and Honored show their percentage on Pre-Invoice and Final Invoice. Flat discounts are converted to their equivalent percentage. Off: discount percentages are hidden.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Complimentary Note Required</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox"
+                                           name="complimentary_note_required"
+                                           value="1"
+                                           {{ ($pos->complimentary_note_required ?? false) ? 'checked' : '' }}
+                                           data-on="Yes"
+                                           data-off="No">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->complimentary_note_required ?? false) ? 'Yes' : 'No' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Yes: each food added through Complimentary Mode must have its cart Note, and an already ordered food must have a Note when it is changed to Complimentary. No: the Note remains optional in both flows.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Dine-In Waiter Required</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox"
+                                           name="dine_in_waiter_required"
+                                           value="1"
+                                           {{ ($pos->dine_in_waiter_required ?? false) ? 'checked' : '' }}
+                                           data-on="Yes"
+                                           data-off="No">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->dine_in_waiter_required ?? false) ? 'Yes' : 'No' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Yes: a waiter must be assigned before a Dine-In order can start. Takeaway and Delivery remain unaffected.</small>
+                            </div>
+                        </div>
                         @if(auth()->user()->hasRole('Super Admin'))
                         <div class="col-md-6">
                             <div class="progga-form-group">

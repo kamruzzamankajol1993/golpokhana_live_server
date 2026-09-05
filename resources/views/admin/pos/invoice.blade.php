@@ -8,6 +8,11 @@
     $feedbackUrl = ($feedbackBaseUrl !== '' && !empty($order->feedback_token))
         ? $feedbackBaseUrl . '/feedback/' . $order->feedback_token
         : null;
+    $showDiscountPercentageOnInvoice = (bool) ($posSetting->show_honored_percentage_on_invoice ?? true);
+    $formatDiscountPercent = static function ($percent) {
+        $percent = round(max(0, min(100, (float) $percent)), 2);
+        return rtrim(rtrim(number_format($percent, 2, '.', ''), '0'), '.');
+    };
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -325,7 +330,23 @@
 
               {{-- যদি Unavailable না হয়, তবেই ইনভয়েসে প্রিন্ট হবে --}}
               @if(!$item->is_unavailable)
-                  @php $addons = json_decode($item->addons, true) ?? []; @endphp
+                  @php
+                    $addons = json_decode($item->addons, true) ?? [];
+                    $itemProductDiscountAmount = (float) ($item->product_discount_amount ?? 0);
+                    $itemProductDiscountBase = max(0, (float) ($item->subtotal ?? 0));
+                    if (($item->product_discount_type ?? 'fixed') === 'percentage' && (float) ($item->product_discount_value ?? 0) > 0) {
+                        $itemProductDiscountPercent = (float) $item->product_discount_value;
+                    } else {
+                        $itemProductDiscountPercent = $itemProductDiscountBase > 0
+                            ? ($itemProductDiscountAmount / $itemProductDiscountBase) * 100
+                            : 0;
+                    }
+                    $itemProductDiscountPercentText = $formatDiscountPercent($itemProductDiscountPercent);
+                    $foodNoteText = trim((string) ($item->food_note ?? ''));
+                    $complimentaryAuthorizationNote = trim((string) ($item->complimentary_note ?? ''));
+                    $showPrintableFoodNote = $foodNoteText !== ''
+                        && !($complimentaryAuthorizationNote !== '' && $foodNoteText === $complimentaryAuthorizationNote);
+                  @endphp
                   <tr>
                     <td>{{ $item->quantity }}</td>
                     <td>
@@ -334,10 +355,10 @@
                         <div class="bill-item-note">Complimentary</div>
                       @endif
                       @if(($item->product_discount_amount ?? 0) > 0)
-                        <div class="bill-item-note">Product Discount</div>
+                        <div class="bill-item-note">Product Discount{{ $showDiscountPercentageOnInvoice && $itemProductDiscountPercent > 0 ? ' (' . $itemProductDiscountPercentText . '%)' : '' }}</div>
                       @endif
-                      @if($item->food_note)
-                        <div class="bill-item-note">{{ $item->food_note }}</div>
+                      @if($showPrintableFoodNote)
+                        <div class="bill-item-note">{{ $foodNoteText }}</div>
                       @endif
                       @if(count($addons) > 0)
                         <div class="bill-item-note">
@@ -384,15 +405,82 @@
         </div>
         @endif
 @if(($order->product_discount_amount ?? 0) > 0)
+        @php
+            $productDiscountAmountForPercent = max(0, (float) ($order->product_discount_amount ?? 0));
+            $productDiscountItems = collect($mergedOrderItems ?? $order->orderDetails ?? []);
+            $productDiscountPercentLabels = [];
+
+            foreach ($productDiscountItems as $discountItem) {
+                if (!empty($discountItem->is_unavailable)) {
+                    continue;
+                }
+
+                $lineDiscountAmount = max(0, (float) ($discountItem->product_discount_amount ?? 0));
+                if ($lineDiscountAmount <= 0) {
+                    continue;
+                }
+
+                $lineBase = max(0, (float) ($discountItem->subtotal ?? 0));
+                $lineType = (string) ($discountItem->product_discount_type ?? 'fixed');
+                $lineValue = max(0, (float) ($discountItem->product_discount_value ?? 0));
+
+                if ($lineType === 'percentage' && $lineValue > 0) {
+                    $linePercent = $lineValue;
+                } else {
+                    // A fixed product discount is converted against that product's own subtotal,
+                    // not the full order subtotal. This keeps the summary aligned with the line item.
+                    $linePercent = $lineBase > 0
+                        ? ($lineDiscountAmount / $lineBase) * 100
+                        : 0;
+                }
+
+                if ($linePercent > 0) {
+                    $formattedLinePercent = $formatDiscountPercent($linePercent);
+                    if ($formattedLinePercent !== '' && !in_array($formattedLinePercent, $productDiscountPercentLabels, true)) {
+                        $productDiscountPercentLabels[] = $formattedLinePercent;
+                    }
+                }
+            }
+
+            $productDiscountPercentLabel = implode('%, ', $productDiscountPercentLabels);
+            if ($productDiscountPercentLabel !== '') {
+                $productDiscountPercentLabel .= '%';
+            }
+        @endphp
         <div class="bill-total-row discount">
-          <span>Product Discount</span>
-          <span>− {{ number_format($order->product_discount_amount, 0) }}</span>
+          <span>Product Discount{{ $showDiscountPercentageOnInvoice && $productDiscountPercentLabel !== '' ? ' (' . $productDiscountPercentLabel . ')' : '' }}</span>
+          <span>− {{ number_format($productDiscountAmountForPercent, 0) }}</span>
         </div>
         @endif
         @if($order->discount_amount > 0)
+        @php
+            $showHonoredPercentageOnInvoice = $showDiscountPercentageOnInvoice;
+            $honoredSnapshot = is_array($order->pre_invoice_snapshot ?? null) ? $order->pre_invoice_snapshot : [];
+            $honoredDiscountType = (string) ($order->discount_type ?? ($honoredSnapshot['discount_type'] ?? 'fixed'));
+            $honoredBaseSubtotal = (float) ($order->subtotal ?? ($honoredSnapshot['subtotal'] ?? 0));
+            $honoredDiscountAmount = (float) ($order->discount_amount ?? ($honoredSnapshot['discount_amount'] ?? 0));
+
+            if ($honoredDiscountType === 'percentage') {
+                $honoredDiscountPercent = (float) ($order->discount_value ?? 0);
+                if ($honoredDiscountPercent <= 0) {
+                    $honoredDiscountPercent = (float) ($honoredSnapshot['discount_value'] ?? 0);
+                }
+                if ($honoredDiscountPercent <= 0 && $honoredBaseSubtotal > 0) {
+                    $honoredDiscountPercent = ($honoredDiscountAmount / $honoredBaseSubtotal) * 100;
+                }
+            } else {
+                // Flat discount is displayed as its equivalent percentage of the same subtotal base.
+                $honoredDiscountPercent = $honoredBaseSubtotal > 0
+                    ? ($honoredDiscountAmount / $honoredBaseSubtotal) * 100
+                    : 0;
+            }
+
+            $honoredDiscountPercent = round(max(0, min(100, $honoredDiscountPercent)), 2);
+            $honoredPercentText = rtrim(rtrim(number_format($honoredDiscountPercent, 2, '.', ''), '0'), '.');
+        @endphp
         <div class="bill-total-row discount">
-          <span>Honored</span>
-          <span>− {{ number_format($order->discount_amount, 0) }}</span>
+          <span>Honored{{ $showHonoredPercentageOnInvoice && $honoredDiscountPercent > 0 ? ' (' . $honoredPercentText . '%)' : '' }}</span>
+          <span>− {{ number_format($honoredDiscountAmount, 0) }}</span>
         </div>
         @endif
         <div class="bill-total-row grand">

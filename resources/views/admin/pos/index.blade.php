@@ -774,7 +774,11 @@
     let currentCat = '';
     let isComplimentaryMode = false;
     let posComplimentaryActionPassword = '';
+    let posComplimentaryNote = '';
+    let isOffcanvasComplimentaryMode = false;
     let isWaiter = @json(auth()->user()->hasRole('waiter'));
+    const complimentaryNoteRequired = @json((bool) ($posSetting->complimentary_note_required ?? false));
+    const dineInWaiterRequired = @json((bool) ($posSetting->dine_in_waiter_required ?? false));
 
     function updatePosSessionTimer() {
         var timers = document.querySelectorAll('[data-pos-session-timer]');
@@ -971,6 +975,8 @@
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
         posComplimentaryActionPassword = '';
+        posComplimentaryNote = '';
+        isOffcanvasComplimentaryMode = false;
         $('#newCustomerForm').hide();
         $('#customerSearchContainer').show();
         $('#new_cus_name, #new_cus_phone').val('');
@@ -1417,16 +1423,23 @@
 
         if (!$toggle.is(':checked')) {
             posComplimentaryActionPassword = '';
+            posComplimentaryNote = '';
+            isOffcanvasComplimentaryMode = false;
             return;
         }
 
-        // Keep the option off until the server confirms the action password.
+        // Whole-order complimentary keeps the existing password-only flow.
+        // The note rule is for single-food/offcanvas complimentary actions.
+        posComplimentaryNote = '';
+        isOffcanvasComplimentaryMode = false;
         $toggle.prop('checked', false);
         getPosActionPassword(function(pass) {
             posComplimentaryActionPassword = pass;
             $toggle.prop('checked', true);
         }, function() {
             posComplimentaryActionPassword = '';
+            posComplimentaryNote = '';
+            isOffcanvasComplimentaryMode = false;
             $toggle.prop('checked', false);
         });
     });
@@ -1508,7 +1521,14 @@
             currentOrder.delivery_partner_name = '';
         }
 
-        currentOrder.waiter_id = $('#posWaiterSelect').val();
+        const selectedWaiterId = $('#posWaiterSelect').val();
+        if (selectedOrderType === 'dine_in' && dineInWaiterRequired && !selectedWaiterId) {
+            $('#posWaiterSelect').addClass('is-invalid').focus();
+            Swal.fire('Waiter Required', 'Please assign a waiter before starting a Dine-In order.', 'warning');
+            return false;
+        }
+        $('#posWaiterSelect').removeClass('is-invalid');
+        currentOrder.waiter_id = selectedWaiterId || null;
         currentOrder.waiter_name = currentOrder.waiter_id ? $('#posWaiterSelect option:selected').text() : 'Unassigned';
         currentOrder.is_walk_in = $('#posWalkIn').is(':checked') ? 1 : 0;
         currentOrder.order_notes = $('#order_notes').val() || '';
@@ -1577,6 +1597,8 @@
     });
 
     function addToCart(foodId, addons) {
+        // Complimentary Mode needs authorization only here. The complimentary Note is
+        // entered product-wise from each cart row, not in the authorization popup.
         if (isComplimentaryMode && !posComplimentaryActionPassword) {
             getPosActionPassword(function(pass) {
                 posComplimentaryActionPassword = pass;
@@ -1664,6 +1686,8 @@
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
         posComplimentaryActionPassword = '';
+        posComplimentaryNote = '';
+        isOffcanvasComplimentaryMode = false;
 
         if(currentOrder.order_type === 'dine_in' && currentOrder.table_id) {
             let tableCard = $('.progga-pos-table-card[data-table-id="' + currentOrder.table_id + '"]');
@@ -1766,14 +1790,48 @@
         });
     }
 
+    window.cartNoteSaveRequests = window.cartNoteSaveRequests || {};
+
     window.updateItemNote = function(cartId, note) {
         let payload = getCartParams();
         payload.cart_id = cartId;
         payload.note = note;
-        $.post("{{ route('pos.cart.update_note') }}", payload, function(res) {
-            showToast('Info', 'Note updated', 'info');
-        });
+
+        // Save the cart note silently. Do not call a page-specific toast helper here:
+        // Send to Kitchen waits for this jqXHR, so a missing UI helper must never
+        // interrupt the complimentary note save / KOT flow.
+        const request = $.post("{{ route('pos.cart.update_note') }}", payload);
+
+        window.cartNoteSaveRequests[cartId] = request;
+        return request;
     }
+
+    function validateComplimentaryCartNotes() {
+        if (!complimentaryNoteRequired) return true;
+
+        let firstMissing = null;
+        $('#posCartBody .progga-pos-item-note-input[data-is-complimentary="1"]').each(function() {
+            const $input = $(this);
+            const note = String($input.val() || '').trim();
+            const missing = note === '';
+            $input.toggleClass('is-invalid', missing);
+            if (missing && !firstMissing) firstMissing = $input;
+        });
+
+        if (firstMissing) {
+            firstMissing.focus();
+            window.Swal.fire('Note Required', 'Please enter a note for every complimentary food before sending to kitchen.', 'warning');
+            return false;
+        }
+
+        return true;
+    }
+
+    $(document).on('input', '.progga-pos-item-note-input[data-is-complimentary="1"]', function() {
+        if (String($(this).val() || '').trim() !== '') {
+            $(this).removeClass('is-invalid');
+        }
+    });
 
     $(document).on('change', 'input[name="payment_method"]', function() {
         // Keep reference field visible for Card and Mobile Banking payment.
@@ -1791,6 +1849,40 @@
 
         if (currentOrder.order_type === 'dine_in' && !currentOrder.table_id) {
             window.proggaToast('Please select a table first!', 'danger');
+            return;
+        }
+
+        // Commit the currently focused cart Note before checking/sending the order.
+        // This prevents a quick click on Send to Kitchen from racing the Note AJAX save.
+        const activeElement = document.activeElement;
+        if (activeElement && $(activeElement).hasClass('progga-pos-item-note-input')) {
+            $(activeElement).trigger('change');
+        }
+
+        if (!validateComplimentaryCartNotes()) {
+            return;
+        }
+
+        const pendingNoteSaves = Object.values(window.cartNoteSaveRequests || {})
+            .filter(function(xhr) { return xhr && xhr.readyState !== 4; });
+
+        if (pendingNoteSaves.length) {
+            const waitBtn = $('#btnSendToKitchen');
+            const waitHtml = waitBtn.html();
+            waitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Saving notes...');
+
+            $.when.apply($, pendingNoteSaves)
+                .done(function() {
+                    waitBtn.prop('disabled', false).html(waitHtml);
+                    $('#btnSendToKitchen').trigger('click');
+                })
+                .fail(function(xhr) {
+                    waitBtn.prop('disabled', false).html(waitHtml);
+                    const message = xhr && xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : 'Could not save the food note. Please try again.';
+                    window.Swal.fire('Error', message, 'error');
+                });
             return;
         }
 
@@ -2065,8 +2157,16 @@
         }
         window.updateDueAmount();
     };
+    window.currentCheckoutModalMode = 'payment';
+    window.preInvoiceSnapshotCache = window.preInvoiceSnapshotCache || {};
+
 
     window.openPaymentModal = function(data) {
+        window.currentCheckoutModalMode = 'payment';
+        $('#paymentMethodSection, #paymentAmountSection').show();
+        $('#paymentModalTitleIcon').attr('class', 'bi bi-credit-card me-2');
+        $('#paymentModalTitleText').html('Checkout &amp; Payment');
+        $('#payFormSubmitBtn').html('<i class="bi bi-check-circle-fill"></i> Confirm Payment');
         let oc = document.getElementById('tableOrderOffcanvas');
         if(oc) bootstrap.Offcanvas.getInstance(oc)?.hide();
 
@@ -2083,9 +2183,18 @@
         $('#payAdvanceAmount').val(posMoney(hasTableBooking ? (data.booking_advance || 0) : 0));
         $('#bookingAdvanceRow').css('display', hasTableBooking ? 'flex' : 'none');
 
-        let preInvoiceSnapshot = data.pre_invoice_snapshot && typeof data.pre_invoice_snapshot === 'object'
-            ? data.pre_invoice_snapshot
+        let currentOrderId = parseInt(data.order_id || 0, 10);
+        let cachedPreInvoiceSnapshot = currentOrderId > 0
+            ? window.preInvoiceSnapshotCache[currentOrderId]
             : null;
+        let preInvoiceSnapshot = cachedPreInvoiceSnapshot && typeof cachedPreInvoiceSnapshot === 'object'
+            ? cachedPreInvoiceSnapshot
+            : (data.pre_invoice_snapshot && typeof data.pre_invoice_snapshot === 'object'
+                ? data.pre_invoice_snapshot
+                : null);
+        if (currentOrderId > 0 && preInvoiceSnapshot) {
+            window.preInvoiceSnapshotCache[currentOrderId] = preInvoiceSnapshot;
+        }
         $('#modal_discount_type').val(preInvoiceSnapshot && preInvoiceSnapshot.discount_type === 'percentage' ? 'percentage' : 'fixed');
         let savedOrderDiscountValue = preInvoiceSnapshot ? posPaymentNumber(preInvoiceSnapshot.discount_value) : 0;
         $('#modal_discount_value').val(savedOrderDiscountValue > 0 ? savedOrderDiscountValue : '');
@@ -2142,6 +2251,15 @@
 
         calculateModalTotal();
         window.resetFinalPaymentDefaults(posPaymentNumber($('#payTotalAmount').text()));
+
+        // resetFinalPaymentDefaults clears Remark for a fresh order. Restore the
+        // saved Pre-Invoice Remark afterwards so Final Payment continues with it.
+        let savedPreInvoiceRemark = preInvoiceSnapshot && preInvoiceSnapshot.remark != null
+            ? String(preInvoiceSnapshot.remark)
+            : '';
+        $('#paymentRemark').val(savedPreInvoiceRemark).removeClass('is-invalid');
+        window.syncPaymentRemarkRequirement();
+
         bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentModal')).show();
 
         // Re-sync after Bootstrap finishes showing the modal, so Card/Mobile reference field cannot be hidden by older handlers.
@@ -2151,6 +2269,17 @@
             }
         }, 80);
     }
+
+    window.openPreInvoiceModal = function(data) {
+        // Reuse the checkout modal so Order Summary, product-wise discounts,
+        // Honored discount and Remark behave exactly like Final Payment.
+        window.openPaymentModal(data);
+        window.currentCheckoutModalMode = 'preinvoice';
+        $('#paymentMethodSection, #paymentAmountSection').hide();
+        $('#paymentModalTitleIcon').attr('class', 'bi bi-receipt me-2');
+        $('#paymentModalTitleText').text('Pre-Invoice');
+        $('#payFormSubmitBtn').html('<i class="bi bi-printer-fill"></i> Print Pre-Invoice');
+    };
 
     window.calculateModalTotal = function() {
         // Track whether Total Paid is still on its automatic full-payment default.
@@ -2286,6 +2415,71 @@
             return;
         }
         remarkInput.removeClass('is-invalid');
+
+        if (window.currentCheckoutModalMode === 'preinvoice') {
+            let orderId = parseInt($('#payOrderId').val() || 0, 10);
+            if (!orderId) {
+                Swal.fire('Info', 'No active order found for pre-invoice.', 'info');
+                return;
+            }
+
+            let payload = {
+                _token: $('meta[name="csrf-token"]').attr('content'),
+                disc_type: $('#modal_discount_type').val() || 'fixed',
+                disc_val: Math.max(0, posPaymentNumber($('#modal_discount_value').val())),
+                remark: $.trim($('#paymentRemark').val() || ''),
+                product_discounts: {}
+            };
+
+            $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
+                let row = $(this);
+                let detailId = parseInt(row.data('detail-id') || 0, 10);
+                if (detailId > 0) {
+                    payload.product_discounts[detailId] = {
+                        type: row.find('.product-discount-type').val() || 'fixed',
+                        value: Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()))
+                    };
+                }
+            });
+
+            let btn = $('#payFormSubmitBtn');
+            let originalHtml = btn.html();
+            btn.html('<i class="spinner-border spinner-border-sm"></i> Preparing...').prop('disabled', true);
+
+            $.ajax({
+                url: @json(url('/pos/pre-invoice')) + '/' + orderId + '/snapshot',
+                type: 'POST',
+                data: payload,
+                success: function(res) {
+                    if (res && res.status === 'success' && res.preview_url) {
+                        if (res.snapshot && typeof res.snapshot === 'object') {
+                            window.preInvoiceSnapshotCache[orderId] = res.snapshot;
+                        }
+                        let modalEl = document.getElementById('paymentModal');
+                        bootstrap.Modal.getInstance(modalEl)?.hide();
+                        window.setTimeout(function() {
+                            if (typeof window.openPosPrintPreview === 'function') {
+                                window.openPosPrintPreview(res.preview_url, 'Pre-Invoice', { returnToPos: true });
+                            } else {
+                                window.location.href = res.preview_url;
+                            }
+                        }, 180);
+                        return;
+                    }
+                    Swal.fire('Error', (res && res.message) || 'Could not prepare pre-invoice.', 'error');
+                },
+                error: function(xhr) {
+                    let message = xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : 'Could not prepare pre-invoice.';
+                    Swal.fire('Error', message, 'error');
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html(originalHtml);
+                }
+            });
+            return;
+        }
 
         let paymentMethod = $('input[name="payment_method"]:checked').val() || 'Cash';
         let referenceInput = $('#transactionDiv').find('input[name="transaction_id"]');
@@ -2533,6 +2727,84 @@
 
             if (result.isConfirmed && result.value) {
                 callback(result.value);
+            } else if (typeof cancelCallback === 'function') {
+                cancelCallback();
+            }
+        });
+    }
+
+    function getComplimentaryPasswordAndNote(callback, cancelCallback) {
+        const restoreFocusTraps = suspendPosBootstrapFocusTraps();
+
+        if (document.activeElement) {
+            document.activeElement.blur();
+        }
+
+        const noteLabel = complimentaryNoteRequired
+            ? 'Note <span class="text-danger">*</span>'
+            : 'Note <span class="text-muted" style="font-size:12px;">(Optional)</span>';
+
+        Swal.fire({
+            title: 'Complimentary Authorization',
+            html:
+                '<div class="text-start">' +
+                    '<label for="swalComplimentaryPassword" class="form-label fw-semibold mb-1">POS Action Password</label>' +
+                    '<input id="swalComplimentaryPassword" type="password" class="swal2-input" placeholder="Enter password" autocomplete="new-password" style="width:100%;margin:0 0 14px 0;">' +
+                    '<label for="swalComplimentaryNote" class="form-label fw-semibold mb-1">' + noteLabel + '</label>' +
+                    '<textarea id="swalComplimentaryNote" class="swal2-textarea" rows="3" maxlength="1000" placeholder="Enter complimentary note" style="width:100%;margin:0;"></textarea>' +
+                '</div>',
+            focusConfirm: false,
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showCancelButton: true,
+            confirmButtonText: 'Verify & Continue',
+            showLoaderOnConfirm: true,
+            didOpen: function() {
+                setTimeout(function() {
+                    const input = document.getElementById('swalComplimentaryPassword');
+                    if (input) input.focus();
+                }, 50);
+            },
+            preConfirm: function() {
+                const password = String($('#swalComplimentaryPassword').val() || '');
+                const note = String($('#swalComplimentaryNote').val() || '').trim();
+
+                if (!password) {
+                    Swal.showValidationMessage('Password is required.');
+                    return false;
+                }
+                if (complimentaryNoteRequired && !note) {
+                    Swal.showValidationMessage('Note is required for complimentary food.');
+                    return false;
+                }
+
+                return $.ajax({
+                    url: "{{ route('pos.action.verify') }}",
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        password: password,
+                        _token: $('meta[name="csrf-token"]').attr('content')
+                    }
+                }).then(function(res) {
+                    if (!res || res.status !== 'success') {
+                        Swal.showValidationMessage(res?.message || 'Wrong POS Action Password.');
+                        return false;
+                    }
+                    return { password: password, note: note };
+                }, function(xhr) {
+                    const message = xhr.responseJSON && xhr.responseJSON.message
+                        ? xhr.responseJSON.message
+                        : 'Password verification failed. Please try again.';
+                    Swal.showValidationMessage(message);
+                    return false;
+                });
+            }
+        }).then(function(result) {
+            restoreFocusTraps();
+
+            if (result.isConfirmed && result.value) {
+                callback(result.value.password, result.value.note || '');
             } else if (typeof cancelCallback === 'function') {
                 cancelCallback();
             }
@@ -2971,6 +3243,8 @@
     $(document).on('click', '#btnAddComplimentary', function() {
         const $sourceButton = $(this);
 
+        // Add Complimentary mode only asks for the POS action password.
+        // Each complimentary food gets its own Note from the cart row below the food.
         getPosActionPassword(function(pass) {
             const tId = $sourceButton.data('table-id');
             const orderId = $sourceButton.data('order-id');
@@ -3005,6 +3279,8 @@
             currentOrder.is_complimentary_order = 0;
             isComplimentaryMode = true;
             posComplimentaryActionPassword = pass;
+            posComplimentaryNote = '';
+            isOffcanvasComplimentaryMode = true;
 
             var ocElement = document.getElementById('tableOrderOffcanvas');
             if (ocElement) {
@@ -3018,7 +3294,7 @@
                 Swal.fire({
                     icon: 'info',
                     title: 'Complimentary Mode On',
-                    text: 'Password verified. Now select food items; they will be added with 0 value.',
+                    text: 'Authorization verified. Now select food items; they will be added with 0 value.',
                     timer: 1600,
                     showConfirmButton: false
                 });
@@ -3055,42 +3331,53 @@
 
             const originalHtml = $btn.html();
 
-            getPosActionPassword(function(pass){
+            const submitComplimentaryToggle = function(pass, note) {
                 $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
                 $.post("{{ route('pos.order_item.complimentary') }}", {
-                order_id: orderId,
-                order_detail_id: orderDetailId,
-                order_detail_ids: orderDetailIds,
-                is_complimentary: makeComplimentary ? 1 : 0,
-                action_password: pass
-            }).done(function(res) {
-                if (res.status !== 'success') {
-                    $btn.prop('disabled', false).html(originalHtml);
-                    Swal.fire('Error', res.message || 'Food status update failed.', 'error');
-                    return;
-                }
+                    order_id: orderId,
+                    order_detail_id: orderDetailId,
+                    order_detail_ids: orderDetailIds,
+                    is_complimentary: makeComplimentary ? 1 : 0,
+                    action_password: pass,
+                    complimentary_note: makeComplimentary ? (note || '') : ''
+                }).done(function(res) {
+                    if (res.status !== 'success') {
+                        $btn.prop('disabled', false).html(originalHtml);
+                        Swal.fire('Error', res.message || 'Food status update failed.', 'error');
+                        return;
+                    }
 
-                reloadActiveOrderOffcanvas(orderId, tableId, orderType)
-                    .done(function() {
-                        Swal.fire({
-                            icon: 'success',
-                            title: makeComplimentary ? 'Complimentary' : 'Normal Food',
-                            text: res.message || (makeComplimentary
-                                ? 'Food converted to complimentary successfully.'
-                                : 'Food returned to normal successfully.'),
-                            timer: 1100,
-                            showConfirmButton: false
+                    reloadActiveOrderOffcanvas(orderId, tableId, orderType)
+                        .done(function() {
+                            Swal.fire({
+                                icon: 'success',
+                                title: makeComplimentary ? 'Complimentary' : 'Normal Food',
+                                text: res.message || (makeComplimentary
+                                    ? 'Food converted to complimentary successfully.'
+                                    : 'Food returned to normal successfully.'),
+                                timer: 1100,
+                                showConfirmButton: false
+                            });
+                        })
+                        .fail(function() {
+                            window.location.reload();
                         });
-                    })
-                    .fail(function() {
-                        window.location.reload();
-                    });
-            }).fail(function(xhr) {
-                $btn.prop('disabled', false).html(originalHtml);
-                Swal.fire('Error', xhr.responseJSON?.message || 'Food status update failed.', 'error');
-            });
-            });
+                }).fail(function(xhr) {
+                    $btn.prop('disabled', false).html(originalHtml);
+                    Swal.fire('Error', xhr.responseJSON?.message || 'Food status update failed.', 'error');
+                });
+            };
+
+            if (makeComplimentary) {
+                getComplimentaryPasswordAndNote(function(pass, note) {
+                    submitComplimentaryToggle(pass, note);
+                });
+            } else {
+                getPosActionPassword(function(pass) {
+                    submitComplimentaryToggle(pass, '');
+                });
+            }
         });
     });
 
@@ -3117,6 +3404,8 @@
         currentOrder.is_complimentary_order = 0;
         isComplimentaryMode = false;
         posComplimentaryActionPassword = '';
+        posComplimentaryNote = '';
+        isOffcanvasComplimentaryMode = false;
 
         currentOrder.waiter_id = waiterId ? waiterId : null;
         currentOrder.waiter_name = waiterName ? waiterName : '';

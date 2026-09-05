@@ -88,7 +88,13 @@
       <div class="kot-section-head">Order Items</div>
       <div class="kot-items">
         @forelse($mergedKotItems as $item)
-          @php $addons = json_decode($item->addons ?? '[]', true) ?: []; @endphp
+          @php
+            $addons = json_decode($item->addons ?? '[]', true) ?: [];
+            $kotFoodNote = trim((string) ($item->food_note ?? ''));
+            $kotComplimentaryNote = trim((string) ($item->complimentary_note ?? ''));
+            $showKotFoodNote = $kotFoodNote !== ''
+                && !($kotComplimentaryNote !== '' && $kotFoodNote === $kotComplimentaryNote);
+          @endphp
           <div class="kot-item">
             <div class="kot-qty">{{ $item->quantity }}</div>
             <div class="kot-item-info">
@@ -96,8 +102,8 @@
               @if(!empty($item->is_complimentary))
                 <div class="kot-item-note">Complimentary</div>
               @endif
-              @if($item->food_note)
-                <div class="kot-item-note">{{ $item->food_note }}</div>
+              @if($showKotFoodNote)
+                <div class="kot-item-note">{{ $kotFoodNote }}</div>
               @endif
               @if(count($addons) > 0)
                 <div class="kot-item-note" style="font-style:normal;">

@@ -42,8 +42,8 @@ class LoginController extends Controller
             ]);
         }
 
-        // The POS work period is Manager-owned and shared. Any user's browser
-        // activity participates in the same Manager session timeout window.
+        // The POS work period is Manager-owned and shared. Login must never
+        // auto-close an already running shared work period.
         $sessionManagerId = app(PosSessionManagerResolver::class)->resolveId($user);
         if ($sessionManagerId) {
             $this->closeTimedOutPosSessionsForUser($sessionManagerId);
@@ -62,32 +62,9 @@ class LoginController extends Controller
 
     private function closeTimedOutPosSessionsForUser(int $userId): void
     {
-        $now = Carbon::now('Asia/Dhaka');
-        $lifetimeMinutes = max(1, (int) config('session.lifetime', 180));
-
-        $openSessions = PosSession::where('user_id', $userId)
-            ->where('status', 'Open')
-            ->orderBy('id')
-            ->get();
-
-        foreach ($openSessions as $session) {
-            $lastActivity = null;
-
-            if (Schema::hasColumn('pos_sessions', 'last_activity_at') && $session->last_activity_at) {
-                $lastActivity = Carbon::parse($session->last_activity_at, 'Asia/Dhaka');
-            } elseif ($session->updated_at) {
-                $lastActivity = Carbon::parse($session->updated_at, 'Asia/Dhaka');
-            } else {
-                $lastActivity = Carbon::parse($session->start_time, 'Asia/Dhaka');
-            }
-
-            $expiresAt = $lastActivity->copy()->addMinutes($lifetimeMinutes);
-            if ($now->greaterThanOrEqualTo($expiresAt)) {
-                // The close action happens at login, while the report window ends at
-                // the timeout point so hours after browser-close are not counted.
-                $this->closePosSession($session, $expiresAt);
-            }
-        }
+        // POS sessions are no longer tied to login/session lifetime.
+        // A running shared work period remains Open until End Session is used explicitly.
+        return;
     }
 
     /**
@@ -121,7 +98,7 @@ class LoginController extends Controller
 
             // Do not close the shared Manager work period on user logout.
             // It stays available to the Manager and other POS users until someone
-            // explicitly presses End Session or the inactivity timeout expires.
+            // explicitly presses End Session.
         }
 
         Auth::logout();

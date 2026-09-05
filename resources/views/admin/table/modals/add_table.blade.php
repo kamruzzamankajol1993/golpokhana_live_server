@@ -26,7 +26,7 @@
                     <div class="progga-form-group">
                         <label class="progga-form-label">Initial Status</label>
                         <select class="progga-select" name="initial_status" required>
-                          <option value="available">Available</option>
+                          <option value="available" selected>Available</option>
                           <option value="occupied">Occupied</option>
                           <option value="reserved">Reserved</option>
                         </select>

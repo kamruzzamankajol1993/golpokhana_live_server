@@ -28,11 +28,22 @@
                     <i class="bi bi-trash"></i>
                 </button>
             </div>
+            @php
+                $isComplimentaryCartItem = !empty($item['is_complimentary']);
+                $cartItemNote = $item['note'] ?? ($item['complimentary_note'] ?? '');
+                $cartItemNoteRequired = $isComplimentaryCartItem && !empty($complimentaryNoteRequired);
+            @endphp
             <div class="progga-pos-item-note">
                 <input class="progga-form-control progga-pos-item-note-input"
-                       placeholder="Add note..."
-                       value="{{ $item['note'] ?? '' }}"
+                       data-cart-id="{{ $cartId }}"
+                       data-is-complimentary="{{ $isComplimentaryCartItem ? 1 : 0 }}"
+                       placeholder="{{ $isComplimentaryCartItem ? ($cartItemNoteRequired ? 'Complimentary note *' : 'Complimentary note...') : 'Add note...' }}"
+                       value="{{ $cartItemNote }}"
+                       {{ $cartItemNoteRequired ? 'required' : '' }}
                        onchange="updateItemNote('{{ $cartId }}', this.value)">
+                @if($cartItemNoteRequired)
+                    <div class="invalid-feedback">Note is required for this complimentary food.</div>
+                @endif
             </div>
         </div>
     @empty

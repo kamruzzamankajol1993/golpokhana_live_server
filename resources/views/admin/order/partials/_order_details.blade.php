@@ -76,8 +76,11 @@
               @if((isset($item->is_complimentary) && $item->is_complimentary) || ((float) $item->price <= 0 && (float) $item->subtotal <= 0))
                   <div style="font-size:10px; color:#198754; font-weight:800; margin-top:2px;">Complimentary</div>
               @endif
+              @if($item->complimentary_note)
+                  <div style="font-size:11px;color:#198754;font-weight:700;margin-top:2px;">Complimentary Note: {{ $item->complimentary_note }}</div>
+              @endif
               @if($item->food_note)
-                  <div style="font-size: 11px; color: #d33;">* {{ $item->food_note }}</div>
+                  <div style="font-size: 11px; color: #d33;">Food Note: {{ $item->food_note }}</div>
               @endif
           </td>
           <td class="text-center">{{ $item->quantity }}</td>

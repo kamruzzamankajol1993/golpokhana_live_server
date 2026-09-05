@@ -105,7 +105,7 @@
             <div class="progga-table-card {{ $table->dynamic_status }}"
                  data-status="{{ $table->dynamic_status }}"
                  data-table-num="{{ $table->table_number }}"
-                 data-zone="{{ $table->zone->name ?? 'N/A' }}"
+                 data-zone="{{ $table->floorZone->name ?? $table->zone->name ?? 'N/A' }}"
                  data-capacity="{{ $table->seating_capacity }}"
                  @if($table->dynamic_status == 'occupied')
                  data-order="{{ htmlspecialchars($orderJson, ENT_QUOTES, 'UTF-8') }}"
@@ -113,7 +113,15 @@
 
                 <div class="progga-table-card-actions">
                     @can('table-edit')
-                    <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" onclick="editTableData({{ $table->id }}, '{{ $table->table_number }}', {{ $table->seating_capacity }}, '{{ $table->floor_zone_id }}', '{{ $table->initial_status }}', '{{ $table->notes }}')">
+                    <button type="button"
+                            class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm js-edit-table"
+                            data-update-url="{{ route('table.update', $table->id) }}"
+                            data-table-number="{{ $table->table_number }}"
+                            data-capacity="{{ $table->seating_capacity }}"
+                            data-floor-zone-id="{{ $table->floor_zone_id }}"
+                            data-initial-status="{{ strtolower(trim((string) ($table->initial_status ?: 'available'))) }}"
+                            data-notes="{{ $table->notes }}"
+                            title="Edit Table">
                         <i class="bi bi-pencil"></i>
                     </button>
                     @endcan
@@ -130,7 +138,7 @@
 
                 <div class="progga-table-card-icon"><i class="bi bi-layout-wtf"></i></div>
                 <div class="progga-table-card-num">{{ $table->table_number }}</div>
-                <div class="progga-table-card-info"><i class="bi bi-people"></i> {{ $table->seating_capacity }} seats · {{ $table->zone->name ?? 'N/A' }}</div>
+                <div class="progga-table-card-info"><i class="bi bi-people"></i> {{ $table->seating_capacity }} seats · {{ $table->floorZone->name ?? $table->zone->name ?? 'N/A' }}</div>
                 <span class="progga-badge progga-status-{{ $table->dynamic_status }}">{{ ucfirst($table->dynamic_status) }}</span>
             </div>
         @endforeach
@@ -158,19 +166,35 @@
         });
     });
 
-    // Edit Modal Data Pass
-    window.editTableData = function(id, table_number, capacity, floor_zone_id, status, notes) {
-        let formAction = "{{ route('table.update', ':id') }}".replace(':id', id);
-        $('#editTableForm').attr('action', formAction);
+    // Edit Table: safe data attributes + Bootstrap 5 modal API
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('.js-edit-table');
+        if (!button) return;
 
-        $('#edit_table_number').val(table_number);
-        $('#edit_capacity').val(capacity);
-        $('#edit_floor_zone_id').val(floor_zone_id).trigger('change');
-        $('#edit_initial_status').val(status).trigger('change');
-        $('#edit_notes').val(notes);
+        event.preventDefault();
+        event.stopPropagation();
 
-        $('#editTableModal').modal('show');
-    }
+        const form = document.getElementById('editTableForm');
+        const statusSelect = document.getElementById('edit_initial_status');
+        const validStatuses = ['available', 'occupied', 'reserved'];
+        const rawStatus = (button.dataset.initialStatus || 'available').trim().toLowerCase();
+        const initialStatus = validStatuses.includes(rawStatus) ? rawStatus : 'available';
+
+        form.action = button.dataset.updateUrl;
+        document.getElementById('edit_table_number').value = button.dataset.tableNumber || '';
+        document.getElementById('edit_capacity').value = button.dataset.capacity || '';
+        document.getElementById('edit_floor_zone_id').value = button.dataset.floorZoneId || '';
+        statusSelect.value = initialStatus;
+        document.getElementById('edit_notes').value = button.dataset.notes || '';
+
+        // Keep enhanced selects in sync if Select2/jQuery is present.
+        if (window.jQuery) {
+            $('#edit_floor_zone_id').trigger('change');
+            $('#edit_initial_status').trigger('change');
+        }
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('editTableModal')).show();
+    });
 
     /* ─── Occupied table card click (Static JS kept intact) ─── */
     /* ─── Occupied table card click ─── */

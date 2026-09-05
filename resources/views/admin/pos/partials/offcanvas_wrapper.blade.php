@@ -1,4 +1,4 @@
-<div class="offcanvas offcanvas-end progga-order-offcanvas" tabindex="-1" id="tableOrderOffcanvas">
+<div class="offcanvas offcanvas-end progga-order-offcanvas" tabindex="-1" id="tableOrderOffcanvas" style="width:min(520px, 100vw); --bs-offcanvas-width:min(520px, 100vw);">
     <!--<div class="progga-oc-header" style="background:var(--progga-primary); color:#fff; padding:16px;">-->
     <!--    <h5 class="m-0"><i class="bi bi-layout-wtf me-2"></i>Occupied Table Info</h5>-->
         <!--<button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>-->

@@ -141,8 +141,17 @@
                                 + @foreach($addons as $addon) {{ $addon['name'] }}{{ !$loop->last ? ', ' : '' }} @endforeach
                             </div>
                         @endif
-                        @if($item->food_note)
-                            <div style="font-size: 10px; color: #d33; font-style: italic; margin-top: 2px;">* {{ $item->food_note }}</div>
+                        @php
+                            $offcanvasComplimentaryNote = trim((string) ($item->complimentary_note ?? ''));
+                            $offcanvasFoodNote = trim((string) ($item->food_note ?? ''));
+                        @endphp
+                        @if($isComplimentaryItem && $offcanvasComplimentaryNote !== '')
+                            <div style="font-size: 10px; color: #d33; font-style: italic; margin-top: 2px;">
+                                Complimentary Note: {{ $offcanvasComplimentaryNote }}
+                            </div>
+                        @endif
+                        @if($offcanvasFoodNote !== '' && (!$isComplimentaryItem || $offcanvasFoodNote !== $offcanvasComplimentaryNote))
+                            <div style="font-size: 10px; color: #d33; font-style: italic; margin-top: 2px;">* {{ $offcanvasFoodNote }}</div>
                         @endif
                     </span>
                     <span class="progga-oc-item-qty">&times;{{ $item->quantity }}</span>
@@ -253,7 +262,7 @@
         </div>
     @endif
 
-    <div class="progga-oc-actions" style="grid-template-columns: {{ $order->status == 'Waiter_Hold' ? '1fr' : 'minmax(0, .85fr) minmax(0, 1.2fr) minmax(0, .95fr)' }};">
+    <div class="progga-oc-actions" style="grid-template-columns: {{ $order->status == 'Waiter_Hold' ? '1fr' : 'minmax(0,.72fr) minmax(0,1.16fr) minmax(0,1fr) minmax(0,.82fr)' }}; gap:8px;">
         @if($order->status == 'Waiter_Hold')
             <button class="progga-btn progga-btn-secondary" disabled style="flex: 1; opacity: 0.8; cursor: not-allowed; font-weight:bold; font-size: 13px; padding: 10px 5px; white-space: normal; line-height: 1.2;">
                 <i class="bi bi-check2-all"></i> Sent to Desk (Pending)
@@ -285,6 +294,12 @@
                     data-customer-id="{{ $order->customer_id }}"
                     data-customer-name="{{ $order->customer->name ?? '' }}">
                 <i class="bi bi-gift"></i> Complimentary
+            </button>
+
+            <button type="button" class="progga-btn progga-btn-outline js-oc-preinvoice"
+                    style="min-width:0; font-size:12px; padding-left:5px; padding-right:5px; white-space:nowrap;"
+                    data-order-id="{{ $order->id }}">
+                <i class="bi bi-receipt"></i> Pre-Invoice
             </button>
 
             @if(auth()->user()->hasRole('waiter'))
@@ -477,6 +492,19 @@
         padding-left: 8px;
         padding-right: 8px;
         white-space: nowrap;
+    }
+
+
+    .progga-oc-actions .js-oc-preinvoice {
+        font-size: 12px;
+        padding-left: 5px;
+        padding-right: 5px;
+        white-space: nowrap;
+    }
+
+    .progga-oc-actions #btnContinueOrdering,
+    .progga-oc-actions #ocPayBtn {
+        font-size: 12px;
     }
 
     #btnAddComplimentary {

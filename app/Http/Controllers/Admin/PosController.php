@@ -140,10 +140,8 @@ public function index(\Illuminate\Http\Request $request)
         ->orderBy('id', 'desc')
         ->get();
 
+    // Work periods may cross calendar/business days and remain active until explicitly ended.
     $requirePreviousSessionClose = false;
-    if ($activeSession && $activeSession->start_time->format('Y-m-d') !== Carbon::now()->format('Y-m-d')) {
-        $requirePreviousSessionClose = true;
-    }
 
     // Operational session dropdown follows the restaurant business day, not calendar date.
     $businessDayWindow = $this->getPosBusinessDayWindow();
@@ -673,28 +671,9 @@ private function closePosSessionAt(PosSession $session, Carbon $endTime, ?int $e
 
 private function closeTimedOutOpenSessionsForUser(int $userId): void
 {
-    $now = Carbon::now('Asia/Dhaka');
-    $lifetimeMinutes = max(1, (int) config('session.lifetime', 180));
-
-    $openSessions = PosSession::where('user_id', $userId)
-        ->where('status', 'Open')
-        ->orderBy('id')
-        ->get();
-
-    foreach ($openSessions as $session) {
-        if (Schema::hasColumn('pos_sessions', 'last_activity_at') && $session->last_activity_at) {
-            $lastActivity = Carbon::parse($session->last_activity_at, 'Asia/Dhaka');
-        } elseif ($session->updated_at) {
-            $lastActivity = Carbon::parse($session->updated_at, 'Asia/Dhaka');
-        } else {
-            $lastActivity = Carbon::parse($session->start_time, 'Asia/Dhaka');
-        }
-
-        $expiresAt = $lastActivity->copy()->addMinutes($lifetimeMinutes);
-        if ($now->greaterThanOrEqualTo($expiresAt)) {
-            $this->closePosSessionAt($session, $expiresAt);
-        }
-    }
+    // A POS work period now stays Open until an explicit End Session/manual close.
+    // Login lifetime, browser inactivity, tab close and elapsed time must never close it.
+    return;
 }
 
 private function touchOpenPosSessionActivity(int $userId): void
@@ -905,16 +884,8 @@ public function startSession(Request $request)
             ->lockForUpdate()
             ->first();
 
-        if ($activeSession && $action === 'new') {
-            $blockers = $this->getPosSessionCloseBlockers($activeSession);
-            if ($blockers['blocked']) {
-                return $this->sessionCloseBlockedResponse($blockers);
-            }
-
-            $this->closePosSessionAt($activeSession, Carbon::now('Asia/Dhaka'), $actorId);
-            $activeSession = null;
-        }
-
+        // Once a shared Manager work period has started, even another Start/New request
+        // must reuse it. Only the explicit End Session/manual close path can close it.
         if ($activeSession) {
             $this->touchOpenPosSessionActivity($managerId);
             session()->forget('force_pos_unfinished_prompt');
@@ -1502,6 +1473,7 @@ public function printSessionReport($id)
             'price' => round((float) ($detail->price ?? 0), 4),
             'addons' => $addons,
             'note' => trim((string) ($detail->food_note ?? '')),
+            'complimentary_note' => trim((string) ($detail->complimentary_note ?? '')),
             'complimentary' => $isComplimentary ? 1 : 0,
             'unavailable' => !empty($detail->is_unavailable) ? 1 : 0,
             'product_discount_type' => (string) ($detail->product_discount_type ?? ''),
@@ -1533,6 +1505,7 @@ public function printSessionReport($id)
                     'subtotal' => (float) ($detail->subtotal ?? 0),
                     'addons' => $detail->addons ?? '[]',
                     'food_note' => $detail->food_note ?? null,
+                    'complimentary_note' => $detail->complimentary_note ?? null,
                     'is_complimentary' => !empty($detail->is_complimentary) ? 1 : 0,
                     'is_unavailable' => !empty($detail->is_unavailable) ? 1 : 0,
                     'product_discount_type' => $detail->product_discount_type ?? null,
@@ -1583,6 +1556,9 @@ public function printSessionReport($id)
         return $passwordError;
     }
 
+    $complimentaryNote = $isComplimentary
+        ? trim((string) $request->input('complimentary_note', ''))
+        : '';
     $price = $isComplimentary ? 0 : ($food->discount_price ?? $food->base_price);
     $addonTotal = 0;
     $addons = [];
@@ -1619,6 +1595,7 @@ public function printSessionReport($id)
         if (
             (int) $item['food_id'] === (int) $food->id &&
             (bool) ($item['is_complimentary'] ?? false) === $isComplimentary &&
+            trim((string) ($item['complimentary_note'] ?? '')) === $complimentaryNote &&
             json_encode($itemAddons) === json_encode($addons)
         ) {
             $existingCartId = $cartId;
@@ -1641,6 +1618,7 @@ public function printSessionReport($id)
             'addon_total' => $addonTotal,
             'addons' => $addons,
             'is_complimentary' => $isComplimentary,
+            'complimentary_note' => $isComplimentary && $complimentaryNote !== '' ? $complimentaryNote : null,
             'note' => ''
         ];
     }
@@ -1669,7 +1647,15 @@ public function printSessionReport($id)
         // নতুন লজিক: শুধু Dine-In হলে সার্ভিস চার্জ পাবে, Takeaway/Delivery তে 0 হবে
         $service_charge_rate = ($this->normalizePosOrderType($request->order_type ?? 'dine_in') === 'dine_in') ? ($taxSetting->service_charge ?? 0) : 0;
 
-        return view('admin.pos.partials.cart_items', compact('cart', 'subtotal', 'vat_rate', 'service_charge_rate'))->render();
+        $complimentaryNoteRequired = (bool) (PosSetting::first()?->complimentary_note_required ?? false);
+
+        return view('admin.pos.partials.cart_items', compact(
+            'cart',
+            'subtotal',
+            'vat_rate',
+            'service_charge_rate',
+            'complimentaryNoteRequired'
+        ))->render();
     }
 
     /**
@@ -1776,6 +1762,24 @@ public function placeOrder(Request $request)
             return response()->json(['status' => 'error', 'message' => 'Cart is empty!']);
         }
 
+        $requestOrderTypeForValidation = $this->normalizePosOrderType($request->order_type ?? 'dine_in');
+        $posPreference = PosSetting::first();
+        if ($requestOrderTypeForValidation === 'dine_in' && (bool) ($posPreference->dine_in_waiter_required ?? false)) {
+            $effectiveWaiterId = (int) ($request->waiter_id ?: 0);
+
+            // Add More / existing-order submissions may omit waiter_id; keep the already assigned waiter valid.
+            if ($effectiveWaiterId <= 0 && $request->filled('order_id')) {
+                $effectiveWaiterId = (int) (Order::whereKey($request->order_id)->value('waiter_id') ?: 0);
+            }
+
+            if ($effectiveWaiterId <= 0 || !Waiter::whereKey($effectiveWaiterId)->where('status', 1)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please assign a waiter before starting a Dine-In order.'
+                ], 422);
+            }
+        }
+
         // New Order modal থেকে Complimentary Order select করলে cart-এর সব item free হবে।
         // Offcanvas-এর Add Complimentary আগের মতো individual complimentary item হিসেবেই থাকবে।
         $isComplimentaryOrder = $request->boolean('is_complimentary_order');
@@ -1785,8 +1789,32 @@ public function placeOrder(Request $request)
             }
 
             $cart = $this->makeCartComplimentary($cart);
-            Session::put($cartKey, $cart);
         }
+
+        // Complimentary notes for cart-added food are product-wise. The visible cart
+        // food Note is mirrored to complimentary_note so it is stored on order_details.
+        $complimentaryNoteRequired = (bool) ($posPreference->complimentary_note_required ?? false);
+        foreach ($cart as $cartId => $item) {
+            if (empty($item['is_complimentary'])) {
+                continue;
+            }
+
+            $complimentaryNote = trim((string) ($item['note'] ?? ''));
+            if ($complimentaryNote === '') {
+                // Backward-compatible fallback for carts created by an older page.
+                $complimentaryNote = trim((string) ($item['complimentary_note'] ?? ''));
+            }
+
+            if ($complimentaryNoteRequired && $complimentaryNote === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please enter a note for every complimentary food before sending to kitchen.'
+                ], 422);
+            }
+
+            $cart[$cartId]['complimentary_note'] = $complimentaryNote !== '' ? $complimentaryNote : null;
+        }
+        Session::put($cartKey, $cart);
 
         // Track whether this submission is adding food to an already-running order.
         // KOTs created from Add More are allowed to delete their items without the POS action password.
@@ -2055,6 +2083,11 @@ public function placeOrder(Request $request)
 
                 if (Schema::hasColumn('order_details', 'is_complimentary')) {
                     $detailData['is_complimentary'] = !empty($item['is_complimentary']) ? 1 : 0;
+                }
+                if (Schema::hasColumn('order_details', 'complimentary_note')) {
+                    $detailData['complimentary_note'] = !empty($item['is_complimentary'])
+                        ? (trim((string) ($item['complimentary_note'] ?? '')) ?: null)
+                        : null;
                 }
 
                 OrderDetail::create($detailData);
@@ -3008,11 +3041,40 @@ public function tableReservationStatuses()
 
         $taxSetting = DB::table('tax_settings')->first();
         $subtotal = (float) ($order->subtotal ?? 0);
-        $discType = (($input['disc_type'] ?? $input['discount_type'] ?? 'fixed') === 'percentage') ? 'percentage' : 'fixed';
-        $discValue = max(0, (float) ($input['disc_val'] ?? $input['discount_value'] ?? 0));
-        $requestedProductDiscounts = $input['product_discounts'] ?? [];
+        $existingSnapshot = is_array($order->pre_invoice_snapshot ?? null) ? $order->pre_invoice_snapshot : [];
+        $defaultDiscType = $existingSnapshot['discount_type'] ?? ($order->discount_type ?? 'fixed');
+        $discType = (($input['disc_type'] ?? $input['discount_type'] ?? $defaultDiscType) === 'percentage') ? 'percentage' : 'fixed';
+
+        $storedDiscValue = 0.0;
+        if (Schema::hasColumn('orders', 'discount_value')) {
+            $storedDiscValue = max(0, (float) ($order->discount_value ?? 0));
+        }
+        if ($storedDiscValue <= 0 && isset($existingSnapshot['discount_value'])) {
+            $storedDiscValue = max(0, (float) $existingSnapshot['discount_value']);
+        }
+        if ($storedDiscValue <= 0 && $discType === 'percentage' && $subtotal > 0 && (float) ($order->discount_amount ?? 0) > 0) {
+            $storedDiscValue = round(((float) $order->discount_amount / $subtotal) * 100, 2);
+        }
+
+        if (array_key_exists('disc_val', $input)) {
+            $discValue = max(0, (float) $input['disc_val']);
+        } elseif (array_key_exists('discount_value', $input)) {
+            $discValue = max(0, (float) $input['discount_value']);
+        } else {
+            $discValue = $discType === 'percentage' ? $storedDiscValue : max(0, (float) ($order->discount_amount ?? 0));
+        }
+
+        $requestedProductDiscounts = $input['product_discounts'] ?? null;
         if (!is_array($requestedProductDiscounts)) {
             $requestedProductDiscounts = [];
+            foreach ($order->orderDetails as $detail) {
+                if ((float) ($detail->product_discount_value ?? 0) > 0) {
+                    $requestedProductDiscounts[$detail->id] = [
+                        'type' => ($detail->product_discount_type ?? 'fixed') === 'percentage' ? 'percentage' : 'fixed',
+                        'value' => (float) $detail->product_discount_value,
+                    ];
+                }
+            }
         }
 
         $productDiscountResult = $this->calculateProductWiseDiscounts($order, $requestedProductDiscounts, $persist);
@@ -3031,6 +3093,10 @@ public function tableReservationStatuses()
             : min($discValue, $subtotal));
         $grandTotal = max(0, round(($subtotal + $vatTax + $serviceCharge) - $discountAmount - $productDiscountAmount));
 
+        // Pre-invoice remark is part of the saved billing snapshot so it can be
+        // restored when the Final Payment modal is opened later.
+        $remark = trim((string) ($input['remark'] ?? ($existingSnapshot['remark'] ?? '')));
+
         $snapshotItems = $order->orderDetails
             ->filter(fn ($detail) => empty($detail->is_unavailable))
             ->map(function ($detail) {
@@ -3043,6 +3109,7 @@ public function tableReservationStatuses()
                     'subtotal' => (float) ($detail->subtotal ?? 0),
                     'addons' => json_decode($detail->addons ?? '[]', true) ?: [],
                     'food_note' => $detail->food_note,
+                    'complimentary_note' => $detail->complimentary_note,
                     'is_complimentary' => !empty($detail->is_complimentary),
                     'product_discount_type' => $detail->product_discount_type,
                     'product_discount_value' => (float) ($detail->product_discount_value ?? 0),
@@ -3073,11 +3140,15 @@ public function tableReservationStatuses()
             'vat_rate' => $vatRate,
             'vat_tax' => $vatTax,
             'grand_total' => $grandTotal,
+            'remark' => $remark,
         ];
 
         if ($persist) {
             $order->discount_type = $discType;
             $order->discount_amount = $discountAmount;
+            if (Schema::hasColumn('orders', 'discount_value')) {
+                $order->discount_value = $discType === 'percentage' ? $discValue : 0;
+            }
             $order->product_discount_amount = $productDiscountAmount;
             $order->service_charge = $serviceCharge;
             $order->vat_tax = $vatTax;
@@ -3102,6 +3173,7 @@ public function tableReservationStatuses()
             'disc_type' => 'nullable|in:fixed,percentage',
             'disc_val' => 'nullable|numeric|min:0',
             'product_discounts' => 'nullable|array',
+            'remark' => 'nullable|string|max:1000',
         ]);
 
         DB::beginTransaction();
@@ -3370,6 +3442,9 @@ public function tableReservationStatuses()
             // ===============================================
             $order->discount_type     = $discount_type;
             $order->discount_amount   = $discount_amount;
+            if (Schema::hasColumn('orders', 'discount_value')) {
+                $order->discount_value = $discount_type === 'percentage' ? max(0, (float) $discount_value) : 0;
+            }
             $order->product_discount_amount = $product_discount_amount;
             $order->vat_tax           = $tax;
             $order->service_charge    = $service_charge;
@@ -3602,13 +3677,27 @@ public function tableReservationStatuses()
 
     public function updateNote(Request $request)
     {
+        $request->validate([
+            'cart_id' => 'required|string',
+            'note' => 'nullable|string|max:1000',
+        ]);
+
         $cartKey = $this->getCartKey($request);
         $cart = Session::get($cartKey, []);
 
-        if(isset($cart[$request->cart_id])) {
-            $cart[$request->cart_id]['note'] = $request->note;
+        if (isset($cart[$request->cart_id])) {
+            $note = trim((string) $request->input('note', ''));
+            $cart[$request->cart_id]['note'] = $note;
+
+            // In Complimentary Mode the normal cart food Note is the complimentary
+            // authorization Note for this exact product/order-detail line.
+            if (!empty($cart[$request->cart_id]['is_complimentary'])) {
+                $cart[$request->cart_id]['complimentary_note'] = $note !== '' ? $note : null;
+            }
+
             Session::put($cartKey, $cart);
         }
+
         return response()->json(['status' => 'success']);
     }
 
@@ -3709,6 +3798,7 @@ public function tableReservationStatuses()
             'order_detail_ids' => 'nullable|string',
             'is_complimentary' => 'nullable|boolean',
             'action_password' => 'required|string',
+            'complimentary_note' => 'nullable|string|max:1000',
         ]);
 
         $detailIds = $this->requestedOrderDetailIds($request);
@@ -3743,6 +3833,16 @@ public function tableReservationStatuses()
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Only an active POS order can be changed from this screen.'
+                ], 422);
+            }
+
+            $complimentaryNote = trim((string) $request->input('complimentary_note', ''));
+            $complimentaryNoteRequired = (bool) (PosSetting::first()?->complimentary_note_required ?? false);
+            if ($makeComplimentary && $complimentaryNoteRequired && $complimentaryNote === '') {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'A note is required to make this food complimentary.'
                 ], 422);
             }
 
@@ -3822,6 +3922,9 @@ public function tableReservationStatuses()
                     if (Schema::hasColumn('order_details', 'is_complimentary')) {
                         $detail->is_complimentary = 1;
                     }
+                    if (Schema::hasColumn('order_details', 'complimentary_note')) {
+                        $detail->complimentary_note = $complimentaryNote !== '' ? $complimentaryNote : null;
+                    }
 
                     $detail->save();
                     continue;
@@ -3862,6 +3965,9 @@ public function tableReservationStatuses()
 
                     if (Schema::hasColumn('order_details', 'is_complimentary')) {
                         $detail->is_complimentary = 0;
+                    }
+                    if (Schema::hasColumn('order_details', 'complimentary_note')) {
+                        $detail->complimentary_note = null;
                     }
 
                     $detail->save();
@@ -4194,6 +4300,7 @@ public function tableReservationStatuses()
         $order = Order::with(['orderDetails', 'customer', 'waiter', 'user', 'deliveryPartner'])->findOrFail($id);
         $order->ensureFeedbackToken();
         $restaurant = \App\Models\RestaurantSetting::first();
+        $posSetting = \App\Models\PosSetting::first();
 
         // Final payment values are now stored separately:
         // total_paid_amount = bill payment, tips_amount = tips, given_money = received money, change_amount = return amount.
@@ -4204,7 +4311,7 @@ public function tableReservationStatuses()
 
         $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
 
-        return view('admin.pos.invoice', compact('order', 'restaurant', 'mergedOrderItems'));
+        return view('admin.pos.invoice', compact('order', 'restaurant', 'mergedOrderItems', 'posSetting'));
     }
 
     public function printPreInvoice(Request $request, $id)
@@ -4213,6 +4320,7 @@ public function tableReservationStatuses()
         $order->ensureFeedbackToken();
         $restaurant = \App\Models\RestaurantSetting::first();
         $invoiceSetting = \App\Models\InvoiceSetting::first();
+        $posSetting = \App\Models\PosSetting::first();
 
         $hasLiveInputs = $request->has('disc_type')
             || $request->has('disc_val')
@@ -4230,7 +4338,7 @@ public function tableReservationStatuses()
                 $snapshot = [
                     'subtotal' => (float) ($order->subtotal ?? 0),
                     'discount_type' => $order->discount_type ?: 'fixed',
-                    'discount_value' => 0,
+                    'discount_value' => Schema::hasColumn('orders', 'discount_value') ? (float) ($order->discount_value ?? 0) : 0,
                     'discount_amount' => (float) ($order->discount_amount ?? 0),
                     'product_discount_amount' => (float) ($order->product_discount_amount ?? 0),
                     'service_charge' => (float) ($order->service_charge ?? 0),
@@ -4255,7 +4363,8 @@ public function tableReservationStatuses()
             'restaurant',
             'invoiceSetting',
             'mergedOrderItems',
-            'snapshot'
+            'snapshot',
+            'posSetting'
         ));
     }
 
