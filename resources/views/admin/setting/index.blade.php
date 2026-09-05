@@ -216,7 +216,7 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label">{{ ($pos->show_honored_percentage_on_invoice ?? true) ? 'On' : 'Off' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">On: Product Discount and Honored show their percentage on Pre-Invoice and Final Invoice. Flat discounts are converted to their equivalent percentage. Off: discount percentages are hidden.</small>
+                                <small class="d-block text-muted mt-2">On: Product Discount and Honored show their percentage on Bill and Final Invoice. Flat discounts are converted to their equivalent percentage. Off: discount percentages are hidden.</small>
                             </div>
                         </div>
                         <div class="col-md-6">

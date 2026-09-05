@@ -42,6 +42,7 @@
     <table class="report-table">
         <thead>
             <tr>
+                <th>SL</th>
                 <th>Order #</th>
                 <th>Date &amp; Time</th>
                 <th>Order Type</th>
@@ -68,6 +69,7 @@
                     $payment = $order->reportPaymentText(0, true);
                 @endphp
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
                     <td><strong>#{{ $order->order_number }}</strong></td>
                     <td>{{ optional($order->created_at)->format('d M Y h:i A') }}</td>
                     <td>{{ $order->order_type ?? '—' }}</td>
@@ -81,13 +83,13 @@
                     <td>{{ $order->status ?? '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="11" class="text-center">No due orders found for the selected filter.</td></tr>
+                <tr><td colspan="12" class="text-center">No due orders found for the selected filter.</td></tr>
             @endforelse
         </tbody>
         @if($orders->isNotEmpty())
         <tfoot>
             <tr>
-                <th colspan="6" class="text-right">Total ({{ $orders->count() }} Orders)</th>
+                <th colspan="7" class="text-right">Total ({{ $orders->count() }} Orders)</th>
                 <th class="text-right">৳{{ number_format($totalGrand, 2) }}</th>
                 <th class="text-right">৳{{ number_format($totalPaid, 2) }}</th>
                 <th class="text-right">৳{{ number_format($totalDue, 2) }}</th>

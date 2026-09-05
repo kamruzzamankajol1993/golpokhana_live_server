@@ -35,7 +35,7 @@
                 Sales & Order Report
             @endif
         </div>
-        <p>Period: {{ $startDate->format('d M, Y') }} to {{ $endDate->format('d M, Y') }}</p>
+        <p>{{ $filterLabel ?? ('Period: ' . $startDate->format('d M, Y') . ' to ' . $endDate->format('d M, Y')) }}</p>
     </div>
 
     @if($report === 'payment_type_sales')
@@ -43,6 +43,7 @@
         <table class="table">
             <thead>
                 <tr>
+                    <th>SL</th>
                     <th>Order #</th>
                     <th>Date</th>
                     <th>Time</th>
@@ -60,6 +61,7 @@
             <tbody>
             @forelse($dataRows as $row)
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
                     <td><strong>#{{ $row['order_number'] }}</strong></td>
                     <td>{{ $row['date'] }}</td>
                     <td>{{ $row['time'] ?? '—' }}</td>
@@ -84,12 +86,12 @@
                     <td class="text-right"><strong>৳{{ number_format($row['total_paid'], 2) }}</strong></td>
                 </tr>
             @empty
-                <tr><td colspan="12" class="text-center">No payment data found.</td></tr>
+                <tr><td colspan="13" class="text-center">No payment data found.</td></tr>
             @endforelse
             </tbody>
             <tfoot>
                 <tr>
-                    <th colspan="5" class="text-right">Total</th>
+                    <th colspan="6" class="text-right">Total</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('other_discount'), 2) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
                     <th></th>
@@ -218,6 +220,7 @@
         <table class="table sales-table">
             <thead>
                 <tr>
+                    <th>SL</th>
                     <th>Order #</th>
                     <th>Customer</th>
                     <th class="text-right">Subtotal</th>
@@ -257,6 +260,7 @@
                     }
                 @endphp
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
                     <td><strong>#{{ $order->order_number }}</strong></td>
                     <td>
                         <strong>{{ optional($order->customer)->name ?? 'Walk-in' }}</strong><br>
@@ -278,13 +282,13 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="15" class="text-center py-4">No completed orders found for the selected filter.</td>
+                    <td colspan="16" class="text-center py-4">No completed orders found for the selected filter.</td>
                 </tr>
             @endforelse
             </tbody>
             <tfoot>
                 <tr>
-                    <th colspan="2" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
+                    <th colspan="3" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('subtotal'), 0) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
                     <th class="text-right">৳{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>

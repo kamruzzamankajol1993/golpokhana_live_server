@@ -2277,8 +2277,8 @@
         window.currentCheckoutModalMode = 'preinvoice';
         $('#paymentMethodSection, #paymentAmountSection').hide();
         $('#paymentModalTitleIcon').attr('class', 'bi bi-receipt me-2');
-        $('#paymentModalTitleText').text('Pre-Invoice');
-        $('#payFormSubmitBtn').html('<i class="bi bi-printer-fill"></i> Print Pre-Invoice');
+        $('#paymentModalTitleText').text('Bill');
+        $('#payFormSubmitBtn').html('<i class="bi bi-printer-fill"></i> Print Bill');
     };
 
     window.calculateModalTotal = function() {
@@ -2419,7 +2419,7 @@
         if (window.currentCheckoutModalMode === 'preinvoice') {
             let orderId = parseInt($('#payOrderId').val() || 0, 10);
             if (!orderId) {
-                Swal.fire('Info', 'No active order found for pre-invoice.', 'info');
+                Swal.fire('Info', 'No active order found for bill.', 'info');
                 return;
             }
 
@@ -2459,19 +2459,19 @@
                         bootstrap.Modal.getInstance(modalEl)?.hide();
                         window.setTimeout(function() {
                             if (typeof window.openPosPrintPreview === 'function') {
-                                window.openPosPrintPreview(res.preview_url, 'Pre-Invoice', { returnToPos: true });
+                                window.openPosPrintPreview(res.preview_url, 'Bill', { returnToPos: true });
                             } else {
                                 window.location.href = res.preview_url;
                             }
                         }, 180);
                         return;
                     }
-                    Swal.fire('Error', (res && res.message) || 'Could not prepare pre-invoice.', 'error');
+                    Swal.fire('Error', (res && res.message) || 'Could not prepare bill.', 'error');
                 },
                 error: function(xhr) {
                     let message = xhr.responseJSON && xhr.responseJSON.message
                         ? xhr.responseJSON.message
-                        : 'Could not prepare pre-invoice.';
+                        : 'Could not prepare bill.';
                     Swal.fire('Error', message, 'error');
                 },
                 complete: function() {

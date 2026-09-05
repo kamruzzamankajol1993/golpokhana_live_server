@@ -32,7 +32,7 @@
               </div>
 
               <div class="progga-pos-total-row" id="payProductDiscountRow" style="display: flex; justify-content: space-between; font-size: 13px; color: #d33; margin-bottom: 4px;">
-                <span>Product Discount</span><span id="payProductDiscount">−৳0</span>
+                <span>Item Discount</span><span id="payProductDiscount">−৳0</span>
               </div>
               <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 13px; color: #d33; margin-bottom: 4px;">
                 <span>Honored</span><span id="payDiscount">−৳0</span>

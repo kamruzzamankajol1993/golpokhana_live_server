@@ -19,6 +19,7 @@
         }
     @endphp
     <tr>
+        <td><span class="report-sl-badge">{{ ($orders->firstItem() ?? 1) + $loop->index }}</span></td>
         <td><strong>#{{ $order->order_number }}</strong></td>
         <td>
             <strong>{{ optional($order->customer)->name ?? 'Walk-in Customer' }}</strong><br>
@@ -40,6 +41,6 @@
     </tr>
 @empty
     <tr>
-        <td colspan="15" class="text-center py-4">No completed orders found for the selected filter.</td>
+        <td colspan="16" class="text-center py-4">No completed orders found for the selected filter.</td>
     </tr>
 @endforelse

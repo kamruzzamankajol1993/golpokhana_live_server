@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Exports\ArrayReportExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
+use App\Support\ReportTimeFilter;
 class PosController extends Controller
 {
 public function index(\Illuminate\Http\Request $request)
@@ -192,11 +193,12 @@ public function index(\Illuminate\Http\Request $request)
      */
 public function sessionList(Request $request)
 {
-    $businessDayWindow = $this->getPosBusinessDayWindow();
+    $filters = ReportTimeFilter::resolve($request, RestaurantSetting::first(), 'business_day', false);
+    extract($filters);
     $search = trim((string) $request->query('search', ''));
 
     $sessionsQuery = PosSession::with('user')
-        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']]);
+        ->whereBetween('start_time', [$startDate, $endDate]);
 
     if ($search !== '') {
         $like = '%' . $search . '%';
@@ -232,10 +234,14 @@ public function sessionList(Request $request)
         return response()->json([
             'html' => view('admin.pos.sessions.partials.rows', compact('sessions'))->render(),
             'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $sessions])->render(),
+            'filter_label' => $filterLabel,
         ]);
     }
 
-    return view('admin.pos.sessions.index', compact('sessions'));
+    return view('admin.pos.sessions.index', compact(
+        'sessions', 'filterType', 'year', 'month', 'reportDate', 'businessDate',
+        'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel'
+    ));
 }
 
     /**
@@ -243,7 +249,8 @@ public function sessionList(Request $request)
      */
 public function kotList(Request $request)
 {
-    $businessDayWindow = $this->getPosBusinessDayWindow();
+    $filters = ReportTimeFilter::resolve($request, RestaurantSetting::first(), 'business_day', false);
+    extract($filters);
     $search = trim((string) $request->query('search', ''));
 
     $kotQuery = OrderKot::with([
@@ -251,7 +258,7 @@ public function kotList(Request $request)
             'order.waiter',
             'orderDetails',
         ])
-        ->whereBetween('created_at', [$businessDayWindow['start'], $businessDayWindow['end']])
+        ->whereBetween('created_at', [$startDate, $endDate])
         ->where('kitchen_status', '!=', 'Hold')
         ->whereHas('order', function ($query) {
             $query->whereNotIn('status', [
@@ -293,71 +300,105 @@ public function kotList(Request $request)
         return response()->json([
             'html' => view('admin.pos.kots.partials.rows', compact('kots'))->render(),
             'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $kots])->render(),
+            'filter_label' => $filterLabel,
         ]);
     }
 
-    return view('admin.pos.kots.index', compact('kots'));
+    return view('admin.pos.kots.index', compact(
+        'kots', 'filterType', 'year', 'month', 'reportDate', 'businessDate',
+        'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel'
+    ));
 }
 
 
-
-    /** Export the same current business-day KOT rows shown in POS > KOT List. */
+    /** Export the same filtered KOT rows shown in POS > KOT List. */
     public function kotListPdf(Request $request)
     {
-        [$businessDayWindow, $kots] = $this->currentPosKotsForExport();
+        [$filters, $kots] = $this->currentPosKotsForExport($request);
         [$headings, $rows] = $this->buildPosKotExportRows($kots);
         return $this->posListPdfResponse(
-            'POS KOT List', $headings, $rows,
-            $this->businessDayExportLabel($businessDayWindow),
+            'POS KOT List', $headings, $rows, $filters['filterLabel'],
             'pos-kot-list-' . now()->format('Y-m-d-His') . '.pdf'
         );
     }
 
     public function kotListExcel(Request $request)
     {
-        [, $kots] = $this->currentPosKotsForExport();
+        [, $kots] = $this->currentPosKotsForExport($request);
         [$headings, $rows] = $this->buildPosKotExportRows($kots);
         return Excel::download(new ArrayReportExport($headings, $rows, 'POS KOT List'), 'pos-kot-list-' . now()->format('Y-m-d-His') . '.xlsx');
     }
 
-    /** Export the same current business-day session rows shown in POS > Session List. */
+    /** Export the same filtered session rows shown in POS > Session List. */
     public function sessionListPdf(Request $request)
     {
-        [$businessDayWindow, $sessions] = $this->currentPosSessionsForExport();
+        [$filters, $sessions] = $this->currentPosSessionsForExport($request);
         [$headings, $rows] = $this->buildPosSessionExportRows($sessions);
         return $this->posListPdfResponse(
-            'POS Session List', $headings, $rows,
-            $this->businessDayExportLabel($businessDayWindow),
+            'POS Session List', $headings, $rows, $filters['filterLabel'],
             'pos-session-list-' . now()->format('Y-m-d-His') . '.pdf'
         );
     }
 
     public function sessionListExcel(Request $request)
     {
-        [, $sessions] = $this->currentPosSessionsForExport();
+        [, $sessions] = $this->currentPosSessionsForExport($request);
         [$headings, $rows] = $this->buildPosSessionExportRows($sessions);
         return Excel::download(new ArrayReportExport($headings, $rows, 'POS Sessions'), 'pos-session-list-' . now()->format('Y-m-d-His') . '.xlsx');
     }
 
-    private function currentPosKotsForExport(): array
+    private function currentPosKotsForExport(Request $request): array
     {
-        $businessDayWindow = $this->getPosBusinessDayWindow();
-        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
-            ->whereBetween('created_at', [$businessDayWindow['start'], $businessDayWindow['end']])
+        $filters = ReportTimeFilter::resolve($request, RestaurantSetting::first(), 'business_day', false);
+        $search = trim((string) $request->query('search', ''));
+        $query = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
+            ->whereBetween('created_at', [$filters['startDate'], $filters['endDate']])
             ->where('kitchen_status', '!=', 'Hold')
-            ->whereHas('order', function ($query) {
-                $query->whereNotIn('status', ['Completed', 'completed', 'Cancelled', 'cancelled', 'Delivered', 'delivered']);
-            })
-            ->orderByDesc('id')->get();
-        return [$businessDayWindow, $kots];
+            ->whereHas('order', function ($orderQuery) {
+                $orderQuery->whereNotIn('status', ['Completed', 'completed', 'Cancelled', 'cancelled', 'Delivered', 'delivered']);
+            });
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('id', 'like', $like)
+                    ->orWhere('kot_number', 'like', $like)
+                    ->orWhere('kitchen_status', 'like', $like)
+                    ->orWhere('created_at', 'like', $like)
+                    ->orWhereHas('order', function ($orderQuery) use ($like) {
+                        $orderQuery->where('order_number', 'like', $like)
+                            ->orWhere('order_type', 'like', $like)
+                            ->orWhere('status', 'like', $like)
+                            ->orWhereHas('table', fn ($tableQuery) => $tableQuery->where('table_number', 'like', $like))
+                            ->orWhereHas('waiter', fn ($waiterQuery) => $waiterQuery->where('name', 'like', $like));
+                    });
+            });
+        }
+
+        return [$filters, $query->orderByDesc('id')->get()];
     }
 
-    private function currentPosSessionsForExport(): array
+    private function currentPosSessionsForExport(Request $request): array
     {
-        $businessDayWindow = $this->getPosBusinessDayWindow();
-        $sessions = PosSession::with('user')
-            ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
-            ->orderByDesc('id')->get();
+        $filters = ReportTimeFilter::resolve($request, RestaurantSetting::first(), 'business_day', false);
+        $search = trim((string) $request->query('search', ''));
+        $query = PosSession::with('user')
+            ->whereBetween('start_time', [$filters['startDate'], $filters['endDate']]);
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('id', 'like', $like)
+                    ->orWhere('weekday', 'like', $like)
+                    ->orWhere('start_time', 'like', $like)
+                    ->orWhere('end_time', 'like', $like)
+                    ->orWhere('duration', 'like', $like)
+                    ->orWhere('status', 'like', $like)
+                    ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', $like));
+            });
+        }
+
+        $sessions = $query->orderByDesc('id')->get();
         $sessions->transform(function ($session) {
             $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
                 Carbon::parse($session->start_time),
@@ -365,13 +406,13 @@ public function kotList(Request $request)
             )->sum('grand_total');
             return $session;
         });
-        return [$businessDayWindow, $sessions];
+        return [$filters, $sessions];
     }
 
     private function buildPosKotExportRows($kots): array
     {
-        $headings = ['ID', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
-        $rows = $kots->map(function ($kot) {
+        $headings = ['SL', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
+        $rows = $kots->values()->map(function ($kot, $index) {
             $order = $kot->order;
             $type = strtolower((string) optional($order)->order_type);
             $location = in_array($type, ['dine-in', 'dine_in'], true)
@@ -379,7 +420,7 @@ public function kotList(Request $request)
                 : ucfirst(str_replace('_', ' ', (string) optional($order)->order_type));
             $activeQty = $kot->orderDetails->filter(fn ($item) => (int) ($item->is_unavailable ?? 0) !== 1)->sum('quantity');
             return [
-                $kot->id, $kot->kot_number ?? 'N/A', '#' . (optional($order)->order_number ?? 'N/A'),
+                $index + 1, $kot->kot_number ?? 'N/A', '#' . (optional($order)->order_number ?? 'N/A'),
                 $location ?: 'N/A', optional(optional($order)->waiter)->name ?? 'Unassigned', (int) $activeQty,
                 $kot->created_at ? $kot->created_at->format('d M Y, h:i A') : 'N/A',
                 $kot->kitchen_status ?? 'N/A', optional($order)->status ?? 'N/A',
@@ -390,11 +431,11 @@ public function kotList(Request $request)
 
     private function buildPosSessionExportRows($sessions): array
     {
-        $headings = ['ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Grand Total', 'Status'];
-        $rows = $sessions->map(function ($session) {
+        $headings = ['SL', 'Session ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Grand Total', 'Status'];
+        $rows = $sessions->values()->map(function ($session, $index) {
             $start = Carbon::parse($session->start_time);
             return [
-                $session->id, optional($session->user)->name ?? 'N/A', $session->weekday ?? $start->format('l'),
+                $index + 1, $session->id, optional($session->user)->name ?? 'N/A', $session->weekday ?? $start->format('l'),
                 $session->start_time ? Carbon::parse($session->start_time)->format('d M Y, h:i A') : 'N/A',
                 $session->end_time ? Carbon::parse($session->end_time)->format('d M Y, h:i A') : 'Running',
                 $session->duration ?? 'Running', (float) ($session->report_grand_total ?? 0), $session->status ?? 'N/A',
@@ -3191,7 +3232,7 @@ public function tableReservationStatuses()
             DB::rollBack();
             return response()->json([
                 'status' => 'error',
-                'message' => 'Pre-invoice could not be saved. ' . $e->getMessage(),
+                'message' => 'Bill could not be saved. ' . $e->getMessage(),
             ], 500);
         }
     }

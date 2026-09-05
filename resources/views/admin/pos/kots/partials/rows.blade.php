@@ -8,10 +8,11 @@
     $itemQty = $kot->orderDetails->where('is_unavailable', 0)->sum('quantity');
 @endphp
 <tr>
-    <td><strong>#{{ ($kots->firstItem() ?? 1) + $key }}</strong></td>
+    <td><span class="report-sl-badge">{{ ($kots->firstItem() ?? 1) + $key }}</span></td>
     <td><strong>{{ $kot->kot_number }}</strong></td>
     <td>#{{ optional($order)->order_number ?? 'N/A' }}</td>
     <td>{{ $location }}</td>
+    <td>{{ optional(optional($order)->waiter)->name ?? 'Unassigned' }}</td>
     <td>{{ number_format($itemQty) }}</td>
     <td>{{ $kot->created_at ? $kot->created_at->format('d M y - h:i A') : '—' }}</td>
     <td><span class="progga-badge {{ $kot->kitchen_status === 'Delivered' ? 'progga-badge-success' : 'progga-badge-warning' }}">{{ $kot->kitchen_status }}</span></td>
@@ -24,6 +25,6 @@
 </tr>
 @empty
 <tr>
-    <td colspan="9" class="text-center text-muted" style="padding:32px 12px;">No running or pending KOT found.</td>
+    <td colspan="10" class="text-center text-muted" style="padding:32px 12px;">No running or pending KOT found.</td>
 </tr>
 @endforelse

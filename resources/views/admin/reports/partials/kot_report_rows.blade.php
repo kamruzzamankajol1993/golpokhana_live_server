@@ -8,7 +8,7 @@
     $itemQty = $kot->orderDetails->where('is_unavailable', 0)->sum('quantity');
 @endphp
 <tr>
-    <td><strong>#{{ ($kots->firstItem() ?? 1) + $key }}</strong></td>
+    <td><span class="report-sl-badge">{{ ($kots->firstItem() ?? 1) + $key }}</span></td>
     <td><strong>{{ $kot->kot_number }}</strong></td>
     <td>#{{ optional($order)->order_number ?? 'N/A' }}</td>
     <td>{{ $location }}</td>

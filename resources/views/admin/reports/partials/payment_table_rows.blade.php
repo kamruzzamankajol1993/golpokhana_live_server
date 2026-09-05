@@ -36,6 +36,7 @@
     }
 @endphp
 <tr>
+    <td><span class="report-sl-badge">{{ ($paymentOrders->firstItem() ?? 1) + $loop->index }}</span></td>
     <td><strong>#{{ $order->order_number }}</strong></td>
     <td>{{ $order->created_at->format('d M, h:i A') }}</td>
     <td>{{ $order->customer->name ?? 'Walk-in' }}</td>
@@ -68,5 +69,5 @@
     <td class="text-primary"><strong>৳{{ number_format($rowTotal, 2) }}</strong></td>
 </tr>
 @empty
-<tr><td colspan="11" class="text-center py-4 text-muted">No data found.</td></tr>
+<tr><td colspan="12" class="text-center py-4 text-muted">No data found.</td></tr>
 @endforelse

@@ -51,7 +51,7 @@ class ArrayReportExport implements FromCollection, WithHeadings, ShouldAutoSize,
 
     public function title(): string
     {
-        $title = preg_replace('/[\\\/\?\*\[\]:]+/', ' ', $this->sheetTitle) ?: 'Report';
+        $title = str_replace(['\\', '/', '?', '*', '[', ']', ':'], ' ', $this->sheetTitle);
         return mb_substr(trim($title), 0, 31) ?: 'Report';
     }
 }

@@ -1,6 +1,6 @@
 @forelse($sessions as $key => $sess)
 <tr>
-    <td><strong>#{{ ($sessions->firstItem() ?? 1) + $key }}</strong></td>
+    <td><span class="report-sl-badge">{{ ($sessions->firstItem() ?? 1) + $key }}</span></td>
     <td>{{ $sess->user->name ?? 'N/A' }}</td>
     <td><span class="progga-badge progga-badge-secondary">{{ $sess->weekday }}</span></td>
     <td>{{ $sess->start_time ? $sess->start_time->format('d M y - h:i A') : '—' }}</td>

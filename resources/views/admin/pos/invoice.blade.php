@@ -355,7 +355,7 @@
                         <div class="bill-item-note">Complimentary</div>
                       @endif
                       @if(($item->product_discount_amount ?? 0) > 0)
-                        <div class="bill-item-note">Product Discount{{ $showDiscountPercentageOnInvoice && $itemProductDiscountPercent > 0 ? ' (' . $itemProductDiscountPercentText . '%)' : '' }}</div>
+                        <div class="bill-item-note">Item Discount{{ $showDiscountPercentageOnInvoice && $itemProductDiscountPercent > 0 ? ' (' . $itemProductDiscountPercentText . '%)' : '' }}</div>
                       @endif
                       @if($showPrintableFoodNote)
                         <div class="bill-item-note">{{ $foodNoteText }}</div>
@@ -448,7 +448,7 @@
             }
         @endphp
         <div class="bill-total-row discount">
-          <span>Product Discount{{ $showDiscountPercentageOnInvoice && $productDiscountPercentLabel !== '' ? ' (' . $productDiscountPercentLabel . ')' : '' }}</span>
+          <span>Item Discount{{ $showDiscountPercentageOnInvoice && $productDiscountPercentLabel !== '' ? ' (' . $productDiscountPercentLabel . ')' : '' }}</span>
           <span>− {{ number_format($productDiscountAmountForPercent, 0) }}</span>
         </div>
         @endif

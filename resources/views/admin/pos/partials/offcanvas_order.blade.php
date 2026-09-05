@@ -296,10 +296,39 @@
                 <i class="bi bi-gift"></i> Complimentary
             </button>
 
+            @php
+                $preInvoiceItems = [];
+                foreach($order->kots as $kot) {
+                    foreach($kot->orderDetails as $item) {
+                        if(!$item->is_unavailable) {
+                            $preInvoiceItems[] = [
+                                'id' => $item->id,
+                                'name' => $item->product_name,
+                                'qty' => $item->quantity,
+                                'total' => $item->subtotal,
+                                'product_discount_type' => $item->product_discount_type ?? 'fixed',
+                                'product_discount_value' => $item->product_discount_value ?? 0,
+                                'product_discount_amount' => $item->product_discount_amount ?? 0,
+                            ];
+                        }
+                    }
+                }
+            @endphp
             <button type="button" class="progga-btn progga-btn-outline js-oc-preinvoice"
                     style="min-width:0; font-size:12px; padding-left:5px; padding-right:5px; white-space:nowrap;"
-                    data-order-id="{{ $order->id }}">
-                <i class="bi bi-receipt"></i> Pre-Invoice
+                    data-order-id="{{ $order->id }}"
+                    onclick='openPreInvoiceModal({
+                        order_id: "{{ $order->id }}",
+                        order_type: "{{ $jsOrderType }}",
+                        table_no: "{{ $payDisplayLabel }}",
+                        subtotal: {{ $order->subtotal ?? 0 }},
+                        table_booking_id: {{ $order->table_booking_id ?? 'null' }},
+                        booking_advance: {{ $order->tableBooking->advance_amount ?? $order->booking_advance ?? 0 }},
+                        items: @json($preInvoiceItems),
+                        pre_invoice_snapshot: @json($order->pre_invoice_snapshot ?? null),
+                        is_complimentary_order: {{ !empty($order->is_complimentary_order) ? 1 : 0 }}
+                    })'>
+                <i class="bi bi-receipt"></i> Bill
             </button>
 
             @if(auth()->user()->hasRole('waiter'))

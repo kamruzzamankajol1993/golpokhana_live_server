@@ -1,6 +1,6 @@
 @forelse($foodRows as $index => $food)
 <tr>
-    <td><strong>#{{ $foodRows->firstItem() + $index }}</strong></td>
+    <td><span class="report-sl-badge">{{ ($foodRows->firstItem() ?? 1) + $index }}</span></td>
     <td>{{ $food->product_name }}</td>
     <td><strong>{{ number_format($food->total_qty) }}</strong></td>
     <td>{{ number_format($food->orders_count) }}</td>

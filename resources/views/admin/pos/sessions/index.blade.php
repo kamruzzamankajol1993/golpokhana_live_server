@@ -1,194 +1,27 @@
 @extends('admin.master.master')
 @section('title', 'POS Session List — ' . $restaurantSettingName)
-
-@section('css')
-<style>
-    .pos-list-table th { white-space:nowrap; font-size:11px; }
-    .pos-list-table td { font-size:12px; vertical-align:middle; }
-    .pos-list-loading { opacity:.55; pointer-events:none; }
-    .pos-list-search { position:relative; width:320px; max-width:100%; margin-left:auto; }
-    .pos-list-search .bi-search { position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:13px; color:#7a817d; pointer-events:none; }
-    .pos-list-search .progga-form-control { width:100%; height:36px; padding-left:34px; font-size:12px; }
-    @media (max-width: 767px) { .pos-list-search { width:100%; } }
-</style>
-@endsection
-
 @section('body')
 <main class="progga-content">
-    <div class="progga-page-header">
-        <div>
-            <h1 class="progga-page-title">POS Session List</h1>
-            <div class="progga-breadcrumb">
-                <a href="{{ route('home') }}" class="progga-breadcrumb-item">Dashboard</a>
-                <span class="progga-breadcrumb-sep">/</span>
-                <span class="progga-breadcrumb-item">POS System</span>
-                <span class="progga-breadcrumb-sep">/</span>
-                <span class="progga-breadcrumb-item active">Session List</span>
-            </div>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <a href="{{ route('pos.sessions.pdf') }}" target="_blank" rel="noopener" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
-            <a href="{{ route('pos.sessions.excel') }}" class="progga-btn progga-btn-outline progga-btn-sm" style="border-color:#198754;color:#198754;background:#f8fff9;"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-        </div>
-    </div>
-
-    <div class="progga-card" id="sessionListCard">
-        <div class="progga-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div>
-                <div class="progga-card-title">Work Period Sessions</div>
-                <div class="progga-card-subtitle">Same POS session history list with AJAX pagination</div>
-            </div>
-            <div class="pos-list-search">
-                <i class="bi bi-search"></i>
-                <input type="text" id="sessionSearchInput" class="progga-form-control" value="{{ request('search') }}" placeholder="Search session, employee, status..." autocomplete="off">
-            </div>
-        </div>
-
-        <div class="progga-table-wrapper" style="border:none;border-radius:0;overflow-x:auto;">
-            <table class="progga-table pos-list-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Employee</th>
-                        <th>Day</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Duration</th>
-                        <th>Grand Total</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="sessionRows">
-                    @include('admin.pos.sessions.partials.rows')
-                </tbody>
-            </table>
-        </div>
-        <div id="sessionPagination">
-            @include('admin.reports.partials.custom_pagination', ['paginator' => $sessions])
-        </div>
+    <div class="progga-page-header"><div><h1 class="progga-page-title">POS Session List</h1><div class="progga-breadcrumb"><a href="{{ route('home') }}" class="progga-breadcrumb-item">Dashboard</a><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item">POS System</span><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item active">Session List</span></div></div><div style="display:flex;gap:8px"><button type="button" id="posSessionPdf" data-url="{{ route('pos.sessions.pdf') }}" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF</button><button type="button" id="posSessionExcel" data-url="{{ route('pos.sessions.excel') }}" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</button></div></div>
+    <div class="progga-card mb-3">@include('admin.reports.partials.filter_component',['showSearchFilter'=>true,'searchPlaceholder'=>'Search session, employee, status...'])</div>
+    <div class="progga-card" id="sessionListCard" data-report-card>
+        <div class="progga-card-header"><div><div class="progga-card-title">Work Period Sessions</div><div class="progga-card-subtitle">Filtered POS session history</div></div></div>
+        <div class="report-table-shell"><table class="progga-table enhanced-report-table"><thead><tr><th>SL</th><th>Session ID</th><th>Employee</th><th>Day</th><th>Start Time</th><th>End Time</th><th>Duration</th><th>Grand Total</th><th>Status</th><th>Actions</th></tr></thead><tbody id="sessionRows">@include('admin.pos.sessions.partials.rows')</tbody></table></div>
+        <div id="sessionPagination">@include('admin.reports.partials.custom_pagination',['paginator'=>$sessions])</div>
     </div>
 </main>
 
 <div class="modal fade" id="editSessionModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg" style="border-radius:14px;">
-            <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title fw-bold" id="editSessionTitle"><i class="bi bi-pencil-square me-2"></i>Edit Session</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="editSessionForm">
-                <div class="modal-body">
-                    <input type="hidden" name="session_id" id="editSessionId">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="progga-form-label">Start Time</label>
-                            <input type="datetime-local" name="start_time" id="editSessionStart" class="progga-form-control" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="progga-form-label">End Time</label>
-                            <input type="datetime-local" name="end_time" id="editSessionEnd" class="progga-form-control">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="progga-form-label">Status</label>
-                            <select name="status" id="editSessionStatus" class="progga-select" required>
-                                <option value="Open">Open</option>
-                                <option value="Closed">Closed</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="progga-btn progga-btn-outline" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-save"></i> Save Changes</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content border-0 shadow-lg" style="border-radius:14px"><div class="modal-header bg-dark text-white"><h5 class="modal-title fw-bold" id="editSessionTitle"><i class="bi bi-pencil-square me-2"></i>Edit Session</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form id="editSessionForm"><div class="modal-body"><input type="hidden" name="session_id" id="editSessionId"><div class="row g-3"><div class="col-md-4"><label class="progga-form-label">Start Time</label><input type="datetime-local" name="start_time" id="editSessionStart" class="progga-form-control" required></div><div class="col-md-4"><label class="progga-form-label">End Time</label><input type="datetime-local" name="end_time" id="editSessionEnd" class="progga-form-control"></div><div class="col-md-4"><label class="progga-form-label">Status</label><select name="status" id="editSessionStatus" class="progga-select" required><option value="Open">Open</option><option value="Closed">Closed</option></select></div></div></div><div class="modal-footer"><button type="button" class="progga-btn progga-btn-outline" data-bs-dismiss="modal">Cancel</button><button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-save"></i> Save Changes</button></div></form></div></div>
 </div>
 @endsection
-
 @section('script')
 <script>
-(function() {
-    let searchTimer = null;
-    let activeRequest = null;
-
-    function withSessionSearch(url) {
-        const target = new URL(url, window.location.href);
-        const search = $.trim($('#sessionSearchInput').val() || '');
-        if (search) target.searchParams.set('search', search);
-        else target.searchParams.delete('search');
-        return target.toString();
-    }
-
-    function loadSessionPage(url, historyMode) {
-        const ajaxUrl = withSessionSearch(url);
-        if (activeRequest) activeRequest.abort();
-        $('#sessionListCard').addClass('pos-list-loading');
-
-        activeRequest = $.ajax({
-            url: ajaxUrl,
-            type: 'GET',
-            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
-            success: function(data) {
-                $('#sessionRows').html(data.html || '');
-                $('#sessionPagination').html(data.pagination || '');
-                if (historyMode === 'push') window.history.pushState({}, '', ajaxUrl);
-                if (historyMode === 'replace') window.history.replaceState({}, '', ajaxUrl);
-            },
-            complete: function() {
-                $('#sessionListCard').removeClass('pos-list-loading');
-                activeRequest = null;
-            }
-        });
-    }
-
-    $('#sessionSearchInput').on('input', function() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(function() {
-            loadSessionPage("{{ route('pos.sessions.index') }}", 'replace');
-        }, 250);
-    });
-
-    $(document).on('click', '#sessionPagination a', function(e) {
-        e.preventDefault();
-        const url = $(this).attr('href');
-        if (!url || url === '#' || $(this).hasClass('disabled')) return;
-        loadSessionPage(url, 'push');
-    });
-
-    $(document).on('click', '.btnEditSession', function() {
-        $('#editSessionId').val($(this).data('id'));
-        $('#editSessionStart').val($(this).attr('data-start'));
-        $('#editSessionEnd').val($(this).attr('data-end'));
-        $('#editSessionStatus').val($(this).data('status'));
-        $('#editSessionTitle').html('<i class="bi bi-pencil-square me-2"></i>Edit Session #' + $(this).data('id'));
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('editSessionModal')).show();
-    });
-
-    $('#editSessionForm').on('submit', function(e) {
-        e.preventDefault();
-        const $button = $(this).find('button[type="submit"]');
-        const oldHtml = $button.html();
-        $button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Saving...');
-
-        $.post("{{ route('pos.session.update') }}", $(this).serialize())
-            .done(function(res) {
-                if (res.status === 'success') {
-                    bootstrap.Modal.getOrCreateInstance(document.getElementById('editSessionModal')).hide();
-                    Swal.fire({icon:'success', title:'Updated', text:res.message, timer:1400, showConfirmButton:false});
-                    loadSessionPage(window.location.href);
-                }
-            })
-            .fail(function(xhr) {
-                const response = xhr.responseJSON || {};
-                const message = response.message || 'Something went wrong while updating the session.';
-                const title = response.code === 'session_close_blocked' ? 'Cannot Close Session' : 'Error';
-                Swal.fire(title, message, 'error');
-            })
-            .always(function() { $button.prop('disabled', false).html(oldHtml); });
-    });
-})();
+window.updateReportDOM=function(data){$('#sessionRows').html(data.html||'');$('#sessionPagination').html(data.pagination||'');};
+$(document).on('click','#sessionPagination a',function(e){e.preventDefault();if($(this).hasClass('disabled'))return;const u=$(this).attr('href');if(u&&u!=='#')window.reportAjaxRequest(u,'push');});
+$('#posSessionPdf').on('click',function(){window.open($(this).data('url')+'?'+$('#reportFilterForm').serialize(),'_blank','noopener');});
+$('#posSessionExcel').on('click',function(){window.location.href=$(this).data('url')+'?'+$('#reportFilterForm').serialize();});
+$(document).on('click','.btnEditSession',function(){ $('#editSessionId').val($(this).data('id'));$('#editSessionStart').val($(this).attr('data-start'));$('#editSessionEnd').val($(this).attr('data-end'));$('#editSessionStatus').val($(this).data('status'));$('#editSessionTitle').html('<i class="bi bi-pencil-square me-2"></i>Edit Session #'+$(this).data('id'));bootstrap.Modal.getOrCreateInstance(document.getElementById('editSessionModal')).show(); });
+$('#editSessionForm').on('submit',function(e){e.preventDefault();const $b=$(this).find('button[type="submit"]'),old=$b.html();$b.prop('disabled',true).html('<span class="spinner-border spinner-border-sm"></span> Saving...');$.post("{{ route('pos.session.update') }}",$(this).serialize()).done(function(res){if(res.status==='success'){bootstrap.Modal.getOrCreateInstance(document.getElementById('editSessionModal')).hide();Swal.fire({icon:'success',title:'Updated',text:res.message,timer:1300,showConfirmButton:false});window.triggerReportFetch('replace');}}).fail(function(xhr){const r=xhr.responseJSON||{};Swal.fire(r.code==='session_close_blocked'?'Cannot Close Session':'Error',r.message||'Could not update the session.','error');}).always(function(){$b.prop('disabled',false).html(old);});});
 </script>
 @endsection

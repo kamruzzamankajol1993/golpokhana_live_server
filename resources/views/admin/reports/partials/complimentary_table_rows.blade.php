@@ -26,7 +26,7 @@
         }
     @endphp
     <tr>
-        <td>{{ ($orders->firstItem() ?? 1) + $loop->index }}</td>
+        <td><span class="report-sl-badge">{{ ($orders->firstItem() ?? 1) + $loop->index }}</span></td>
         <td><strong>#{{ $order->order_number }}</strong></td>
         <td>
             <strong>{{ optional($order->customer)->name ?? 'Walk-in Customer' }}</strong><br>

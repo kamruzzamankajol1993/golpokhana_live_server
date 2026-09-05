@@ -9,6 +9,7 @@
         $paymentText = $order->reportPaymentText(0, true);
     @endphp
     <tr>
+        <td><span class="report-sl-badge">{{ ($orders->firstItem() ?? 1) + $loop->index }}</span></td>
         <td><strong>#{{ $order->order_number }}</strong></td>
         <td>{{ optional($order->created_at)->format('d M Y') }}<br><span class="text-muted">{{ optional($order->created_at)->format('h:i A') }}</span></td>
         <td><strong>{{ $partnerLabel }}</strong></td>
@@ -24,6 +25,6 @@
     </tr>
 @empty
     <tr>
-        <td colspan="12" class="text-center py-4">No Delivery orders found for the selected filter.</td>
+        <td colspan="13" class="text-center py-4">No Delivery orders found for the selected filter.</td>
     </tr>
 @endforelse

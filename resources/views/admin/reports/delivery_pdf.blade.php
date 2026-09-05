@@ -27,7 +27,7 @@
         <h2>{{ $restaurant->name ?? $restaurantSettingName }}</h2>
         <p>{{ $restaurant->address ?? '' }}@if(!empty($restaurant->phone)) | Phone: {{ $restaurant->phone }}@endif</p>
         <div class="title">Delivery Report</div>
-        <p>Period: {{ $startDate->format('d M Y') }} to {{ $endDate->format('d M Y') }} | Partner: {{ $selectedDeliveryPartnerLabel ?? 'ALL' }}</p>
+        <p>{{ $filterLabel ?? ('Period: ' . $startDate->format('d M Y') . ' to ' . $endDate->format('d M Y')) }} | Partner: {{ $selectedDeliveryPartnerLabel ?? 'ALL' }}</p>
     </div>
 
     <table class="summary">
@@ -42,6 +42,7 @@
     <table class="report-table">
         <thead>
             <tr>
+                <th>SL</th>
                 <th>Order #</th>
                 <th>Date &amp; Time</th>
                 <th>Delivery Partner</th>
@@ -68,6 +69,7 @@
                     $payment = $order->reportPaymentText(0, true);
                 @endphp
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
                     <td><strong>#{{ $order->order_number }}</strong></td>
                     <td>{{ optional($order->created_at)->format('d M Y h:i A') }}</td>
                     <td>{{ $partnerLabel }}</td>
@@ -82,13 +84,13 @@
                     <td>{{ $order->status ?? '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="12" class="text-center">No delivery orders found for the selected filter.</td></tr>
+                <tr><td colspan="13" class="text-center">No delivery orders found for the selected filter.</td></tr>
             @endforelse
         </tbody>
         @if($orders->isNotEmpty())
         <tfoot>
             <tr>
-                <th colspan="5" class="text-right">Total ({{ $orders->count() }} Orders)</th>
+                <th colspan="6" class="text-right">Total ({{ $orders->count() }} Orders)</th>
                 <th class="text-right">৳{{ number_format((float)$orders->sum('subtotal'), 2) }}</th>
                 <th class="text-right">৳{{ number_format((float)$orders->sum('vat_tax'), 2) }}</th>
                 <th class="text-right">৳{{ number_format((float)$orders->sum(function($order){ return max(0,(float)($order->discount_amount ?? 0)) + max(0,(float)($order->product_discount_amount ?? 0)); }), 2) }}</th>

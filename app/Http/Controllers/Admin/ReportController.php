@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
+use App\Support\ReportTimeFilter;
 
 class ReportController extends Controller
 {
@@ -75,49 +76,14 @@ class ReportController extends Controller
         return Carbon::parse($date);
     }
 
-    private function resolveReportFilters(Request $request): array
+    private function resolveReportFilters(Request $request, string $defaultType = 'year', bool $allowAll = false): array
     {
-        $currentYear = Carbon::now()->year;
-        $filterType = $request->filter_type ?: 'year';
-        $year = (int) ($request->year ?: $currentYear);
-        $month = (int) ($request->month ?: Carbon::now()->month);
-
-        if ($filterType === 'all') {
-            // Keep harmless current-year date values for shared view fields; reports that
-            // support All can intentionally skip applying a date range to their query.
-            $startDate = Carbon::create($year, 1, 1)->startOfYear()->startOfDay();
-            $endDate = Carbon::create($year, 12, 31)->endOfYear()->endOfDay();
-        } elseif ($filterType === 'date' && $request->start_date && $request->end_date) {
-            try {
-                $startDate = $this->parseReportDate($request->start_date)->startOfDay();
-                $endDate = $this->parseReportDate($request->end_date)->endOfDay();
-
-                if ($startDate->gt($endDate)) {
-                    [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
-                }
-            } catch (\Throwable $e) {
-                $filterType = 'year';
-                $startDate = Carbon::create($year, 1, 1)->startOfYear()->startOfDay();
-                $endDate = Carbon::create($year, 12, 31)->endOfYear()->endOfDay();
-            }
-        } elseif ($filterType === 'month') {
-            $startDate = Carbon::create($year, $month, 1)->startOfMonth()->startOfDay();
-            $endDate = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
-        } else {
-            $filterType = 'year';
-            $startDate = Carbon::create($year, 1, 1)->startOfYear()->startOfDay();
-            $endDate = Carbon::create($year, 12, 31)->endOfYear()->endOfDay();
-        }
-
-        return [
-            'filterType' => $filterType,
-            'year' => $year,
-            'month' => $month,
-            'startDate' => $startDate,
-            'endDate' => $endDate,
-            'paymentMethod' => $request->payment_method,
-            'yearOptions' => range($currentYear + 1, $currentYear - 10),
-        ];
+        return ReportTimeFilter::resolve(
+            $request,
+            RestaurantSetting::first(),
+            $defaultType,
+            $allowAll
+        );
     }
 
     private function applyPaymentCollectionFilter($query, ?string $paymentMethod)
@@ -181,6 +147,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.sales_table_rows', compact('orders'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
@@ -195,7 +162,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.sales_order', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel',
             'totalRevenue', 'totalDiscount', 'totalProductDiscount', 'totalOrders', 'avgOrderValue', 'uniqueCustomers', 'orders'
         ));
     }
@@ -296,6 +263,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.delivery_table_rows', compact('orders', 'deliveryPartnerNameMap'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
@@ -309,7 +277,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.delivery_report', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel',
             'totalOrders', 'completedOrders', 'totalValue', 'totalDue', 'orders',
             'deliveryPartners', 'selectedDeliveryPartner', 'selectedDeliveryPartnerId', 'selectedDeliveryPartnerLabel',
             'deliveryPartnerNameMap'
@@ -376,6 +344,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.due_table_rows', compact('orders'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
@@ -388,7 +357,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.due_report', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel',
             'deliveryPartner', 'deliveryPartnerOptions', 'totalOrders', 'totalGrand',
             'totalPaid', 'totalDue', 'orders'
         ));
@@ -447,9 +416,7 @@ class ReportController extends Controller
         $deliveryPartnerLabel = $deliveryPartner === ''
             ? 'All (including non-partner dues)'
             : ($deliveryPartnerOptions[$deliveryPartner] ?? $deliveryPartner);
-        $periodLabel = $filterType === 'all'
-            ? 'All Dates'
-            : $startDate->format('d M Y') . ' to ' . $endDate->format('d M Y');
+        $periodLabel = $filterLabel;
 
         @ini_set('pcre.backtrack_limit', '50000000');
         @ini_set('memory_limit', '1024M');
@@ -517,9 +484,10 @@ class ReportController extends Controller
         }
 
         $orders = $query->orderByDesc('id')->get();
-        $headings = ['Order #', 'Date & Time', 'Customer', 'Order Type', 'Delivery Partner', 'Grand Total', 'Paid', 'Due', 'Payment', 'Status'];
-        $rows = $orders->map(function ($order) {
+        $headings = ['SL', 'Order #', 'Date & Time', 'Customer', 'Order Type', 'Delivery Partner', 'Grand Total', 'Paid', 'Due', 'Payment', 'Status'];
+        $rows = $orders->values()->map(function ($order, $index) {
             return [
+                $index + 1,
                 '#' . $order->order_number,
                 optional($order->created_at)->format('d M Y h:i A'),
                 optional($order->customer)->name ?? 'Walk-in',
@@ -563,7 +531,7 @@ class ReportController extends Controller
 
         $html = view('admin.reports.delivery_pdf', compact(
             'orders', 'startDate', 'endDate', 'totalOrders', 'completedOrders',
-            'totalValue', 'totalDue', 'restaurant', 'selectedDeliveryPartnerLabel', 'deliveryPartnerNameMap'
+            'totalValue', 'totalDue', 'restaurant', 'selectedDeliveryPartnerLabel', 'deliveryPartnerNameMap', 'filterLabel'
         ))->render();
 
         $tempDir = storage_path('app/mpdf-temp');
@@ -600,10 +568,11 @@ class ReportController extends Controller
         $orders = $this->deliveryReportQuery($startDate, $endDate, $selectedDeliveryPartner)
             ->orderByDesc('id')->get();
 
-        $headings = ['Order #', 'Date & Time', 'Delivery Partner', 'Customer', 'Phone', 'Subtotal', 'VAT', 'Discount', 'Grand Total', 'Due', 'Payment', 'Status'];
-        $rows = $orders->map(function ($order) {
+        $headings = ['SL', 'Order #', 'Date & Time', 'Delivery Partner', 'Customer', 'Phone', 'Subtotal', 'VAT', 'Discount', 'Grand Total', 'Due', 'Payment', 'Status'];
+        $rows = $orders->values()->map(function ($order, $index) {
             $discount = max(0, (float) ($order->product_discount_amount ?? 0)) + max(0, (float) ($order->discount_amount ?? 0));
             return [
+                $index + 1,
                 '#' . $order->order_number,
                 optional($order->created_at)->format('d M Y h:i A'),
                 $this->deliveryPartnerLabelForOrder($order),
@@ -726,6 +695,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.complimentary_table_rows', compact('orders'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
                 'summary' => [
@@ -738,7 +708,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.complimentary_orders', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel',
             'totalOrders', 'completedOrders', 'complimentaryFoodQty', 'totalOrderValue', 'orders'
         ));
     }
@@ -826,17 +796,10 @@ class ReportController extends Controller
     public function waiterDailyOrders(Request $request)
     {
         $restaurant = RestaurantSetting::first();
-        $businessDate = $this->defaultBusinessDate($restaurant);
-
-        if ($request->filled('business_date')) {
-            try {
-                $businessDate = $this->parseReportDate($request->business_date)->startOfDay();
-            } catch (\Throwable $e) {
-                // Keep the correctly resolved default business date.
-            }
-        }
-
-        [$windowStart, $windowEnd] = $this->resolveBusinessWindow($businessDate, $restaurant);
+        $filters = $this->resolveReportFilters($request, 'business_day');
+        extract($filters);
+        $windowStart = $startDate;
+        $windowEnd = $endDate;
 
         $waiters = User::query()
             ->whereHas('roles', function ($query) {
@@ -849,7 +812,6 @@ class ReportController extends Controller
 
         $waiterIds = $waiters->pluck('id')->map(fn ($id) => (int) $id)->values();
         $selectedUserId = $request->filled('user_id') ? (int) $request->user_id : null;
-
         if ($selectedUserId && !$waiterIds->contains($selectedUserId)) {
             $selectedUserId = null;
         }
@@ -870,13 +832,9 @@ class ReportController extends Controller
             ->get()
             ->keyBy(fn ($row) => (int) $row->user_id);
 
-        $reportUsers = $selectedUserId
-            ? $waiters->where('id', $selectedUserId)->values()
-            : $waiters;
-
+        $reportUsers = $selectedUserId ? $waiters->where('id', $selectedUserId)->values() : $waiters;
         $reportRows = $reportUsers->map(function ($user) use ($aggregateRows) {
             $aggregate = $aggregateRows->get((int) $user->id);
-
             return [
                 'user' => $user,
                 'total_orders' => (int) ($aggregate->total_orders ?? 0),
@@ -907,36 +865,40 @@ class ReportController extends Controller
         $completedProductDiscount = $reportRows->sum('completed_product_discount');
         $waitersWithOrders = $reportRows->where('total_orders', '>', 0)->count();
 
+        if ($request->ajax()) {
+            return response()->json([
+                'filter_label' => $filterLabel,
+                'summary_rows' => view('admin.reports.partials.waiter_summary_rows', compact('reportRows'))->render(),
+                'order_rows' => view('admin.reports.partials.waiter_order_rows', compact('orders'))->render(),
+                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $orders])->render(),
+                'summary' => [
+                    'orders' => number_format($totalOrders),
+                    'completed' => number_format($completedOrders),
+                    'active' => number_format($activeOrders),
+                    'cancelled' => number_format($cancelledOrders),
+                    'sales' => '৳' . number_format($completedSales, 0),
+                    'waiters' => number_format($waitersWithOrders),
+                    'period' => $filterLabel,
+                ],
+            ]);
+        }
+
         return view('admin.reports.waiter_daily_orders', compact(
-            'restaurant',
-            'businessDate',
-            'windowStart',
-            'windowEnd',
-            'waiters',
-            'selectedUserId',
-            'reportRows',
-            'orders',
-            'totalOrders',
-            'completedOrders',
-            'activeOrders',
-            'cancelledOrders',
-            'completedSales',
-            'completedOtherDiscount',
-            'completedProductDiscount',
-            'waitersWithOrders'
+            'restaurant', 'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime',
+            'startDate', 'endDate', 'yearOptions', 'filterLabel', 'windowStart', 'windowEnd', 'waiters',
+            'selectedUserId', 'reportRows', 'orders', 'totalOrders', 'completedOrders', 'activeOrders',
+            'cancelledOrders', 'completedSales', 'completedOtherDiscount', 'completedProductDiscount', 'waitersWithOrders'
         ));
     }
-
 
 
     private function waiterDailyExportData(Request $request): array
     {
         $restaurant = RestaurantSetting::first();
-        $businessDate = $this->defaultBusinessDate($restaurant);
-        if ($request->filled('business_date')) {
-            try { $businessDate = $this->parseReportDate($request->business_date)->startOfDay(); } catch (\Throwable $e) {}
-        }
-        [$windowStart, $windowEnd] = $this->resolveBusinessWindow($businessDate, $restaurant);
+        $filters = $this->resolveReportFilters($request, 'business_day');
+        extract($filters);
+        $windowStart = $startDate;
+        $windowEnd = $endDate;
 
         $waiters = User::query()
             ->whereHas('roles', fn ($query) => $query->whereRaw('LOWER(name) = ?', ['waiter']))
@@ -952,10 +914,11 @@ class ReportController extends Controller
             ->when($selectedUserId, fn ($q) => $q->where('user_id', $selectedUserId))
             ->orderByDesc('created_at')->orderByDesc('id')->get();
 
-        $headings = ['Order #', 'Waiter User', 'Order Time', 'Table', 'Order Type', 'Status', 'Honored', 'Product Discount', 'Grand Total', 'Payment'];
-        $rows = $orders->map(function ($order) {
+        $headings = ['SL', 'Order #', 'Waiter User', 'Order Time', 'Table', 'Order Type', 'Status', 'Honored', 'Product Discount', 'Grand Total', 'Payment'];
+        $rows = $orders->values()->map(function ($order, $index) {
             $userName = optional($order->user)->name ?: trim((optional($order->user)->first_name ?? '') . ' ' . (optional($order->user)->last_name ?? ''));
             return [
+                $index + 1,
                 $order->order_number,
                 $userName ?: ('User #' . $order->user_id),
                 optional($order->created_at)->format('d/m/Y h:i A'),
@@ -970,8 +933,7 @@ class ReportController extends Controller
         })->all();
         $waiterName = $selectedUserId ? (optional($waiters->firstWhere('id', $selectedUserId))->name ?? ('User #' . $selectedUserId)) : 'All Waiters';
         $meta = [
-            'Business Date' => $businessDate->format('d M Y'),
-            'Business Window' => $windowStart->format('d M Y, h:i A') . ' - ' . $windowEnd->format('d M Y, h:i A'),
+            'Filter' => $filterLabel,
             'Waiter' => $waiterName,
             'Orders' => (string) $orders->count(),
             'Completed Sales' => number_format((float) $orders->filter(fn ($o) => strtolower((string) $o->status) === 'completed')->sum('grand_total'), 2),
@@ -1072,6 +1034,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.payment_table_rows', compact('paymentOrders'))->render(),
                 'cards' => view('admin.reports.partials.payment_cards', compact('paymentRows', 'totalCollected'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $paymentOrders])->render()
@@ -1079,7 +1042,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.payment_type_sales', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'paymentMethod', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'paymentMethod', 'yearOptions', 'filterLabel',
             'paymentRows', 'totalCollected', 'paymentOrders'
         ));
     }
@@ -1120,6 +1083,7 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.food_table_rows', compact('foodRows'))->render(),
                 'qty' => number_format($totalFoodQty),
                 'sales' => '৳' . number_format($totalFoodSales, 2),
@@ -1130,7 +1094,7 @@ class ReportController extends Controller
         }
 
         return view('admin.reports.food_sales', compact(
-            'filterType', 'year', 'month', 'startDate', 'endDate', 'yearOptions',
+            'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel',
             'foodRows', 'totalFoodQty', 'totalFoodSales', 'totalProductDiscount', 'totalNetFoodSales'
         ));
     }
@@ -1229,7 +1193,8 @@ class ReportController extends Controller
 
             return [
                 'order_number' => $order->order_number,
-                'date' => optional($order->created_at)->format('d M, h:i A'),
+                'date' => optional($order->created_at)->format('d M Y'),
+                'time' => optional($order->created_at)->format('h:i A'),
                 'customer' => optional($order->customer)->name ?? 'Walk-in',
                 'table' => optional($order->table)->table_number ?? 'Takeaway',
                 'other_discount' => (float) ($order->discount_amount ?? 0),
@@ -1318,7 +1283,7 @@ class ReportController extends Controller
             $periodTotalOrder = $dataRows->count();
         }
 
-        return compact('report', 'dataRows', 'startDate', 'endDate', 'periodTotalSale', 'periodTotalDiscount', 'periodTotalProductDiscount', 'periodTotalOrder') + [
+        return compact('report', 'dataRows', 'startDate', 'endDate', 'filterLabel', 'periodTotalSale', 'periodTotalDiscount', 'periodTotalProductDiscount', 'periodTotalOrder') + [
             'restaurant' => RestaurantSetting::first(),
         ];
     }
@@ -1326,8 +1291,14 @@ class ReportController extends Controller
     /** KOT Report — complete historical list, including delivered/completed KOTs. */
     public function kotReport(Request $request)
     {
+        $filters = $this->resolveReportFilters($request, 'all', true);
+        extract($filters);
         $search = trim((string) $request->query('search', ''));
         $kotQuery = OrderKot::with(['order.table', 'order.waiter', 'orderDetails']);
+
+        if ($filterType !== 'all') {
+            $kotQuery->whereBetween('created_at', [$startDate, $endDate]);
+        }
 
         if ($search !== '') {
             $like = '%' . $search . '%';
@@ -1341,37 +1312,40 @@ class ReportController extends Controller
                             $orderSearch->where('order_number', 'like', $like)
                                 ->orWhere('order_type', 'like', $like)
                                 ->orWhere('status', 'like', $like)
-                                ->orWhereHas('table', function ($tableQuery) use ($like) {
-                                    $tableQuery->where('table_number', 'like', $like);
-                                })
-                                ->orWhereHas('waiter', function ($waiterQuery) use ($like) {
-                                    $waiterQuery->where('name', 'like', $like);
-                                });
+                                ->orWhereHas('table', fn ($tableQuery) => $tableQuery->where('table_number', 'like', $like))
+                                ->orWhereHas('waiter', fn ($waiterQuery) => $waiterQuery->where('name', 'like', $like));
                         });
                     });
             });
         }
 
-        $kots = $kotQuery
-            ->orderByDesc('id')
-            ->paginate(20)
-            ->appends($request->query());
+        $kots = $kotQuery->orderByDesc('id')->paginate(20)->appends($request->query());
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.kot_report_rows', compact('kots'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $kots])->render(),
             ]);
         }
 
-        return view('admin.reports.kot_report', compact('kots'));
+        return view('admin.reports.kot_report', compact(
+            'kots', 'search', 'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime',
+            'startDate', 'endDate', 'yearOptions', 'filterLabel'
+        ));
     }
 
     /** POS Session Report — complete historical session list. */
     public function posSessionReport(Request $request)
     {
+        $filters = $this->resolveReportFilters($request, 'all', true);
+        extract($filters);
         $search = trim((string) $request->query('search', ''));
         $sessionQuery = PosSession::with('user');
+
+        if ($filterType !== 'all') {
+            $sessionQuery->whereBetween('start_time', [$startDate, $endDate]);
+        }
 
         if ($search !== '') {
             $like = '%' . $search . '%';
@@ -1384,33 +1358,48 @@ class ReportController extends Controller
                     ->orWhere('status', 'like', $like)
                     ->orWhere('sales_total', 'like', $like)
                     ->orWhere('grand_total', 'like', $like)
-                    ->orWhereHas('user', function ($userQuery) use ($like) {
-                        $userQuery->where('name', 'like', $like);
-                    });
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', $like));
             });
         }
 
-        $sessions = $sessionQuery
-            ->orderByDesc('id')
-            ->paginate(20)
-            ->appends($request->query());
+        $sessions = $sessionQuery->orderByDesc('id')->paginate(20)->appends($request->query());
 
         if ($request->ajax()) {
             return response()->json([
+                'filter_label' => $filterLabel,
                 'html' => view('admin.reports.partials.pos_session_report_rows', compact('sessions'))->render(),
                 'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $sessions])->render(),
             ]);
         }
 
-        return view('admin.reports.pos_session_report', compact('sessions'));
+        return view('admin.reports.pos_session_report', compact(
+            'sessions', 'search', 'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime',
+            'startDate', 'endDate', 'yearOptions', 'filterLabel'
+        ));
     }
 
 
 
-    private function kotExportData(): array
+    private function kotExportData(Request $request): array
     {
-        $kots = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])->orderByDesc('id')->get();
-        $headings = ['#', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
+        $filters = $this->resolveReportFilters($request, 'all', true);
+        extract($filters);
+        $search = trim((string) $request->query('search', ''));
+        $query = OrderKot::with(['order.table', 'order.waiter', 'orderDetails']);
+        if ($filterType !== 'all') {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('id', 'like', $like)->orWhere('kot_number', 'like', $like)->orWhere('kitchen_status', 'like', $like)
+                    ->orWhereHas('order', function ($oq) use ($like) {
+                        $oq->where('order_number', 'like', $like)->orWhere('order_type', 'like', $like)->orWhere('status', 'like', $like);
+                    });
+            });
+        }
+        $kots = $query->orderByDesc('id')->get();
+        $headings = ['SL', 'KOT', 'Order', 'Type / Table', 'Waiter', 'Items', 'Created', 'KOT Status', 'Order Status'];
         $rows = $kots->values()->map(function ($kot, $index) {
             $order = $kot->order;
             $type = strtolower((string) optional($order)->order_type);
@@ -1425,18 +1414,18 @@ class ReportController extends Controller
                 $kot->kitchen_status ?? 'N/A', optional($order)->status ?? 'N/A',
             ];
         })->all();
-        return [$headings, $rows, ['Records' => (string) count($rows)]];
+        return [$headings, $rows, ['Filter' => $filterLabel, 'Records' => (string) count($rows)]];
     }
 
     public function kotReportPdf(Request $request)
     {
-        [$headings, $rows, $meta] = $this->kotExportData();
+        [$headings, $rows, $meta] = $this->kotExportData($request);
         return $this->simpleReportPdfResponse('KOT Report', $headings, $rows, $meta, 'kot-report-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
     }
 
     public function kotReportExcel(Request $request)
     {
-        [$headings, $rows] = $this->kotExportData();
+        [$headings, $rows] = $this->kotExportData($request);
         return Excel::download(new ArrayReportExport($headings, $rows, 'KOT Report'), 'kot-report-' . now()->format('Y-m-d-His') . '.xlsx');
     }
 
@@ -1473,13 +1462,29 @@ class ReportController extends Controller
         return number_format($amount, 2) . ($names->isNotEmpty() ? ' (' . $names->implode(', ') . ')' : '');
     }
 
-    private function posSessionExportData(): array
+    private function posSessionExportData(Request $request): array
     {
-        $sessions = PosSession::with('user')->orderByDesc('id')->get();
-        $headings = ['ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Sales', 'Service Charge', 'VAT', 'Grand Total', 'Cash', 'Bank / Card', 'MFS', 'Status'];
-        $rows = $sessions->map(function ($session) {
+        $filters = $this->resolveReportFilters($request, 'all', true);
+        extract($filters);
+        $search = trim((string) $request->query('search', ''));
+        $query = PosSession::with('user');
+        if ($filterType !== 'all') {
+            $query->whereBetween('start_time', [$startDate, $endDate]);
+        }
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('id', 'like', $like)->orWhere('weekday', 'like', $like)->orWhere('start_time', 'like', $like)
+                    ->orWhere('end_time', 'like', $like)->orWhere('duration', 'like', $like)->orWhere('status', 'like', $like)
+                    ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', $like));
+            });
+        }
+        $sessions = $query->orderByDesc('id')->get();
+        $headings = ['SL', 'ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Sales', 'Service Charge', 'VAT', 'Grand Total', 'Cash', 'Bank / Card', 'MFS', 'Status'];
+        $rows = $sessions->values()->map(function ($session, $index) {
             $income = is_array($session->incomes_summary) ? $session->incomes_summary : [];
             return [
+                $index + 1,
                 $session->id,
                 optional($session->user)->name ?? 'N/A',
                 $session->weekday ?? ($session->start_time ? Carbon::parse($session->start_time)->format('l') : 'N/A'),
@@ -1496,18 +1501,18 @@ class ReportController extends Controller
                 $session->status ?? 'N/A',
             ];
         })->all();
-        return [$headings, $rows, ['Records' => (string) count($rows)]];
+        return [$headings, $rows, ['Filter' => $filterLabel, 'Records' => (string) count($rows)]];
     }
 
     public function posSessionReportPdf(Request $request)
     {
-        [$headings, $rows, $meta] = $this->posSessionExportData();
+        [$headings, $rows, $meta] = $this->posSessionExportData($request);
         return $this->simpleReportPdfResponse('POS Session Report', $headings, $rows, $meta, 'pos-session-report-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
     }
 
     public function posSessionReportExcel(Request $request)
     {
-        [$headings, $rows] = $this->posSessionExportData();
+        [$headings, $rows] = $this->posSessionExportData($request);
         return Excel::download(new ArrayReportExport($headings, $rows, 'POS Sessions'), 'pos-session-report-' . now()->format('Y-m-d-His') . '.xlsx');
     }
 
