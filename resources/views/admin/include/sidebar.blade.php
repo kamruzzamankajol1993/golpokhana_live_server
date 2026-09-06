@@ -21,14 +21,18 @@
         </a>
     </div>
     @endcan
-    @can('pos-view')
+    @canany(['pos-view', 'table-booking-view'])
+    @php
+        $posMenuActive = request()->routeIs('pos.*') || request()->routeIs('table-booking.*');
+    @endphp
     <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('pos.*') ? 'active' : '' }}" data-bs-toggle="collapse" href="#posSystemDropdown" role="button" aria-expanded="{{ request()->routeIs('pos.*') ? 'true' : 'false' }}" aria-controls="posSystemDropdown">
+        <a class="progga-nav-link {{ $posMenuActive ? 'active' : '' }}" data-bs-toggle="collapse" href="#posSystemDropdown" role="button" aria-expanded="{{ $posMenuActive ? 'true' : 'false' }}" aria-controls="posSystemDropdown">
             <i class="bi bi-display progga-nav-icon"></i><span>POS System</span>
             <span class="progga-nav-badge">LIVE</span>
             <i class="bi bi-chevron-down ms-auto" style="font-size:11px;"></i>
         </a>
-        <div class="collapse {{ request()->routeIs('pos.*') ? 'show' : '' }}" id="posSystemDropdown">
+        <div class="collapse {{ $posMenuActive ? 'show' : '' }}" id="posSystemDropdown">
+            @can('pos-view')
             <a class="progga-nav-link {{ request()->routeIs('pos.index') ? 'active' : '' }}" href="{{ route('pos.index') }}" style="padding-left:42px;font-size:13px;">
                 <i class="bi bi-display progga-nav-icon"></i><span>Sales</span>
             </a>
@@ -38,9 +42,22 @@
             <a class="progga-nav-link {{ request()->routeIs('pos.kots.*') ? 'active' : '' }}" href="{{ route('pos.kots.index') }}" style="padding-left:42px;font-size:13px;">
                 <i class="bi bi-receipt progga-nav-icon"></i><span>Kot List</span>
             </a>
+            @endcan
+            @can('table-booking-view')
+            <a class="progga-nav-link {{ request()->routeIs('table-booking.*') ? 'active' : '' }}" href="{{ route('table-booking.index') }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-calendar-check-fill progga-nav-icon"></i>
+                <span>Table Booking</span>
+                @php
+                    $upcomingCount = \App\Models\TableBooking::where('status', 'upcoming')->count();
+                @endphp
+                @if($upcomingCount > 0)
+                    <span class="badge bg-danger rounded-pill ms-auto" style="font-size:10px;">{{ $upcomingCount }}</span>
+                @endif
+            </a>
+            @endcan
         </div>
     </div>
-    @endcan
+    @endcanany
 
     @can('kitchen-view')
     <div class="progga-nav-item">
@@ -115,21 +132,6 @@
     </a>
 </div>
 @endcan
-   @can('table-booking-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('table-booking.*') ? 'active' : '' }}" href="{{ route('table-booking.index') }}">
-            <i class="bi bi-calendar-check-fill progga-nav-icon"></i>
-            <span>Table Booking</span>
-
-            @php
-                $upcomingCount = \App\Models\TableBooking::where('status', 'upcoming')->count();
-            @endphp
-            @if($upcomingCount > 0)
-                <span class="badge bg-danger rounded-pill ms-auto" style="font-size: 10px;">{{ $upcomingCount }}</span>
-            @endif
-        </a>
-    </div>
-    @endcan
    @can('customer-view')
     <div class="progga-nav-item">
         <a class="progga-nav-link {{ request()->routeIs('customer.*') || request()->routeIs('reward-points.*') ? 'active' : '' }}" href="{{ route('customer.index') }}">

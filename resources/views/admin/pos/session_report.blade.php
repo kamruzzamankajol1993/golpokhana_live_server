@@ -169,19 +169,24 @@
                     ? ($cardProviderIncome ?? [])
                     : ($methodKey === 'MFC' ? ($mfsProviderIncome ?? []) : []);
             @endphp
-            <tr>
-                <td>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
-                <td class="text-end fw-bold">{{ round($amount) }}</td>
+            <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:15px !important; font-weight:900 !important; color:#000 !important;" @endif>
+                <td @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:15px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
+                <td class="text-end fw-bold" @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:15px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ round($amount) }}</td>
             </tr>
             @foreach($providerRows as $providerName => $providerAmount)
-                <tr style="font-size:11px;color:#444;">
-                    <td style="padding-left:12px;">↳ {{ $providerName }}</td>
-                    <td class="text-end">{{ round($providerAmount) }}</td>
+                <tr>
+                    <td style="padding-left:12px; font-size:15px !important; font-weight:900 !important; color:#000 !important; line-height:1.35 !important;">
+                        <span style="font-size:15px !important; font-weight:900 !important; color:#000 !important;">↳</span>
+                        <span style="font-size:15px !important; font-weight:900 !important; color:#000 !important;">{{ $providerName }}</span>
+                    </td>
+                    <td class="text-end" style="font-size:15px !important; font-weight:900 !important; color:#000 !important; line-height:1.35 !important;">
+                        <span style="font-size:15px !important; font-weight:900 !important; color:#000 !important;">{{ round($providerAmount) }}</span>
+                    </td>
                 </tr>
             @endforeach
         @endforeach
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
-            <td style="padding-top: 8px;">Total collection</td>
+            <td style="padding-top: 8px;">Total Collection</td>
             <td class="text-end" style="padding-top: 8px;">{{ round($totalIncome) }}</td>
         </tr>
     </table>

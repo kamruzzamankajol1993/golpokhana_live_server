@@ -207,16 +207,81 @@
             <span>{{ $taxSettingTaxLabel }} ({{ $taxSettingVatRate }}%)</span><span>৳{{ number_format($order->vat_tax, 0) }}</span>
         </div>
 
+        @php
+            // Show the actual discount percentages in the offcanvas summary, matching the Bill/Invoice.
+            $offcanvasProductDiscountPercentLabels = [];
+            foreach (collect($order->orderDetails ?? []) as $discountItem) {
+                if (!empty($discountItem->is_unavailable)) {
+                    continue;
+                }
+
+                $lineDiscountAmount = max(0, (float) ($discountItem->product_discount_amount ?? 0));
+                if ($lineDiscountAmount <= 0) {
+                    continue;
+                }
+
+                $lineBase = max(0, (float) ($discountItem->subtotal ?? 0));
+                $lineType = (string) ($discountItem->product_discount_type ?? 'fixed');
+                $lineValue = max(0, (float) ($discountItem->product_discount_value ?? 0));
+
+                if ($lineType === 'percentage' && $lineValue > 0) {
+                    $linePercent = $lineValue;
+                } else {
+                    $linePercent = $lineBase > 0 ? ($lineDiscountAmount / $lineBase) * 100 : 0;
+                }
+
+                $linePercent = round(max(0, min(100, $linePercent)), 2);
+                if ($linePercent > 0) {
+                    $linePercentText = rtrim(rtrim(number_format($linePercent, 2, '.', ''), '0'), '.');
+                    if ($linePercentText !== '' && !in_array($linePercentText, $offcanvasProductDiscountPercentLabels, true)) {
+                        $offcanvasProductDiscountPercentLabels[] = $linePercentText;
+                    }
+                }
+            }
+
+            $offcanvasProductDiscountPercentLabel = implode('%, ', $offcanvasProductDiscountPercentLabels);
+            if ($offcanvasProductDiscountPercentLabel !== '') {
+                $offcanvasProductDiscountPercentLabel .= '%';
+            }
+
+            $offcanvasHonoredPercentText = '';
+            if ((float) ($order->discount_amount ?? 0) > 0) {
+                $offcanvasSnapshot = is_array($order->pre_invoice_snapshot ?? null) ? $order->pre_invoice_snapshot : [];
+                $offcanvasHonoredType = (string) ($order->discount_type ?? ($offcanvasSnapshot['discount_type'] ?? 'fixed'));
+                $offcanvasHonoredBase = max(0, (float) ($order->subtotal ?? ($offcanvasSnapshot['subtotal'] ?? 0)));
+                $offcanvasHonoredAmount = max(0, (float) ($order->discount_amount ?? ($offcanvasSnapshot['discount_amount'] ?? 0)));
+
+                if ($offcanvasHonoredType === 'percentage') {
+                    $offcanvasHonoredPercent = max(0, (float) ($order->discount_value ?? 0));
+                    if ($offcanvasHonoredPercent <= 0) {
+                        $offcanvasHonoredPercent = max(0, (float) ($offcanvasSnapshot['discount_value'] ?? 0));
+                    }
+                    if ($offcanvasHonoredPercent <= 0 && $offcanvasHonoredBase > 0) {
+                        $offcanvasHonoredPercent = ($offcanvasHonoredAmount / $offcanvasHonoredBase) * 100;
+                    }
+                } else {
+                    $offcanvasHonoredPercent = $offcanvasHonoredBase > 0
+                        ? ($offcanvasHonoredAmount / $offcanvasHonoredBase) * 100
+                        : 0;
+                }
+
+                $offcanvasHonoredPercent = round(max(0, min(100, $offcanvasHonoredPercent)), 2);
+                if ($offcanvasHonoredPercent > 0) {
+                    $offcanvasHonoredPercentText = rtrim(rtrim(number_format($offcanvasHonoredPercent, 2, '.', ''), '0'), '.');
+                }
+            }
+        @endphp
+
         @if(($order->product_discount_amount ?? 0) > 0)
         <div class="progga-oc-total-row" style="color: #d33;">
-            <span>Product Discount</span>
+            <span>Item Discount{{ $offcanvasProductDiscountPercentLabel !== '' ? ' (' . $offcanvasProductDiscountPercentLabel . ')' : '' }}</span>
             <span>−৳{{ number_format($order->product_discount_amount, 0) }}</span>
         </div>
         @endif
 
         @if($order->discount_amount > 0)
         <div class="progga-oc-total-row" style="color: #d33;">
-            <span>Honored ({{ ucfirst($order->discount_type) }})</span>
+            <span>Honored{{ $offcanvasHonoredPercentText !== '' ? ' (' . $offcanvasHonoredPercentText . '%)' : '' }}</span>
             <span>−৳{{ number_format($order->discount_amount, 0) }}</span>
         </div>
         @endif
