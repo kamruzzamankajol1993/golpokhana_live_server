@@ -110,6 +110,7 @@ Route::get('/refresh-csrf-token', function () {
     Route::get('reports/kots/pdf', [App\Http\Controllers\Admin\ReportController::class, 'kotReportPdf'])->name('reports.kots.pdf');
     Route::get('reports/kots/excel', [App\Http\Controllers\Admin\ReportController::class, 'kotReportExcel'])->name('reports.kots.excel');
     Route::get('reports/pos-sessions', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReport'])->name('reports.pos_sessions');
+    Route::get('reports/pos-sessions/combined-print', [App\Http\Controllers\Admin\ReportController::class, 'posSessionCombinedPrint'])->name('reports.pos_sessions.combined_print');
     Route::get('reports/pos-sessions/pdf', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReportPdf'])->name('reports.pos_sessions.pdf');
     Route::get('reports/pos-sessions/excel', [App\Http\Controllers\Admin\ReportController::class, 'posSessionReportExcel'])->name('reports.pos_sessions.excel');
     Route::get('reports/export/pdf', [App\Http\Controllers\Admin\ReportController::class, 'exportPdf'])->name('reports.export.pdf');

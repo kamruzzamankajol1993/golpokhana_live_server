@@ -4,7 +4,9 @@
     $showPayment = (bool)($showPaymentFilter ?? false);
     $showWaiter = (bool)($showWaiterFilter ?? false);
     $showSearch = (bool)($showSearchFilter ?? false);
+    $showReportView = (bool)($showReportViewFilter ?? false);
     $currentFilterType = $filterType ?? 'year';
+    $currentReportView = $reportView ?? 'session';
     $reportDateValue = isset($reportDate) && $reportDate ? $reportDate->format('d-m-Y') : now()->format('d-m-Y');
     $businessDateValue = isset($businessDate) && $businessDate ? $businessDate->format('d-m-Y') : now()->format('d-m-Y');
     $rangeStartValue = isset($startDate) && $startDate ? $startDate->format('d-m-Y') : now()->startOfMonth()->format('d-m-Y');
@@ -30,7 +32,7 @@
     @media(max-width:767px){.report-filter-line .progga-form-group,.report-filter-line .report-search-field{width:100%;min-width:100%}.report-filter-line .progga-form-control,.report-filter-line .progga-select{width:100%}.report-filter-line .report-filter-actions{width:100%;margin-left:0}.report-filter-period{width:100%}}
 </style>
 
-<form id="reportFilterForm" class="report-filter-line" autocomplete="off">
+<form id="reportFilterForm" class="report-filter-line" autocomplete="off" @if(!empty($combinedPreviewUrl)) data-combined-preview-url="{{ $combinedPreviewUrl }}" @endif>
     <div class="progga-form-group">
         <label class="progga-form-label">Filter Type</label>
         <select name="filter_type" id="filterType" class="progga-select">
@@ -43,6 +45,16 @@
             <option value="business_day" {{ $currentFilterType === 'business_day' ? 'selected' : '' }}>Business Day</option>
         </select>
     </div>
+
+    @if($showReportView)
+        <div class="progga-form-group">
+            <label class="progga-form-label">Report View</label>
+            <select name="report_view" id="reportViewFilter" class="progga-select">
+                <option value="session" {{ $currentReportView === 'session' ? 'selected' : '' }}>Session Wise</option>
+                <option value="combined" {{ $currentReportView === 'combined' ? 'selected' : '' }}>Combined</option>
+            </select>
+        </div>
+    @endif
 
     <div class="progga-form-group filter-field filter-year" style="display:none">
         <label class="progga-form-label">Year</label>
@@ -228,8 +240,31 @@
         return window.reportAjaxRequest(window.reportFilterUrl(window.location.pathname), historyMode || 'replace');
     };
 
-    $form.on('submit', function(e){ e.preventDefault(); window.triggerReportFetch('push'); });
+    $form.on('submit', function(e){
+        e.preventDefault();
+
+        const combinedPreviewUrl = $form.attr('data-combined-preview-url');
+        const isCombined = $('#reportViewFilter').length && $('#reportViewFilter').val() === 'combined';
+
+        // POS Session Report: Combined + Filter opens a dedicated printable
+        // Work Period Closing Report Blade instead of replacing the table via AJAX.
+        if (combinedPreviewUrl && isCombined) {
+            window.location.href = window.reportFilterUrl(combinedPreviewUrl);
+            return;
+        }
+
+        window.triggerReportFetch('push');
+    });
     $('#filterType').on('change', function(){ toggleReportFilterFields(); });
+    $('#reportViewFilter').on('change', function(){
+        // Combined starts on the current restaurant Business Day. All other
+        // filter types remain available and can still be selected afterwards.
+        if ($(this).val() === 'combined' && $('#filterType').val() === 'all') {
+            $('#filterType').val('business_day');
+            toggleReportFilterFields();
+        }
+        window.triggerReportFetch('replace');
+    });
     $('#filterYear,#filterMonth,#paymentMethod,#deliveryPartnerFilter,#waiterFilter').on('change', function(){ window.triggerReportFetch('replace'); });
     $('.report-datepicker,#filterStartTime,#filterEndTime').on('change', function(){ /* Filter button applies exact date/time selection. */ });
     $('#reportSearchInput').on('input', function(){ clearTimeout(searchTimer); searchTimer=setTimeout(function(){ window.triggerReportFetch('replace'); },450); });

@@ -11,6 +11,7 @@ use App\Models\PosSession;
 use App\Models\RestaurantSetting;
 use App\Models\User;
 use App\Models\DeliveryPartner;
+use App\Models\TableBooking;
 use App\Exports\ArrayReportExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1335,50 +1336,552 @@ class ReportController extends Controller
         ));
     }
 
-    /** POS Session Report — complete historical session list. */
+    /** POS Session Report — session-wise history plus an order-based Combined view. */
     public function posSessionReport(Request $request)
     {
-        $filters = $this->resolveReportFilters($request, 'all', true);
+        $reportView = $this->resolvePosSessionReportView($request);
+        $filters = $this->resolvePosSessionReportFilters($request, $reportView);
         extract($filters);
         $search = trim((string) $request->query('search', ''));
-        $sessionQuery = PosSession::with('user');
+        $combinedSummary = null;
 
-        if ($filterType !== 'all') {
-            $sessionQuery->whereBetween('start_time', [$startDate, $endDate]);
+        if ($reportView === 'combined') {
+            // Combined mode is intentionally independent of POS session start/end.
+            // The selected report date/time window is applied directly to orders,
+            // while order_details are loaded from the same requested window.
+            $orders = $this->combinedPosOrderQuery(
+                $filterType,
+                $startDate,
+                $endDate,
+                $search,
+                $combinedBusinessHours ?? null
+            )
+                ->orderByDesc('id')
+                ->get();
+            $combinedData = $this->buildCombinedOrderWorkPeriodData(
+                $orders,
+                $filterLabel,
+                $filterType,
+                $startDate,
+                $endDate
+            );
+            $combinedSummary = $this->combinedOrderSummaryFromWorkPeriodData($combinedData);
+            $sessions = collect();
+        } else {
+            // Session-wise mode keeps the existing POS session behavior unchanged.
+            $sessionQuery = PosSession::with('user');
+
+            if ($filterType !== 'all') {
+                $sessionQuery->whereBetween('start_time', [$startDate, $endDate]);
+            }
+
+            if ($search !== '') {
+                $like = '%' . $search . '%';
+                $sessionQuery->where(function ($query) use ($like) {
+                    $query->where('id', 'like', $like)
+                        ->orWhere('weekday', 'like', $like)
+                        ->orWhere('start_time', 'like', $like)
+                        ->orWhere('end_time', 'like', $like)
+                        ->orWhere('duration', 'like', $like)
+                        ->orWhere('status', 'like', $like)
+                        ->orWhere('sales_total', 'like', $like)
+                        ->orWhere('grand_total', 'like', $like)
+                        ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', $like));
+                });
+            }
+
+            $sessions = $sessionQuery->orderByDesc('id')->paginate(20)->appends($request->query());
         }
-
-        if ($search !== '') {
-            $like = '%' . $search . '%';
-            $sessionQuery->where(function ($query) use ($like) {
-                $query->where('id', 'like', $like)
-                    ->orWhere('weekday', 'like', $like)
-                    ->orWhere('start_time', 'like', $like)
-                    ->orWhere('end_time', 'like', $like)
-                    ->orWhere('duration', 'like', $like)
-                    ->orWhere('status', 'like', $like)
-                    ->orWhere('sales_total', 'like', $like)
-                    ->orWhere('grand_total', 'like', $like)
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', $like));
-            });
-        }
-
-        $sessions = $sessionQuery->orderByDesc('id')->paginate(20)->appends($request->query());
 
         if ($request->ajax()) {
             return response()->json([
                 'filter_label' => $filterLabel,
-                'html' => view('admin.reports.partials.pos_session_report_rows', compact('sessions'))->render(),
-                'pagination' => view('admin.reports.partials.custom_pagination', ['paginator' => $sessions])->render(),
+                'table_html' => view('admin.reports.partials.pos_session_report_table', compact(
+                    'sessions', 'reportView', 'combinedSummary', 'filterLabel'
+                ))->render(),
             ]);
         }
 
         return view('admin.reports.pos_session_report', compact(
-            'sessions', 'search', 'filterType', 'year', 'month', 'reportDate', 'businessDate', 'startTime', 'endTime',
-            'startDate', 'endDate', 'yearOptions', 'filterLabel'
+            'sessions', 'combinedSummary', 'reportView', 'search', 'filterType', 'year', 'month', 'reportDate',
+            'businessDate', 'startTime', 'endTime', 'startDate', 'endDate', 'yearOptions', 'filterLabel'
         ));
     }
 
+    private function resolvePosSessionReportView(Request $request): string
+    {
+        return strtolower(trim((string) $request->query('report_view', 'session'))) === 'combined'
+            ? 'combined'
+            : 'session';
+    }
 
+    /**
+     * Combined reports use restaurant business-day boundaries from restaurant_settings.
+     * Session-wise mode deliberately keeps the existing report filters unchanged.
+     */
+    private function resolvePosSessionReportFilters(Request $request, string $reportView): array
+    {
+        $filters = $this->resolveReportFilters(
+            $request,
+            $reportView === 'combined' ? 'business_day' : 'all',
+            true
+        );
+
+        if ($reportView !== 'combined') {
+            return $filters;
+        }
+
+        return $this->applyCombinedBusinessDayFilter($filters);
+    }
+
+    /**
+     * Convert Combined date/month/year/range filters to restaurant business time.
+     * Example with settings opening=07:01 and closing=06:00:
+     * 06 Sep 2026 => 06 Sep 2026 07:01:00 through 07 Sep 2026 06:00:00.
+     */
+    private function applyCombinedBusinessDayFilter(array $filters): array
+    {
+        $restaurant = RestaurantSetting::first();
+        $opening = $this->normalizeBusinessTime($restaurant?->opening_time, '12:01:00');
+        $closing = $this->normalizeBusinessTime($restaurant?->closing_time, '06:00:00');
+        $filterType = $filters['filterType'] ?? 'business_day';
+
+        // All Data remains truly all data and Hour Wise keeps the user's explicit times.
+        if (in_array($filterType, ['all', 'hour'], true)) {
+            $filters['combinedBusinessHours'] = [
+                'enabled' => false,
+                'opening' => $opening,
+                'closing' => $closing,
+            ];
+            return $filters;
+        }
+
+        $startBusinessDate = null;
+        $endBusinessDate = null;
+
+        switch ($filterType) {
+            case 'business_day':
+                $startBusinessDate = ($filters['businessDate'] ?? Carbon::now())->copy()->startOfDay();
+                $endBusinessDate = $startBusinessDate->copy();
+                break;
+
+            case 'day':
+                $startBusinessDate = ($filters['reportDate'] ?? Carbon::now())->copy()->startOfDay();
+                $endBusinessDate = $startBusinessDate->copy();
+                // A Date Wise Combined result uses this date's restaurant business window.
+                $filters['businessDate'] = $startBusinessDate->copy();
+                break;
+
+            case 'month':
+                $year = (int) ($filters['year'] ?? now()->year);
+                $month = (int) ($filters['month'] ?? now()->month);
+                $startBusinessDate = Carbon::create($year, $month, 1)->startOfMonth()->startOfDay();
+                $endBusinessDate = Carbon::create($year, $month, 1)->endOfMonth()->startOfDay();
+                break;
+
+            case 'year':
+                $year = (int) ($filters['year'] ?? now()->year);
+                $startBusinessDate = Carbon::create($year, 1, 1)->startOfDay();
+                $endBusinessDate = Carbon::create($year, 12, 31)->startOfDay();
+                break;
+
+            case 'range':
+                $startBusinessDate = ($filters['startDate'] ?? Carbon::now())->copy()->startOfDay();
+                $endBusinessDate = ($filters['endDate'] ?? Carbon::now())->copy()->startOfDay();
+                break;
+
+            default:
+                $filters['combinedBusinessHours'] = [
+                    'enabled' => false,
+                    'opening' => $opening,
+                    'closing' => $closing,
+                ];
+                return $filters;
+        }
+
+        [$windowStart] = $this->resolveBusinessWindow($startBusinessDate, $restaurant);
+        [, $windowEnd] = $this->resolveBusinessWindow($endBusinessDate, $restaurant);
+
+        $filters['startDate'] = $windowStart;
+        $filters['endDate'] = $windowEnd;
+        $filters['combinedBusinessHours'] = [
+            'enabled' => true,
+            'opening' => $opening,
+            'closing' => $closing,
+        ];
+
+        if (in_array($filterType, ['business_day', 'day'], true)) {
+            $filters['filterLabel'] = 'Business day ' . $startBusinessDate->format('d M Y')
+                . ': ' . $windowStart->format('h:i A')
+                . ' - ' . $windowEnd->format('d M Y, h:i A');
+        } elseif ($filterType === 'month') {
+            $filters['filterLabel'] = 'Month: ' . $startBusinessDate->format('F Y')
+                . ' | Business time: ' . $windowStart->format('d M Y, h:i A')
+                . ' - ' . $windowEnd->format('d M Y, h:i A');
+        } elseif ($filterType === 'year') {
+            $filters['filterLabel'] = 'Year: ' . $startBusinessDate->format('Y')
+                . ' | Business time: ' . $windowStart->format('d M Y, h:i A')
+                . ' - ' . $windowEnd->format('d M Y, h:i A');
+        } elseif ($filterType === 'range') {
+            $filters['filterLabel'] = 'Business days ' . $startBusinessDate->format('d M Y')
+                . ' - ' . $endBusinessDate->format('d M Y')
+                . ': ' . $windowStart->format('d M Y, h:i A')
+                . ' - ' . $windowEnd->format('d M Y, h:i A');
+        }
+
+        return $filters;
+    }
+
+    /** Apply restaurant opening/closing times to a multi-day Combined query. */
+    private function applyCombinedBusinessHoursToQuery($query, string $column, ?array $businessHours)
+    {
+        if (!($businessHours['enabled'] ?? false)) {
+            return $query;
+        }
+
+        $opening = (string) ($businessHours['opening'] ?? '00:00:00');
+        $closing = (string) ($businessHours['closing'] ?? '23:59:59');
+
+        if ($opening === $closing) {
+            return $query;
+        }
+
+        if ($opening < $closing) {
+            return $query->whereTime($column, '>=', $opening)
+                ->whereTime($column, '<=', $closing);
+        }
+
+        return $query->where(function ($timeQuery) use ($column, $opening, $closing) {
+            $timeQuery->whereTime($column, '>=', $opening)
+                ->orWhereTime($column, '<=', $closing);
+        });
+    }
+
+    /**
+     * Combined POS reports are transaction reports, not session reports.
+     * Filter orders directly by the requested date/time window and load only
+     * the order-detail rows that belong to that same requested window.
+     */
+    private function combinedPosOrderQuery(
+        string $filterType,
+        Carbon $startDate,
+        Carbon $endDate,
+        string $search = '',
+        ?array $businessHours = null
+    ) {
+        $query = Order::query()
+            ->whereNotIn('status', ['Cancelled', 'cancelled'])
+            ->with([
+                'deliveryPartner',
+                'user',
+                'orderDetails' => function ($detailQuery) use ($filterType, $startDate, $endDate, $businessHours) {
+                    if ($filterType !== 'all') {
+                        $detailQuery->whereBetween('created_at', [$startDate, $endDate]);
+                    }
+                    $this->applyCombinedBusinessHoursToQuery($detailQuery, 'created_at', $businessHours);
+                    $detailQuery->with('foodItem.addons');
+                },
+            ]);
+
+        if ($filterType !== 'all') {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+        $this->applyCombinedBusinessHoursToQuery($query, 'created_at', $businessHours);
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($orderQuery) use ($like, $filterType, $startDate, $endDate, $businessHours) {
+                $orderQuery->where('id', 'like', $like)
+                    ->orWhere('order_number', 'like', $like)
+                    ->orWhere('order_type', 'like', $like)
+                    ->orWhere('status', 'like', $like)
+                    ->orWhere('payment_type', 'like', $like)
+                    ->orWhere('created_at', 'like', $like)
+                    ->orWhere('subtotal', 'like', $like)
+                    ->orWhere('grand_total', 'like', $like)
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', $like))
+                    ->orWhereHas('orderDetails', function ($detailQuery) use ($like, $filterType, $startDate, $endDate, $businessHours) {
+                        $detailQuery->where('product_name', 'like', $like);
+                        if ($filterType !== 'all') {
+                            $detailQuery->whereBetween('created_at', [$startDate, $endDate]);
+                        }
+                        $this->applyCombinedBusinessHoursToQuery($detailQuery, 'created_at', $businessHours);
+                    });
+            });
+        }
+
+        return $query;
+    }
+
+    private function orderHasDeliveryPartner($order): bool
+    {
+        if (!empty($order->delivery_partner_id)) {
+            return true;
+        }
+
+        return trim((string) ($order->delivery_partner ?? '')) !== '';
+    }
+
+    private function combinedBookingRowsForPeriod(
+        string $filterType,
+        Carbon $startDate,
+        Carbon $endDate
+    ) {
+        $query = TableBooking::query()->where('advance_amount', '>', 0);
+
+        if ($filterType !== 'all') {
+            $query->whereBetween('booking_date', [$startDate->toDateString(), $endDate->toDateString()]);
+        }
+
+        $rows = $query->get();
+        if ($filterType === 'all') {
+            return $rows;
+        }
+
+        return $rows->filter(function ($booking) use ($startDate, $endDate) {
+            try {
+                $date = $booking->booking_date instanceof \Carbon\CarbonInterface
+                    ? $booking->booking_date->format('Y-m-d')
+                    : Carbon::parse($booking->booking_date)->format('Y-m-d');
+                $timeValue = $booking->booking_start_time ?: $booking->booking_time ?: '00:00:00';
+                $time = $timeValue instanceof \Carbon\CarbonInterface
+                    ? $timeValue->format('H:i:s')
+                    : Carbon::parse((string) $timeValue)->format('H:i:s');
+
+                return Carbon::parse($date . ' ' . $time)->between($startDate, $endDate, true);
+            } catch (\Throwable $exception) {
+                return false;
+            }
+        })->values();
+    }
+
+    /**
+     * Build the complete Combined Work Period-style report from filtered orders.
+     * No POS session start/end value is read here.
+     */
+    private function buildCombinedOrderWorkPeriodData(
+        $orders,
+        string $filterLabel,
+        string $filterType,
+        Carbon $startDate,
+        Carbon $endDate
+    ): array {
+        $orders = collect($orders)->values();
+
+        $productDiscount = (float) $orders->sum(fn ($order) => (float) ($order->product_discount_amount ?? 0));
+        $honored = (float) $orders->sum(fn ($order) => (float) ($order->discount_amount ?? 0));
+        $outletOrders = $orders->filter(fn ($order) => !$this->orderHasDeliveryPartner($order));
+        $deliveryPartnerOrders = $orders->filter(fn ($order) => $this->orderHasDeliveryPartner($order));
+
+        $salesSummary = [
+            'sales_total' => (float) $orders->sum('subtotal'),
+            'outlet_sales' => (float) $outletOrders->sum('subtotal'),
+            'delivery_partner_sales' => (float) $deliveryPartnerOrders->sum('subtotal'),
+            'product_discount' => $productDiscount,
+            'honored' => $honored,
+            'discount_total' => $productDiscount + $honored,
+            'service_charge' => (float) $orders->sum('service_charge'),
+            'vat_total' => (float) $orders->sum('vat_tax'),
+            'grand_total' => (float) $orders->sum('grand_total'),
+        ];
+
+        $reportIncomes = ['Cash' => 0.0, 'Card' => 0.0, 'MFC' => 0.0];
+        $cardProviderIncome = [];
+        $mfsProviderIncome = [];
+        $departmentIncome = ['dine_in' => 0.0, 'delivery' => 0.0, 'takeaway' => 0.0];
+        $closingExtraSummary = ['complimentary' => 0.0, 'due' => 0.0];
+
+        // Keep active delivery partners visible just like the normal Work Period print.
+        $deliveryPartnerIncome = [];
+        $deliveryPartnerDue = [];
+        foreach (DeliveryPartner::query()->where('status', 1)->orderBy('name')->get() as $partner) {
+            $name = (string) $partner->name;
+            $deliveryPartnerIncome[$name] = 0.0;
+            $deliveryPartnerDue[$name] = 0.0;
+        }
+
+        foreach ($orders as $order) {
+            $hasPartner = $this->orderHasDeliveryPartner($order);
+            $partnerName = $hasPartner
+                ? (trim((string) ($order->delivery_partner_display_name ?? '')) ?: 'Delivery Partner')
+                : null;
+
+            $orderDue = max(0, (float) ($order->due ?? 0));
+            if ($partnerName !== null) {
+                $deliveryPartnerDue[$partnerName] = ($deliveryPartnerDue[$partnerName] ?? 0) + $orderDue;
+                $deliveryPartnerIncome[$partnerName] = ($deliveryPartnerIncome[$partnerName] ?? 0)
+                    + (float) ($order->subtotal ?? 0);
+            } else {
+                $closingExtraSummary['due'] += $orderDue;
+            }
+
+            // orderDetails were loaded from the same selected date/time window.
+            foreach ($order->orderDetails as $detail) {
+                if (!empty($detail->is_unavailable)) {
+                    continue;
+                }
+
+                $isComplimentary = !empty($order->is_complimentary_order)
+                    || !empty($detail->is_complimentary)
+                    || ((float) ($detail->price ?? 0) <= 0 && (float) ($detail->subtotal ?? 0) <= 0);
+                if (!$isComplimentary) {
+                    continue;
+                }
+
+                $food = $detail->foodItem;
+                $foodPrice = $food ? (float) ($food->discount_price ?? $food->base_price ?? 0) : 0.0;
+                $addonTotal = 0.0;
+                $savedAddons = json_decode($detail->addons ?? '[]', true);
+                if (is_array($savedAddons)) {
+                    $currentAddons = $food ? $food->addons->keyBy('id') : collect();
+                    foreach ($savedAddons as $addon) {
+                        if (!is_array($addon)) {
+                            continue;
+                        }
+                        $addonId = (int) ($addon['id'] ?? 0);
+                        if ($addonId > 0 && $currentAddons->has($addonId)) {
+                            $addonTotal += (float) ($currentAddons->get($addonId)->price ?? 0);
+                        } else {
+                            $addonTotal += max(0, (float) ($addon['price'] ?? 0));
+                        }
+                    }
+                }
+                $quantity = max(1, (int) ($detail->quantity ?? 1));
+                $closingExtraSummary['complimentary'] += ($foodPrice + $addonTotal) * $quantity;
+            }
+
+            $cardContribution = 0.0;
+            $mfsContribution = 0.0;
+            if ($order->payment_type === 'Split') {
+                $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0);
+                $cardContribution = (float) ($order->paid_in_card ?? 0);
+                $mfsContribution = (float) ($order->paid_in_mfc ?? 0);
+                $reportIncomes['Card'] += $cardContribution;
+                $reportIncomes['MFC'] += $mfsContribution;
+            } else {
+                // total_paid_amount may include booking advance; method fields are
+                // the money collected at the order payment itself.
+                $advance = max(0, (float) ($order->booking_advance ?? 0));
+                $fallbackPaid = max(0, (float) ($order->total_paid_amount ?? 0) - $advance);
+
+                if ($order->payment_type === 'Cash') {
+                    $reportIncomes['Cash'] += (float) ($order->paid_in_cash ?? 0) > 0
+                        ? (float) $order->paid_in_cash
+                        : $fallbackPaid;
+                } elseif ($order->payment_type === 'Card') {
+                    $cardContribution = (float) ($order->paid_in_card ?? 0) > 0
+                        ? (float) $order->paid_in_card
+                        : $fallbackPaid;
+                    $reportIncomes['Card'] += $cardContribution;
+                } elseif ($order->payment_type === 'Mobile Banking') {
+                    $mfsContribution = (float) ($order->paid_in_mfc ?? 0) > 0
+                        ? (float) $order->paid_in_mfc
+                        : $fallbackPaid;
+                    $reportIncomes['MFC'] += $mfsContribution;
+                }
+            }
+
+            if ($cardContribution > 0) {
+                $provider = trim((string) ($order->card_type ?? '')) ?: 'Unspecified';
+                $cardProviderIncome[$provider] = ($cardProviderIncome[$provider] ?? 0) + $cardContribution;
+            }
+            if ($mfsContribution > 0) {
+                $provider = trim((string) ($order->mfs_provider ?? '')) ?: 'Unspecified';
+                $mfsProviderIncome[$provider] = ($mfsProviderIncome[$provider] ?? 0) + $mfsContribution;
+            }
+
+            $departmentKey = $this->normalizeCombinedPosOrderType($order->order_type ?? 'dine_in');
+            if (array_key_exists($departmentKey, $departmentIncome)) {
+                $departmentIncome[$departmentKey] += (float) ($order->grand_total ?? 0);
+            }
+        }
+
+        // Customer advance is also filtered by the requested report window itself,
+        // never by a POS session window.
+        $bookingRows = $this->combinedBookingRowsForPeriod($filterType, $startDate, $endDate);
+        foreach ($bookingRows as $booking) {
+            $advance = max(0, (float) ($booking->advance_amount ?? 0));
+            $method = strtolower(trim((string) ($booking->advance_payment_method ?? '')));
+            if ($method === 'cash') {
+                $reportIncomes['Cash'] += $advance;
+            } elseif ($method === 'card') {
+                $reportIncomes['Card'] += $advance;
+                $cardProviderIncome['Unspecified'] = ($cardProviderIncome['Unspecified'] ?? 0) + $advance;
+            } elseif (in_array($method, ['mfs', 'mobile banking', 'mobile_banking'], true)) {
+                $reportIncomes['MFC'] += $advance;
+                $mfsProviderIncome['Unspecified'] = ($mfsProviderIncome['Unspecified'] ?? 0) + $advance;
+            }
+        }
+
+        $bookingIds = $bookingRows->pluck('id');
+        $consumed = $bookingIds->isEmpty() ? collect() : Order::query()
+            ->whereIn('table_booking_id', $bookingIds)
+            ->whereIn('status', ['Completed', 'completed'])
+            ->where('booking_advance', '>', 0)
+            ->selectRaw('table_booking_id, SUM(booking_advance) as used_advance')
+            ->groupBy('table_booking_id')
+            ->pluck('used_advance', 'table_booking_id');
+
+        $customerAdvance = (float) $bookingRows->sum(function ($booking) use ($consumed) {
+            return max(0, (float) ($booking->advance_amount ?? 0) - (float) ($consumed[$booking->id] ?? 0));
+        });
+
+        arsort($cardProviderIncome);
+        arsort($mfsProviderIncome);
+        ksort($deliveryPartnerIncome, SORT_NATURAL | SORT_FLAG_CASE);
+        ksort($deliveryPartnerDue, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $periodStart = null;
+        $periodEnd = null;
+        if ($filterType !== 'all') {
+            $periodStart = $startDate->copy();
+            $periodEnd = $endDate->copy();
+        } elseif ($orders->isNotEmpty()) {
+            $periodStart = Carbon::parse($orders->min('created_at'));
+            $periodEnd = Carbon::parse($orders->max('created_at'));
+        }
+
+        return [
+            'salesSummary' => $salesSummary,
+            'reportIncomes' => $reportIncomes,
+            'cardProviderIncome' => $cardProviderIncome,
+            'mfsProviderIncome' => $mfsProviderIncome,
+            'departmentIncome' => $departmentIncome,
+            'closingExtraSummary' => $closingExtraSummary,
+            'customerAdvance' => $customerAdvance,
+            'deliveryPartnerDue' => array_map(
+                fn ($name, $due) => ['name' => $name, 'due' => $due],
+                array_keys($deliveryPartnerDue),
+                array_values($deliveryPartnerDue)
+            ),
+            'deliveryPartnerIncome' => array_map(
+                fn ($name, $amount) => ['name' => $name, 'amount' => $amount],
+                array_keys($deliveryPartnerIncome),
+                array_values($deliveryPartnerIncome)
+            ),
+            'orderCount' => $orders->count(),
+            'filterLabel' => $filterLabel,
+            'periodStart' => $periodStart,
+            'periodEnd' => $periodEnd,
+        ];
+    }
+
+    private function combinedOrderSummaryFromWorkPeriodData(array $data): array
+    {
+        $sales = $data['salesSummary'] ?? [];
+        $income = $data['reportIncomes'] ?? [];
+
+        return [
+            'order_count' => (int) ($data['orderCount'] ?? 0),
+            'sales_total' => (float) ($sales['sales_total'] ?? 0),
+            'service_charge' => (float) ($sales['service_charge'] ?? 0),
+            'vat_total' => (float) ($sales['vat_total'] ?? 0),
+            'grand_total' => (float) ($sales['grand_total'] ?? 0),
+            'cash' => (float) ($income['Cash'] ?? 0),
+            'card' => (float) ($income['Card'] ?? 0),
+            'mfs' => (float) ($income['MFC'] ?? 0),
+        ];
+    }
 
     private function kotExportData(Request $request): array
     {
@@ -1462,11 +1965,156 @@ class ReportController extends Controller
         return number_format($amount, 2) . ($names->isNotEmpty() ? ' (' . $names->implode(', ') . ')' : '');
     }
 
-    private function posSessionExportData(Request $request): array
+    private function normalizeCombinedPosOrderType($orderType): string
     {
-        $filters = $this->resolveReportFilters($request, 'all', true);
+        $normalized = strtolower(str_replace(['-', ' '], '_', trim((string) $orderType)));
+
+        if (in_array($normalized, ['dine_in', 'dinein'], true)) {
+            return 'dine_in';
+        }
+        if (in_array($normalized, ['takeaway', 'take_away'], true)) {
+            return 'takeaway';
+        }
+        if ($normalized === 'delivery') {
+            return 'delivery';
+        }
+
+        return $normalized ?: 'dine_in';
+    }
+
+    /** Build the shared Combined Work Period dataset for browser print and PDF. */
+    private function combinedPosSessionWorkPeriodReportData(Request $request): array
+    {
+        $filters = $this->resolvePosSessionReportFilters($request, 'combined');
         extract($filters);
         $search = trim((string) $request->query('search', ''));
+
+        // Combined reporting is order/date-time based. POS session start/end is
+        // intentionally not used for either the browser print view or the PDF.
+        $orders = $this->combinedPosOrderQuery(
+            $filterType,
+            $startDate,
+            $endDate,
+            $search,
+            $combinedBusinessHours ?? null
+        )
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        $data = $this->buildCombinedOrderWorkPeriodData(
+            $orders,
+            $filterLabel,
+            $filterType,
+            $startDate,
+            $endDate
+        );
+        $data['restaurant'] = RestaurantSetting::first();
+        $data['taxSetting'] = DB::table('tax_settings')->first();
+
+        return $data;
+    }
+
+    /** Dedicated browser-print Blade for Combined POS Session Report filters. */
+    public function posSessionCombinedPrint(Request $request)
+    {
+        $data = $this->combinedPosSessionWorkPeriodReportData($request);
+
+        $returnParams = $request->query();
+        $returnParams['report_view'] = 'combined';
+        unset($returnParams['page']);
+
+        $data['returnUrl'] = route('reports.pos_sessions')
+            . ($returnParams ? ('?' . http_build_query($returnParams)) : '');
+
+        return view('admin.reports.pos_session_combined_work_period_print', $data);
+    }
+
+    private function combinedPosSessionWorkPeriodPdfResponse(Request $request)
+    {
+        $data = $this->combinedPosSessionWorkPeriodReportData($request);
+
+        @ini_set('pcre.backtrack_limit', '50000000');
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '300');
+        @set_time_limit(300);
+
+        $html = view('admin.reports.pos_session_combined_work_period_pdf', $data)->render();
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0775, true);
+        }
+
+        $fileName = 'pos-session-combined-work-period-' . now()->format('Y-m-d-His') . '.pdf';
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => [100, 297],
+            'orientation' => 'P',
+            'margin_left' => 4,
+            'margin_right' => 4,
+            'margin_top' => 5,
+            'margin_bottom' => 5,
+            'tempDir' => $tempDir,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+        ]);
+        $mpdf->SetTitle($fileName);
+        $mpdf->WriteHTML($html);
+
+        return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
+    private function posSessionExportData(Request $request): array
+    {
+        $reportView = $this->resolvePosSessionReportView($request);
+        $filters = $this->resolvePosSessionReportFilters($request, $reportView);
+        extract($filters);
+        $search = trim((string) $request->query('search', ''));
+
+        if ($reportView === 'combined') {
+            $orders = $this->combinedPosOrderQuery(
+                $filterType,
+                $startDate,
+                $endDate,
+                $search,
+                $combinedBusinessHours ?? null
+            )
+                ->orderByDesc('id')
+                ->get();
+            $data = $this->buildCombinedOrderWorkPeriodData(
+                $orders,
+                $filterLabel,
+                $filterType,
+                $startDate,
+                $endDate
+            );
+            $summary = $this->combinedOrderSummaryFromWorkPeriodData($data);
+
+            $headings = ['Period', 'Orders', 'Sales', 'Service Charge', 'VAT', 'Grand Total', 'Cash', 'Bank / Card', 'MFS'];
+            $rows = $summary['order_count'] > 0 ? [[
+                $filterLabel,
+                $summary['order_count'],
+                $summary['sales_total'],
+                $summary['service_charge'],
+                $summary['vat_total'],
+                $summary['grand_total'],
+                $summary['cash'],
+                $summary['card'],
+                $summary['mfs'],
+            ]] : [];
+
+            return [$headings, $rows, [
+                'View' => 'Combined',
+                'Filter' => $filterLabel,
+                'Orders Combined' => (string) $summary['order_count'],
+            ], $reportView];
+        }
+
+        // Session-wise export keeps the original session calculation/filtering.
         $query = PosSession::with('user');
         if ($filterType !== 'all') {
             $query->whereBetween('start_time', [$startDate, $endDate]);
@@ -1476,10 +2124,12 @@ class ReportController extends Controller
             $query->where(function ($q) use ($like) {
                 $q->where('id', 'like', $like)->orWhere('weekday', 'like', $like)->orWhere('start_time', 'like', $like)
                     ->orWhere('end_time', 'like', $like)->orWhere('duration', 'like', $like)->orWhere('status', 'like', $like)
+                    ->orWhere('sales_total', 'like', $like)->orWhere('grand_total', 'like', $like)
                     ->orWhereHas('user', fn ($uq) => $uq->where('name', 'like', $like));
             });
         }
         $sessions = $query->orderByDesc('id')->get();
+
         $headings = ['SL', 'ID', 'Employee', 'Day', 'Start Time', 'End Time', 'Duration', 'Sales', 'Service Charge', 'VAT', 'Grand Total', 'Cash', 'Bank / Card', 'MFS', 'Status'];
         $rows = $sessions->values()->map(function ($session, $index) {
             $income = is_array($session->incomes_summary) ? $session->incomes_summary : [];
@@ -1501,19 +2151,35 @@ class ReportController extends Controller
                 $session->status ?? 'N/A',
             ];
         })->all();
-        return [$headings, $rows, ['Filter' => $filterLabel, 'Records' => (string) count($rows)]];
+        return [$headings, $rows, ['Filter' => $filterLabel, 'Records' => (string) count($rows)], $reportView];
     }
 
     public function posSessionReportPdf(Request $request)
     {
+        if ($this->resolvePosSessionReportView($request) === 'combined') {
+            return $this->combinedPosSessionWorkPeriodPdfResponse($request);
+        }
+
         [$headings, $rows, $meta] = $this->posSessionExportData($request);
-        return $this->simpleReportPdfResponse('POS Session Report', $headings, $rows, $meta, 'pos-session-report-' . now()->format('Y-m-d-His') . '.pdf', 'A3', 'L');
+        return $this->simpleReportPdfResponse(
+            'POS Session Report',
+            $headings,
+            $rows,
+            $meta,
+            'pos-session-report-' . now()->format('Y-m-d-His') . '.pdf',
+            'A3',
+            'L'
+        );
     }
 
     public function posSessionReportExcel(Request $request)
     {
-        [$headings, $rows] = $this->posSessionExportData($request);
-        return Excel::download(new ArrayReportExport($headings, $rows, 'POS Sessions'), 'pos-session-report-' . now()->format('Y-m-d-His') . '.xlsx');
+        [$headings, $rows, $meta, $reportView] = $this->posSessionExportData($request);
+        $isCombined = $reportView === 'combined';
+        return Excel::download(
+            new ArrayReportExport($headings, $rows, $isCombined ? 'POS Combined' : 'POS Sessions'),
+            ($isCombined ? 'pos-session-combined-report-' : 'pos-session-report-') . now()->format('Y-m-d-His') . '.xlsx'
+        );
     }
 
 
