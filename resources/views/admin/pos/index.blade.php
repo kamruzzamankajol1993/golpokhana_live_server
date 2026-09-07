@@ -894,15 +894,24 @@
         const $card = $('.progga-pos-table-card[data-table-id="' + tableId + '"]');
 
         if ($card.length) {
+            if (normalized !== 'occupied') {
+                $card.removeClass('bill-printed')
+                    .attr('data-bill-printed', '0')
+                    .data('bill-printed', 0);
+            }
+
             $card.removeClass('available occupied reserved')
                 .addClass(normalized)
                 .attr('data-status', normalized)
                 .data('status', normalized);
 
+            const isBillPrinted = normalized === 'occupied'
+                && String($card.attr('data-bill-printed') || '0') === '1';
+
             $card.find('.progga-badge')
-                .removeClass('progga-status-available progga-status-occupied progga-status-reserved')
-                .addClass('progga-status-' + normalized)
-                .text(label);
+                .removeClass('progga-status-available progga-status-occupied progga-status-reserved progga-status-bill-printed')
+                .addClass(isBillPrinted ? 'progga-status-bill-printed' : ('progga-status-' + normalized))
+                .text(isBillPrinted ? 'Bill Printed' : label);
         }
 
         const $option = $('#modalTableSelect option[value="' + tableId + '"]');
@@ -926,6 +935,29 @@
     }
 
 
+    function setPosTableBillPrinted(tableId, isPrinted) {
+        if (!tableId) return;
+
+        const $card = $('.progga-pos-table-card[data-table-id="' + tableId + '"]');
+        if (!$card.length) return;
+
+        const currentlyOccupied = String($card.attr('data-status') || '').toLowerCase() === 'occupied';
+        const printed = Boolean(isPrinted) && currentlyOccupied;
+
+        $card.toggleClass('bill-printed', printed)
+            .attr('data-bill-printed', printed ? '1' : '0')
+            .data('bill-printed', printed ? 1 : 0);
+
+        const $badge = $card.find('.progga-badge');
+        $badge.removeClass('progga-status-bill-printed progga-status-occupied');
+
+        if (printed) {
+            $badge.addClass('progga-status-bill-printed').text('Bill Printed');
+        } else if (currentlyOccupied) {
+            $badge.addClass('progga-status-occupied').text('Occupied');
+        }
+    }
+
     function refreshLiveTableReservationStatuses() {
         $.get("{{ route('pos.table_reservation_statuses') }}")
             .done(function(response) {
@@ -942,6 +974,7 @@
                     if ($card.data('opening-order') === true) return;
 
                     setPosTableStatus(tableId, row.status || 'available');
+                    setPosTableBillPrinted(tableId, Boolean(row.bill_printed));
 
                     if (String(row.status || '').toLowerCase() === 'reserved') {
                         $card.attr('data-reserved-booking-id', row.booking_id || '');
@@ -2454,6 +2487,10 @@
                     if (res && res.status === 'success' && res.preview_url) {
                         if (res.snapshot && typeof res.snapshot === 'object') {
                             window.preInvoiceSnapshotCache[orderId] = res.snapshot;
+                        }
+                        if (res.table_id) {
+                            setPosTableStatus(res.table_id, 'occupied');
+                            setPosTableBillPrinted(res.table_id, true);
                         }
                         let modalEl = document.getElementById('paymentModal');
                         bootstrap.Modal.getInstance(modalEl)?.hide();

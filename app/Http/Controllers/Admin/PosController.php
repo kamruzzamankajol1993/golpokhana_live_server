@@ -131,6 +131,24 @@ public function index(\Illuminate\Http\Request $request)
         && Schema::hasColumn('pos_settings', 'random_half_order_button_visible')
         && (bool) ($posSetting->random_half_order_button_visible ?? true);
 
+    // A dine-in table remains Occupied after a guest bill/pre-invoice is printed,
+    // but the POS table screen shows it with a separate visual state.
+    $billPrintedTableIds = collect();
+    if (Schema::hasColumn('orders', 'pre_invoice_printed_at')) {
+        $billPrintedTableIds = Order::query()
+            ->whereNotNull('table_id')
+            ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
+            ->whereNotNull('pre_invoice_printed_at')
+            ->pluck('table_id')
+            ->map(fn ($id) => (int) $id)
+            ->flip();
+    }
+
+    foreach ($tables as $table) {
+        $table->bill_printed = strtolower((string) $table->initial_status) === 'occupied'
+            && $billPrintedTableIds->has((int) $table->id);
+    }
+
     $availCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'available'; })->count();
     $occCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'occupied'; })->count();
     $resCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'reserved'; })->count();
@@ -2267,10 +2285,17 @@ public function tableReservationStatuses()
     $today = $bdNow->toDateString();
     $currentTime = $bdNow->format('H:i:s');
 
-    $activeTableIds = Order::query()
+    $activeTableOrders = Order::query()
         ->whereNotNull('table_id')
         ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
-        ->pluck('table_id')
+        ->orderByDesc('id')
+        ->get(Schema::hasColumn('orders', 'pre_invoice_printed_at')
+            ? ['table_id', 'pre_invoice_printed_at']
+            : ['table_id'])
+        ->groupBy('table_id')
+        ->map(fn ($orders) => $orders->first());
+
+    $activeTableIds = $activeTableOrders->keys()
         ->map(fn ($id) => (int) $id)
         ->flip();
 
@@ -2290,11 +2315,21 @@ public function tableReservationStatuses()
         ->groupBy('table_id')
         ->map(fn ($bookings) => $bookings->first());
 
-    $states = Table::query()->get(['id'])->map(function ($table) use ($activeTableIds, $bookingsByTable) {
+    $states = Table::query()->get(['id'])->map(function ($table) use ($activeTableIds, $activeTableOrders, $bookingsByTable) {
         $tableId = (int) $table->id;
 
         if ($activeTableIds->has($tableId)) {
-            return ['table_id' => $tableId, 'status' => 'occupied', 'booking_id' => null, 'customer_id' => null];
+            $activeOrder = $activeTableOrders->get($tableId) ?: $activeTableOrders->get((string) $tableId);
+            $billPrinted = Schema::hasColumn('orders', 'pre_invoice_printed_at')
+                && !empty($activeOrder?->pre_invoice_printed_at);
+
+            return [
+                'table_id' => $tableId,
+                'status' => 'occupied',
+                'bill_printed' => $billPrinted,
+                'booking_id' => null,
+                'customer_id' => null,
+            ];
         }
 
         $booking = $bookingsByTable->get($tableId);
@@ -3226,6 +3261,8 @@ public function tableReservationStatuses()
             return response()->json([
                 'status' => 'success',
                 'snapshot' => $snapshot,
+                'table_id' => $order->table_id ? (int) $order->table_id : null,
+                'bill_printed' => !empty($order->pre_invoice_printed_at),
                 'preview_url' => route('pos.pre_invoice', ['id' => $order->id]),
             ]);
         } catch (\Throwable $e) {

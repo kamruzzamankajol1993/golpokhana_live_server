@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>KOT — Order #{{ $order->order_number }}</title>
   <style>
+    @page { margin: 0; }
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     body { font-family:Arial,Helvetica,sans-serif; font-weight:900; background:#e8e8e8; width:80mm; min-height:100%; display:flex; flex-direction:column; align-items:center; padding:10px; }
     .page-label { font-size:13px; font-weight:900; color:#000; background:#fff; padding:6px 20px; border-radius:20px; box-shadow:0 2px 8px rgba(0,0,0,.12); margin-bottom:28px; letter-spacing:.4px; }
@@ -48,6 +49,29 @@
       .receipt-card { box-shadow:none !important; width:100% !important; margin:0 auto; }
       .receipt-card::after, .page-label { display:none; }
       * { color:#000 !important; font-weight:900 !important; font-family:Arial,Helvetica,sans-serif !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+      /* Compact thermal print: keep all data, reduce only vertical whitespace. */
+      .running-order-banner { padding: 5px 6px !important; line-height: 1.05 !important; }
+      .kot-header { padding: 7px 10px 5px !important; }
+      .kot-label { margin-bottom: 2px !important; line-height: 1 !important; }
+      .kot-number, .kot-number-label, .kot-time, .kot-date { line-height: 1.05 !important; }
+      .kot-number-label, .kot-date { margin-top: 1px !important; }
+      .kot-info-cell { padding: 4px 6px !important; }
+      .kot-info-label { margin-bottom: 1px !important; line-height: 1 !important; }
+      .kot-info-val, .kot-info-val.sm { line-height: 1.05 !important; padding-top: 0 !important; }
+      .kot-body { padding: 6px 10px !important; }
+      .kot-section-head { margin-bottom: 4px !important; line-height: 1 !important; }
+      .kot-items { gap: 3px !important; }
+      .kot-item { gap: 7px !important; padding: 3px 6px !important; }
+      .kot-qty, .kot-item-name { line-height: 1.08 !important; }
+      .kot-item-note { margin-top: 1px !important; line-height: 1.12 !important; }
+      .kot-instructions { padding: 5px 8px !important; margin-top: 5px !important; }
+      .kot-instructions-label { margin-bottom: 2px !important; line-height: 1 !important; }
+      .kot-instructions-text { line-height: 1.18 !important; }
+      .kot-footer { padding: 7px 10px 8px !important; }
+      .kot-sign-line { margin-bottom: 2px !important; }
+      .kot-sign-label { line-height: 1 !important; }
+      .receipt-card > div[style*="padding:8px 10px 10px"] { padding: 3px 8px 4px !important; line-height: 1.05 !important; }
     }
   </style>
 </head>

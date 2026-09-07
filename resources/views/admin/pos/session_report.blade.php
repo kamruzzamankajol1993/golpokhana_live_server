@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Work Period Report #{{ $session->id }}</title>
   <style>
+    @page { margin: 0; }
     :root {
       --text: #000000;
       --muted: #555555;
@@ -39,6 +40,30 @@
     .text-end { text-align: right !important; }
     .fw-bold { font-weight: bold; }
     .footer { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; line-height: 1.6; }
+    /* Keep the Blade preview receipt metrics identical to the print window. */
+    .receipt-card {
+      width: 320px !important;
+      max-width: 100% !important;
+      padding: 5px 7px !important;
+    }
+    .header-title { font-size: 12px !important; margin-bottom: .4px !important; line-height: 1.08 !important; }
+    .header-sub { font-size: 9.5px !important; margin-bottom: .2px !important; line-height: 1.08 !important; }
+    .meta-section { margin: 3px 0 !important; font-size: 9.5px !important; line-height: 1.12 !important; }
+    .section-title { margin: 3px 0 2px !important; font-size: 10.5px !important; line-height: 1.08 !important; letter-spacing: .25px !important; }
+    .dashed-line { margin: 2.5px 0 !important; }
+    .report-table { font-size: 10px !important; line-height: 1.12 !important; }
+    .report-table tr, .report-table td, .report-table th, .report-table span { font-size: 10px !important; line-height: 1.12 !important; }
+    .report-table td, .report-table th { padding: .9px 0 !important; }
+    .report-table th { font-size: 9.5px !important; }
+    .report-table td[style*="padding-top:8px"], .report-table th[style*="padding-top:8px"],
+    .report-table td[style*="padding-top: 8px"], .report-table th[style*="padding-top: 8px"] { padding-top: 1.4px !important; }
+    .footer { margin-top: 3px !important; font-size: 8px !important; line-height: 1.1 !important; }
+    .text-center[style*="margin: 10px 0"], .text-center[style*="margin:10px 0"] { margin: 2.5px 0 !important; font-size: 10px !important; line-height: 1.12 !important; }
+    .header-sub[style*="margin-top"], .header-title[style*="margin-top"] { margin-top: 1.5px !important; }
+    .report-table td[style*="line-height:1.35"], .report-table td[style*="line-height: 1.35"] { line-height: 1.12 !important; }
+    .footer div[style*="margin-top"] { margin-top: 1px !important; }
+    .receipt-card > div[style*="margin-top:8px"], .receipt-card > div[style*="margin-top: 8px"] { margin-top: 2px !important; font-size: 8.5px !important; line-height: 1.08 !important; }
+    .receipt-card > div[style*="margin-top:8px"] span, .receipt-card > div[style*="margin-top: 8px"] span { font-size: 9.5px !important; line-height: 1.12 !important; }
     @media print {
       body { background: none;    font-weight: 900 !important; padding: 0; }
       .receipt-card { box-shadow: none; width: 100%; max-width: 320px; margin: 0 auto; }
@@ -51,6 +76,26 @@
           font-weight: 900 !important;
       }
       .no-print { display: none; }
+      /* Compact thermal print: preserve all report rows, tighten vertical spacing. */
+      .receipt-card { padding: 5px 7px !important; }
+      .header-title { font-size: 12px !important; margin-bottom: .4px !important; line-height: 1.08 !important; }
+      .header-sub { font-size: 9.5px !important; margin-bottom: .2px !important; line-height: 1.08 !important; }
+      .meta-section { margin: 3px 0 !important; font-size: 9.5px !important; line-height: 1.12 !important; }
+      .section-title { margin: 3px 0 2px !important; font-size: 10.5px !important; line-height: 1.08 !important; letter-spacing: .25px !important; }
+      .dashed-line { margin: 2.5px 0 !important; }
+      .report-table { font-size: 10px !important; line-height: 1.12 !important; }
+      .report-table tr, .report-table td, .report-table th, .report-table span { font-size: 10px !important; line-height: 1.12 !important; }
+      .report-table td, .report-table th { padding: .9px 0 !important; }
+      .report-table th { font-size: 9.5px !important; }
+      .report-table td[style*="padding-top:8px"], .report-table th[style*="padding-top:8px"],
+      .report-table td[style*="padding-top: 8px"], .report-table th[style*="padding-top: 8px"] { padding-top: 1.4px !important; }
+      .footer { margin-top: 3px !important; font-size: 8px !important; line-height: 1.1 !important; }
+      .text-center[style*="margin: 10px 0"] { margin: 2.5px 0 !important; font-size: 10px !important; line-height: 1.12 !important; }
+      .header-sub[style*="margin-top"], .header-title[style*="margin-top"] { margin-top: 1.5px !important; }
+      .report-table td[style*="line-height:1.35"] { line-height: 1.12 !important; }
+      .footer div[style*="margin-top"] { margin-top: 1px !important; }
+      .receipt-card > div[style*="margin-top:8px"] { margin-top: 2px !important; font-size: 8.5px !important; line-height: 1.08 !important; }
+      .receipt-card > div[style*="margin-top:8px"] span { font-size: 9.5px !important; line-height: 1.12 !important; }
     }
     .print-btn {
       margin-bottom: 15px; padding: 8px 20px; background: #21352a; color: #fff; border: none; border-radius: 20px; cursor: pointer; font-weight: bold;
@@ -169,18 +214,18 @@
                     ? ($cardProviderIncome ?? [])
                     : ($methodKey === 'MFC' ? ($mfsProviderIncome ?? []) : []);
             @endphp
-            <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:12px !important; font-weight:900 !important; color:#000 !important;" @endif>
-                <td @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:12px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
-                <td class="text-end fw-bold" @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:15px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ round($amount) }}</td>
+            <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>
+                <td @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
+                <td class="text-end fw-bold" @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ round($amount) }}</td>
             </tr>
             @foreach($providerRows as $providerName => $providerAmount)
                 <tr>
-                    <td style="padding-left:12px; font-size:12px !important; font-weight:900 !important; color:#000 !important; line-height:1.35 !important;">
-                        <span style="font-size:12px !important; font-weight:900 !important; color:#000 !important;">↳</span>
-                        <span style="font-size:12px !important; font-weight:900 !important; color:#000 !important;">{{ $providerName }}</span>
+                    <td style="padding-left:12px; font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                        <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">↳</span>
+                        <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">{{ $providerName }}</span>
                     </td>
-                    <td class="text-end" style="font-size:12px !important; font-weight:900 !important; color:#000 !important; line-height:1.35 !important;">
-                        <span style="font-size:12px !important; font-weight:900 !important; color:#000 !important;">{{ round($providerAmount) }}</span>
+                    <td class="text-end" style="font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                        <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">{{ round($providerAmount) }}</span>
                     </td>
                 </tr>
             @endforeach

@@ -1,15 +1,21 @@
 <div class="progga-pos-screen active progga-pos-table-screen" id="posStep1">
-    <div class="pos-s1-top">
-      <div class="pos-s1-heading-wrap">
-        <h2 class="pos-s1-title">Select a Table</h2>
-        <p class="pos-s1-sub">Tap a table for dine-in or use New Order for any order type</p>
+    @php
+        $pendingTakeawayDeliveryCount = collect($activeTakeawayDeliveryOrders ?? [])->filter(function ($order) {
+            return strtolower($order->status ?? '') === 'pending';
+        })->count();
+    @endphp
+
+    <div class="pos-s1-toolbar">
+      <div class="pos-s1-filters">
+        <div class="progga-pos-table-filters" id="posTableSection">
+          <button class="progga-pos-filter-btn active" data-table-filter="all">All Tables</button>
+          <button class="progga-pos-filter-btn" data-table-filter="available">Available ({{ $availCount }})</button>
+          <button class="progga-pos-filter-btn" data-table-filter="occupied">Occupied ({{ $occCount }})</button>
+          <button class="progga-pos-filter-btn" data-table-filter="reserved">Reserved ({{ $resCount }})</button>
+        </div>
       </div>
-      @php
-          $pendingTakeawayDeliveryCount = collect($activeTakeawayDeliveryOrders ?? [])->filter(function ($order) {
-              return strtolower($order->status ?? '') === 'pending';
-          })->count();
-      @endphp
-      <div class="d-flex flex-wrap justify-content-end pos-s1-actions" style="gap:10px;">
+
+      <div class="d-flex justify-content-end pos-s1-actions">
         <button class="pos-s1-takeaway-btn" id="modeTakeawayDeliveryList" type="button">
           <i class="bi bi-card-list"></i> Takeaway / Delivery Orders
         </button>
@@ -22,33 +28,19 @@
       </div>
     </div>
 
-    <div class="pos-table-stats">
-      <span class="pos-tstat avail"><span class="pos-tstat-dot"></span>{{ $availCount }} Available</span>
-      <span class="pos-tstat-sep">·</span>
-      <span class="pos-tstat occ"><span class="pos-tstat-dot"></span>{{ $occCount }} Occupied</span>
-      <span class="pos-tstat-sep">·</span>
-      <span class="pos-tstat res"><span class="pos-tstat-dot"></span>{{ $resCount }} Reserved</span>
-    </div>
-
-    <div class="pos-s1-filters">
-      <div class="progga-pos-table-filters" id="posTableSection">
-        <button class="progga-pos-filter-btn active" data-table-filter="all">All Tables</button>
-        <button class="progga-pos-filter-btn" data-table-filter="available">Available</button>
-        <button class="progga-pos-filter-btn" data-table-filter="occupied">Occupied</button>
-        <button class="progga-pos-filter-btn" data-table-filter="reserved">Reserved</button>
-      </div>
-    </div>
-
     <div class="pos-s1-grid" style="margin-top:20px;">
       <div class="progga-pos-table-grid" id="posTableGrid">
         @foreach($tables as $table)
-            @php $statusClass = strtolower($table->initial_status); @endphp
-            <div class="progga-pos-table-card {{ $statusClass }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-reserved-customer-id="{{ $table->reserved_customer_id ?? '' }}" data-reserved-booking-id="{{ $table->reserved_booking_id ?? '' }}" data-status="{{ $statusClass }}">
-              <span class="progga-pos-table-icon">🪑</span>
+            @php
+                $statusClass = strtolower($table->initial_status);
+                $isBillPrinted = $statusClass === 'occupied' && !empty($table->bill_printed);
+            @endphp
+            <div class="progga-pos-table-card {{ $statusClass }}{{ $isBillPrinted ? ' bill-printed' : '' }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-reserved-customer-id="{{ $table->reserved_customer_id ?? '' }}" data-reserved-booking-id="{{ $table->reserved_booking_id ?? '' }}" data-status="{{ $statusClass }}" data-bill-printed="{{ $isBillPrinted ? '1' : '0' }}">
+              <span class="progga-pos-table-icon" style="display:none;">🪑</span>
               <div class="progga-pos-table-num">{{ $table->table_number }}</div>
               <div class="progga-pos-table-zone">{{ $table->zone->name ?? 'Main' }}</div>
               <div class="progga-pos-table-info"><i class="bi bi-people-fill"></i> {{ $table->seating_capacity }} seats</div>
-              <span class="progga-badge progga-status-{{ $statusClass }}">{{ $table->initial_status }}</span>
+              <span class="progga-badge {{ $isBillPrinted ? 'progga-status-bill-printed' : 'progga-status-' . $statusClass }}">{{ $isBillPrinted ? 'Bill Printed' : $table->initial_status }}</span>
             </div>
         @endforeach
       </div>
@@ -103,6 +95,90 @@
     </div>
 
     <style>
+      /* One desktop toolbar: table tabs far left, order actions far right. */
+      .pos-s1-toolbar {
+        width: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        flex-wrap: nowrap !important;
+        gap: 14px !important;
+      }
+      .pos-s1-filters {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+      }
+      .pos-s1-toolbar .progga-pos-table-filters {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        margin: 0 !important;
+      }
+      .pos-s1-actions {
+        width: auto !important;
+        flex: 0 0 auto !important;
+        margin: 0 0 0 auto !important;
+        justify-content: flex-end !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+        gap: 10px !important;
+      }
+      /* Keep the original large POS action-button sizing from progga-style.css. */
+
+      /* Printed guest bill: still Occupied operationally, but use a clear yellow state. */
+      .progga-pos-table-card.bill-printed {
+        background: #ffd62e !important;
+        border-color: #ffd62e !important;
+        box-shadow: 0 8px 22px rgba(255, 214, 46, .22) !important;
+      }
+      .progga-pos-table-card.bill-printed:hover {
+        background: #ffd62e !important;
+        border-color: #ffd62e !important;
+        box-shadow: 0 12px 28px rgba(255, 214, 46, .28) !important;
+      }
+      .progga-pos-table-card.bill-printed .progga-pos-table-num {
+        color: #7a5200 !important;
+      }
+      .progga-pos-table-card.bill-printed .progga-pos-table-zone,
+      .progga-pos-table-card.bill-printed .progga-pos-table-info,
+      .progga-pos-table-card.bill-printed .progga-pos-table-info i {
+        color: #7c6a2d !important;
+      }
+      .progga-status-bill-printed {
+        background: #ffd62e !important;
+        border-color: #ffd62e !important;
+        color: #3b2a00 !important;
+      }
+
+      @media (max-width: 767.98px) {
+        .pos-s1-toolbar {
+          align-items: flex-start !important;
+          flex-wrap: wrap !important;
+          gap: 8px !important;
+        }
+        .pos-s1-filters {
+          width: 100% !important;
+          overflow-x: auto !important;
+          padding-bottom: 2px !important;
+        }
+        .pos-s1-toolbar .progga-pos-table-filters {
+          width: max-content !important;
+          min-width: 100% !important;
+        }
+        .pos-s1-actions {
+          margin-left: auto !important;
+        }
+      }
+
+      @media (max-width: 575.98px) {
+        .pos-s1-actions {
+          flex-wrap: nowrap !important;
+        }
+      }
+
       .progga-pos-running-order-card {
         position: relative;
         background: #fff;

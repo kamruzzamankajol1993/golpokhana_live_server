@@ -17,6 +17,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bill #{{ $order->order_number }}</title>
   <style>
+    @page { margin: 0; }
 
     :root {
       --mono: Arial, Helvetica, sans-serif;
@@ -232,6 +233,39 @@
       .bill-total-row.grand span,
       .bill-payment-val,
       .bill-thankyou { font-weight: 900 !important; }
+
+      /* Compact thermal print: no invoice data is removed; only spacing/line-height is tightened. */
+      .bill-header { padding: 8px 10px 6px !important; }
+      .bill-logo-circle { margin-bottom: 4px !important; }
+      .bill-restaurant-name { margin-bottom: 2px !important; line-height: 1.05 !important; }
+      .bill-restaurant-addr { line-height: 1.18 !important; margin-bottom: 0 !important; }
+      .bill-restaurant-phone { margin-top: 1px !important; line-height: 1.1 !important; }
+      .bill-registration-line { margin-top: 0 !important; line-height: 1.1 !important; }
+      .bill-title-bar { padding: 3px 10px !important; }
+      .bill-vat-line { padding: 3px 10px !important; line-height: 1.1 !important; }
+      .bill-body { padding: 5px 8px !important; }
+      .bill-meta-grid { gap: 2px 8px !important; margin-bottom: 5px !important; }
+      .bill-meta-row { line-height: 1.1 !important; }
+      .dashed-sep { margin: 4px 0 !important; }
+      .dashed-sep-thick { margin: 5px 0 !important; }
+      .bill-items-table thead th { padding: 2px 0 3px !important; line-height: 1.05 !important; }
+      .bill-items-table tbody td { padding: 3px 0 !important; line-height: 1.08 !important; }
+      .bill-item-name { line-height: 1.08 !important; }
+      .bill-item-note { margin-top: 0 !important; line-height: 1.12 !important; }
+      .bill-total-row { padding: 2px 0 !important; line-height: 1.08 !important; }
+      .bill-total-row.grand { padding: 4px 0 2px !important; margin-top: 2px !important; line-height: 1.05 !important; }
+      .bill-payment { padding: 5px 8px !important; margin-top: 5px !important; }
+      .bill-payment-top { gap: 6px !important; margin-bottom: 2px !important; }
+      .bill-payment-adjustments { margin-top: 4px !important; padding-top: 4px !important; }
+      .bill-payment-info-row { padding: 1px 0 !important; line-height: 1.1 !important; }
+      .bill-payment-change { margin-top: 2px !important; padding-top: 2px !important; }
+      .bill-server { margin-top: 5px !important; line-height: 1.1 !important; }
+      .bill-footer { padding: 7px 10px 8px !important; margin-top: 5px !important; }
+      .bill-thankyou { margin-bottom: 4px !important; line-height: 1.05 !important; }
+      .bill-partner { margin-top: 2px !important; line-height: 1.1 !important; }
+      .bill-feedback-qr { margin: 5px auto 0 !important; padding-top: 4px !important; }
+      .bill-feedback-qr-title, .bill-feedback-qr-note { line-height: 1.12 !important; }
+      .bill-feedback-qr img { margin: 3px auto 2px !important; }
     }
   </style>
 </head>

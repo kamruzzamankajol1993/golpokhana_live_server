@@ -6,18 +6,20 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, sans-serif; color: #000; font-weight: 700; }
-        .receipt-card { width: 90mm; margin: 0 auto; padding: 4mm 3mm; font-weight: 700; }
+        .receipt-card { width: 90mm; margin: 0 auto; padding: 1.2mm 1.5mm; font-weight: 700; }
         .text-center { text-align: center; }
-        .header-title { font-size: 15px; font-weight: 900; margin-bottom: 4px; }
-        .header-sub { font-size: 12px; font-weight: 700; color: #222; margin-bottom: 2px; }
-        .meta-section { margin: 12px 0; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.45; font-weight: 900; }
-        .section-title { font-size: 14px; font-weight: 900; text-align: center; margin: 12px 0 7px; text-transform: uppercase; letter-spacing: .7px; }
-        .dashed-line { border-top: 1px dashed #000; margin: 9px 0; }
-        .report-table { width: 100%; border-collapse: collapse; font-family: 'Courier New', monospace; font-size: 13px; font-weight: 900; }
-        .report-table td, .report-table th { padding: 4px 0; font-weight: 900; }
-        .report-table th { text-align: left; border-bottom: 1px dotted #000; font-size: 12px; }
+        .header-title { font-size: 12px !important; font-weight: 900; margin-bottom: .4px; line-height: 1.08; }
+        .header-sub { font-size: 9.5px !important; font-weight: 700; color: #222; margin-bottom: .2px; line-height: 1.08; }
+        .meta-section { margin: 3px 0; font-family: 'Courier New', monospace; font-size: 9.5px; line-height: 1.12; font-weight: 900; }
+        .section-title { font-size: 10.5px; font-weight: 900; text-align: center; margin: 3px 0 2px; line-height: 1.08; text-transform: uppercase; letter-spacing: .25px; }
+        .dashed-line { border-top: 1px dashed #000; margin: 2.5px 0; }
+        .report-table { width: 100%; border-collapse: collapse; font-family: 'Courier New', monospace; font-size: 10px !important; line-height: 1.12; font-weight: 900; }
+        .report-table tr, .report-table td, .report-table th { font-size: 10px !important; line-height: 1.12 !important; }
+        .report-table td, .report-table th { padding: .9px 0; font-weight: 900; }
+        .report-table th { text-align: left; border-bottom: 1px dotted #000; font-size: 9.5px !important; }
         .text-end { text-align: right; }
-        .footer { font-family: 'Courier New', monospace; font-size: 10px; text-align: center; margin-top: 16px; line-height: 1.55; font-weight: 900; }
+        .footer { font-family: 'Courier New', monospace; font-size: 8px; text-align: center; margin-top: 3px; line-height: 1.1; font-weight: 900; }
+        .report-table td[style*="padding-top:3px"] { padding-top: 1.4px !important; }
     </style>
 </head>
 <body>
@@ -37,8 +39,8 @@
         <div class="header-title">Work Period Report To Print - Combined</div>
         <div class="header-sub">Period: {{ $filterLabel ?? '-' }}</div>
         <div class="header-sub">Orders Combined: {{ $orderCount ?? 0 }}</div>
-        <div class="header-sub" style="margin-top:5px;font-size:13px;font-weight:900;">Work Period Closing Report</div>
-        <div class="header-title" style="margin-top:5px;font-size:16px;">{{ $restaurant->name ?? $restaurant->restaurant_name ?? 'GOLPO KHANA' }}</div>
+        <div class="header-sub" style="margin-top:1.5px;font-size:10px;font-weight:900;line-height:1.1;">Work Period Closing Report</div>
+        <div class="header-title" style="margin-top:1.5px;font-size:11.5px;line-height:1.1;">{{ $restaurant->name ?? $restaurant->restaurant_name ?? 'GOLPO KHANA' }}</div>
     </div>
 
     <div class="meta-section">
@@ -57,10 +59,10 @@
         @endforeach
         <tr><td>Service Charge ({{ $serviceRate }}%)</td><td class="text-end">{{ round($salesSummary['service_charge'] ?? 0) }}</td></tr>
         <tr><td>{{ $vatLabel }} ({{ $vatRate }}%)</td><td class="text-end">{{ round($salesSummary['vat_total'] ?? 0) }}</td></tr>
-        <tr style="border-top:1px dotted #000;"><td style="padding-top:8px;">(Product Discount)</td><td class="text-end" style="padding-top:8px;">({{ round($salesSummary['product_discount'] ?? 0) }})</td></tr>
+        <tr style="border-top:1px dotted #000;"><td style="padding-top:1.4px;">(Product Discount)</td><td class="text-end" style="padding-top:1.4px;">({{ round($salesSummary['product_discount'] ?? 0) }})</td></tr>
         <tr><td>(Honored)</td><td class="text-end">({{ round($salesSummary['honored'] ?? 0) }})</td></tr>
         <tr><td>(Discount Total)</td><td class="text-end">({{ round($salesSummary['discount_total'] ?? 0) }})</td></tr>
-        <tr style="font-size:14px;border-top:1px solid #000;"><td style="padding-top:8px;">Total Sales</td><td class="text-end" style="padding-top:8px;">{{ round($salesSummary['grand_total'] ?? 0) }}</td></tr>
+        <tr style="font-size:10px;border-top:1px solid #000;"><td style="padding-top:1.4px;">Total Sales</td><td class="text-end" style="padding-top:1.4px;">{{ round($salesSummary['grand_total'] ?? 0) }}</td></tr>
     </table>
 
     <div class="dashed-line"></div>
@@ -77,7 +79,7 @@
         @foreach(($deliveryPartnerDue ?? []) as $partnerDue)
             <tr><td>{{ $partnerDue['name'] }} Due</td><td class="text-end">{{ round($partnerDue['due']) }}</td></tr>
         @endforeach
-        <tr style="border-top:1px solid #000;"><td style="padding-top:8px;">Total Due</td><td class="text-end" style="padding-top:8px;">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
+        <tr style="border-top:1px solid #000;"><td style="padding-top:1.4px;">Total Due</td><td class="text-end" style="padding-top:1.4px;">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
     </table>
 
     <div class="dashed-line"></div>
@@ -91,18 +93,18 @@
                     ? ($cardProviderIncome ?? [])
                     : ($methodKey === 'MFC' ? ($mfsProviderIncome ?? []) : []);
             @endphp
-            <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:15px;font-weight:900;" @endif>
+            <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px;font-weight:900;" @endif>
                 <td>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
                 <td class="text-end">{{ round($amount) }}</td>
             </tr>
             @foreach($providerRows as $providerName => $providerAmount)
-                <tr style="font-size:15px;font-weight:900;">
+                <tr style="font-size:10px;font-weight:900;">
                     <td style="padding-left:10px;">↳ {{ $providerName }}</td>
                     <td class="text-end">{{ round($providerAmount) }}</td>
                 </tr>
             @endforeach
         @endforeach
-        <tr style="font-size:14px;border-top:1px solid #000;"><td style="padding-top:8px;">Total Collection</td><td class="text-end" style="padding-top:8px;">{{ round($totalIncome) }}</td></tr>
+        <tr style="font-size:10px;border-top:1px solid #000;"><td style="padding-top:1.4px;">Total Collection</td><td class="text-end" style="padding-top:1.4px;">{{ round($totalIncome) }}</td></tr>
     </table>
 
     <div class="dashed-line"></div>
@@ -113,17 +115,17 @@
             <tr><td>Dine In</td><td class="text-end">{{ round($departmentIncome['dine_in'] ?? 0) }}</td></tr>
             <tr><td>Delivery</td><td class="text-end">{{ round($departmentIncome['delivery'] ?? 0) }}</td></tr>
             <tr><td>Take Away</td><td class="text-end">{{ round($departmentIncome['takeaway'] ?? 0) }}</td></tr>
-            <tr style="font-size:14px;border-top:1px solid #000;"><td style="padding-top:8px;">Total</td><td class="text-end" style="padding-top:8px;">{{ round(array_sum($departmentIncome ?? [])) }}</td></tr>
+            <tr style="font-size:10px;border-top:1px solid #000;"><td style="padding-top:1.4px;">Total</td><td class="text-end" style="padding-top:1.4px;">{{ round(array_sum($departmentIncome ?? [])) }}</td></tr>
         </tbody>
     </table>
 
     <div class="dashed-line"></div>
-    <div class="text-center" style="font-family:'Courier New',monospace;font-size:13px;margin:10px 0;font-weight:900;">Cash &amp; Bank / Card Summary</div>
+    <div class="text-center" style="font-family:'Courier New',monospace;font-size:10px;margin:2.5px 0;font-weight:900;line-height:1.1;">Cash &amp; Bank / Card Summary</div>
     <div class="footer">
         <div>*** This is computer generated report and does not require any signature</div>
-        <div style="margin-top:5px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
+        <div style="margin-top:2px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
     </div>
-    <div style="margin-top:8px;text-align:center;font-size:10px;font-weight:700;">Powered by : <span style="font-size:12px;font-weight:900;">{{ $restaurant->name ?? $restaurant->restaurant_name ?? '' }}</span></div>
+    <div style="margin-top:2px;text-align:center;font-size:8.5px;font-weight:700;line-height:1.08;">Powered by : <span style="font-size:9px;font-weight:900;">{{ $restaurant->name ?? $restaurant->restaurant_name ?? '' }}</span></div>
 </div>
 </body>
 </html>
