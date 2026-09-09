@@ -179,6 +179,18 @@
         color: var(--progga-text-muted);
         margin-top: 6px;
     }
+    /* CSS fallback: provider/Split fields still react even if page-level JS is cached or delayed. */
+    #orderEditForm:has(#paymentMethod option[value="Split"]:checked) #normalPaidBox { display: none !important; }
+    #orderEditForm:has(#paymentMethod option[value="Split"]:checked) #splitPaymentBox { display: block !important; }
+    #orderEditForm:has(#paymentMethod option[value="Card"]:checked) #editSingleProviderRow,
+    #orderEditForm:has(#paymentMethod option[value="Mobile Banking"]:checked) #editSingleProviderRow { display: flex !important; }
+    #orderEditForm:has(#paymentMethod option[value="Card"]:checked) #editCardTypeBox { display: block !important; }
+    #orderEditForm:has(#paymentMethod option[value="Mobile Banking"]:checked) #editMfsProviderBox { display: block !important; }
+    #orderEditForm:has(#paymentMethod option[value="Card"]:checked) #transactionIdBox,
+    #orderEditForm:has(#paymentMethod option[value="Mobile Banking"]:checked) #transactionIdBox { display: block !important; }
+    #orderEditForm:has(#paymentMethod option[value="Cash"]:checked) #normalPaidBox,
+    #orderEditForm:has(#paymentMethod option[value="Card"]:checked) #normalPaidBox,
+    #orderEditForm:has(#paymentMethod option[value="Mobile Banking"]:checked) #normalPaidBox { display: block !important; }
     .order-product-discount-control {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -345,6 +357,8 @@
     ];
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
     $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
+    $paymentCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
+    $paymentMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
 @endphp
 <main class="progga-content">
     <div class="progga-page-header">
@@ -364,12 +378,19 @@
                 @if($isDeliveryOrder)
                     <span><i class="bi bi-truck"></i> {{ $deliveryPartnerLabels[$deliveryPartnerValue] ?? $deliveryPartnerValue }}</span>
                 @endif
-                <span><i class="bi bi-credit-card"></i> {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A') }}</span>
+                <span><i class="bi bi-credit-card"></i> {{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : (($order->payment_type ?? '') === 'Mobile Banking' ? 'MFS' : ($order->payment_type ?? 'N/A')) }}</span>
                 <span><i class="bi bi-clock"></i> {{ optional($order->created_at)->format('d M Y, h:i A') }}</span>
             </div>
         </div>
 
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            @can('order-edit')
+                @if(($order->due ?? 0) > 0)
+                    <button type="button" class="progga-btn progga-btn-primary progga-btn-sm" data-bs-toggle="modal" data-bs-target="#duePaymentModal">
+                        <i class="bi bi-cash-coin"></i> Pay Due (৳{{ number_format($order->due, 0) }})
+                    </button>
+                @endif
+            @endcan
             <a href="{{ route('order.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">
                 <i class="bi bi-arrow-left"></i> Back
             </a>
@@ -658,9 +679,30 @@
                         <select name="payment_method" id="paymentMethod" class="form-control" onchange="window.syncOrderEditPaymentFields && window.syncOrderEditPaymentFields(); window.calculateOrderEditTotals && window.calculateOrderEditTotals();">
                             <option value="Cash" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Cash' ? 'selected' : '' }}>Cash</option>
                             <option value="Card" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Card' ? 'selected' : '' }}>Bank / Card</option>
-                            <option value="Mobile Banking" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
+                            <option value="Mobile Banking" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Mobile Banking' ? 'selected' : '' }}>MFS</option>
                             <option value="Split" {{ old('payment_method', $order->payment_type ?? 'Cash') == 'Split' ? 'selected' : '' }}>Split</option>
                         </select>
+                    </div>
+
+                    <div class="row g-2 mt-3" id="editSingleProviderRow" style="display:none;">
+                        <div class="col-md-6" id="editCardTypeBox" style="display:none;">
+                            <label class="form-label fw-bold" style="font-size:12px;">Card Name <span class="text-danger">*</span></label>
+                            <select name="card_type" id="editCardType" class="form-select">
+                                <option value="">— Select Card —</option>
+                                @foreach($paymentCardTypes as $cardName)
+                                    <option value="{{ $cardName }}" {{ old('card_type', $order->card_type ?? '') === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="editMfsProviderBox" style="display:none;">
+                            <label class="form-label fw-bold" style="font-size:12px;">MFS Name <span class="text-danger">*</span></label>
+                            <select name="mfs_provider" id="editMfsProvider" class="form-select">
+                                <option value="">— Select MFS —</option>
+                                @foreach($paymentMfsProviders as $mfsName)
+                                    <option value="{{ $mfsName }}" {{ old('mfs_provider', $order->mfs_provider ?? '') === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
 
                     <div class="mt-3 normal-paid-box" id="normalPaidBox">
@@ -690,11 +732,44 @@
                                 <input type="number" name="paid_in_mfc" id="paidInMfc" class="form-control split-input" value="{{ old('paid_in_mfc', $order->paid_in_mfc ?? 0) }}" min="0" step="0.01">
                             </div>
                         </div>
-                        <div class="payment-helper-text">Split will use Cash + Bank / Card + Mobile Banking inputs. Total Paid will be auto-summed.</div>
+
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold" style="font-size:11px;">Card Type <span id="editSplitCardTypeRequired" class="text-danger" style="display:none;">*</span></label>
+                                <select name="split_card_type" id="editSplitCardType" class="form-select form-select-sm">
+                                    <option value="">— Select Card —</option>
+                                    @foreach($paymentCardTypes as $cardName)
+                                        <option value="{{ $cardName }}" {{ old('split_card_type', (($order->payment_type ?? '') === 'Split' ? ($order->card_type ?? '') : '')) === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold" style="font-size:11px;">MFS Service <span id="editSplitMfsProviderRequired" class="text-danger" style="display:none;">*</span></label>
+                                <select name="split_mfs_provider" id="editSplitMfsProvider" class="form-select form-select-sm">
+                                    <option value="">— Select MFS —</option>
+                                    @foreach($paymentMfsProviders as $mfsName)
+                                        <option value="{{ $mfsName }}" {{ old('split_mfs_provider', (($order->payment_type ?? '') === 'Split' ? ($order->mfs_provider ?? '') : '')) === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold" style="font-size:11px;">Bank / Card Reference Number <span id="editSplitCardReferenceRequired" class="text-danger" style="display:none;">*</span></label>
+                                <input type="text" name="split_card_reference" id="editSplitCardReference" class="form-control" maxlength="255" value="{{ old('split_card_reference', $order->split_card_reference ?? '') }}" placeholder="Bank / Card Reference Number">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold" style="font-size:11px;">MFS Reference Number <span id="editSplitMfsReferenceRequired" class="text-danger" style="display:none;">*</span></label>
+                                <input type="text" name="split_mfs_reference" id="editSplitMfsReference" class="form-control" maxlength="255" value="{{ old('split_mfs_reference', $order->split_mfs_reference ?? '') }}" placeholder="MFS Reference Number">
+                            </div>
+                        </div>
+
+                        <div class="payment-helper-text">Split uses Cash + Bank / Card + MFS. Card/MFS provider and reference become required when that amount is greater than 0.</div>
                     </div>
 
                     <div class="mt-3 transaction-id-box" id="transactionIdBox">
-                        <label class="form-label fw-bold" style="font-size:12px;">Transaction / Reference No</label>
+                        <label class="form-label fw-bold" id="editTransactionReferenceLabel" style="font-size:12px;">Reference Number <span class="text-danger">*</span></label>
                         <input type="text"
                                name="transaction_id"
                                id="transactionIdInput"
@@ -765,6 +840,10 @@
         </div>
     </form>
 </main>
+
+@can('order-edit')
+    @include('admin.order.partials._due_payment_modal', ['order' => $order])
+@endcan
 @endsection
 
 @section('script')
@@ -783,6 +862,16 @@
     const splitPaymentBox = document.getElementById('splitPaymentBox');
     const transactionIdBox = document.getElementById('transactionIdBox');
     const transactionIdInput = document.getElementById('transactionIdInput');
+    const transactionReferenceLabel = document.getElementById('editTransactionReferenceLabel');
+    const singleProviderRow = document.getElementById('editSingleProviderRow');
+    const cardTypeBox = document.getElementById('editCardTypeBox');
+    const cardTypeSelect = document.getElementById('editCardType');
+    const mfsProviderBox = document.getElementById('editMfsProviderBox');
+    const mfsProviderSelect = document.getElementById('editMfsProvider');
+    const splitCardType = document.getElementById('editSplitCardType');
+    const splitMfsProvider = document.getElementById('editSplitMfsProvider');
+    const splitCardReference = document.getElementById('editSplitCardReference');
+    const splitMfsReference = document.getElementById('editSplitMfsReference');
     const splitInputs = document.querySelectorAll('.split-input');
     const complimentaryToggles = document.querySelectorAll('.js-complimentary-toggle');
     const deleteItemButtons = document.querySelectorAll('.js-delete-order-item');
@@ -813,29 +902,80 @@
 
         const selectedPayment = paymentMethod.value;
         const isSplit = selectedPayment === 'Split';
-        const showReferenceField = selectedPayment === 'Card' || selectedPayment === 'Mobile Banking';
+        const isCard = selectedPayment === 'Card';
+        const isMfs = selectedPayment === 'Mobile Banking';
+        const showReferenceField = isCard || isMfs;
 
-        // Cash/Card/Mobile Banking => Total Paid input show.
-        // Split => Total Paid input hide, ৩টা আলাদা paid input show.
+        // Cash/Card/MFS => Total Paid. Split => separate Cash/Card/MFS amounts.
         setBoxVisible(normalPaidBox, !isSplit);
         setBoxVisible(splitPaymentBox, isSplit);
 
         if (totalPaidAmount) {
             totalPaidAmount.disabled = isSplit;
+            totalPaidAmount.required = !isSplit;
         }
 
         splitInputs.forEach(function (input) {
             input.disabled = !isSplit;
         });
 
-        // Transaction / Reference No shows only for Card or Mobile Banking.
+        // Single Bank/Card or MFS uses the same provider + required reference flow as POS.
+        if (singleProviderRow) singleProviderRow.style.display = showReferenceField ? 'flex' : 'none';
+        if (cardTypeBox) cardTypeBox.style.display = isCard ? 'block' : 'none';
+        if (mfsProviderBox) mfsProviderBox.style.display = isMfs ? 'block' : 'none';
+
+        if (cardTypeSelect) {
+            cardTypeSelect.disabled = !isCard;
+            cardTypeSelect.required = isCard;
+        }
+        if (mfsProviderSelect) {
+            mfsProviderSelect.disabled = !isMfs;
+            mfsProviderSelect.required = isMfs;
+        }
+
         setBoxVisible(transactionIdBox, showReferenceField);
         if (transactionIdInput) {
             transactionIdInput.disabled = !showReferenceField;
-            if (!showReferenceField) {
-                transactionIdInput.value = '';
-            }
+            transactionIdInput.required = showReferenceField;
+            transactionIdInput.placeholder = isCard ? 'Card Reference' : (isMfs ? 'MFS Reference' : 'Reference Number');
         }
+        if (transactionReferenceLabel) {
+            transactionReferenceLabel.innerHTML = isCard
+                ? 'Bank / Card Reference Number <span class="text-danger">*</span>'
+                : 'MFS Reference Number <span class="text-danger">*</span>';
+        }
+
+        // POS-style Split provider/reference requirements.
+        const splitCardAmount = isSplit ? numberValue(document.getElementById('paidInCard')) : 0;
+        const splitMfsAmount = isSplit ? numberValue(document.getElementById('paidInMfc')) : 0;
+        const needsSplitCard = isSplit && splitCardAmount > 0;
+        const needsSplitMfs = isSplit && splitMfsAmount > 0;
+
+        if (splitCardType) {
+            splitCardType.disabled = !isSplit;
+            splitCardType.required = needsSplitCard;
+        }
+        if (splitCardReference) {
+            splitCardReference.disabled = !isSplit;
+            splitCardReference.required = needsSplitCard;
+        }
+        if (splitMfsProvider) {
+            splitMfsProvider.disabled = !isSplit;
+            splitMfsProvider.required = needsSplitMfs;
+        }
+        if (splitMfsReference) {
+            splitMfsReference.disabled = !isSplit;
+            splitMfsReference.required = needsSplitMfs;
+        }
+
+        ['editSplitCardTypeRequired', 'editSplitCardReferenceRequired'].forEach(function (id) {
+            const marker = document.getElementById(id);
+            if (marker) marker.style.display = needsSplitCard ? 'inline' : 'none';
+        });
+        ['editSplitMfsProviderRequired', 'editSplitMfsReferenceRequired'].forEach(function (id) {
+            const marker = document.getElementById(id);
+            if (marker) marker.style.display = needsSplitMfs ? 'inline' : 'none';
+        });
     }
 
     function getCurrentPaidAmount() {
@@ -1050,9 +1190,23 @@
     }
 
     splitInputs.forEach(function (input) {
-        input.addEventListener('input', calculateTotals);
-        input.addEventListener('change', calculateTotals);
+        input.addEventListener('input', function () {
+            syncPaymentFields();
+            calculateTotals();
+        });
+        input.addEventListener('change', function () {
+            syncPaymentFields();
+            calculateTotals();
+        });
     });
+
+    const orderEditForm = document.getElementById('orderEditForm');
+    if (orderEditForm) {
+        orderEditForm.addEventListener('submit', function () {
+            syncPaymentFields();
+            calculateTotals();
+        });
+    }
 
     // Inline onchange fallback থেকেও call করার জন্য globally expose করা হলো।
     window.syncOrderEditPaymentFields = syncPaymentFields;

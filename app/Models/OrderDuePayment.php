@@ -16,6 +16,9 @@ class OrderDuePayment extends Model
         'amount' => 'decimal:2',
         'due_before' => 'decimal:2',
         'due_after' => 'decimal:2',
+        'paid_in_cash' => 'decimal:2',
+        'paid_in_card' => 'decimal:2',
+        'paid_in_mfc' => 'decimal:2',
     ];
 
     public function order()

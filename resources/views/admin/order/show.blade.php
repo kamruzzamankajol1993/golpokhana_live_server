@@ -254,7 +254,7 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <div>
                 <h5 class="mb-1" style="font-weight:800;color:var(--progga-primary);"><i class="bi bi-clock-history me-2"></i>Due Payment History</h5>
-                <div class="text-muted" style="font-size:12px;">Each later due collection is recorded with date, payment method and remaining due.</div>
+                <div class="text-muted" style="font-size:12px;">Each later due collection is recorded with payment type, provider/reference and remaining due.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="badge {{ ($order->due ?? 0) > 0 ? 'bg-danger' : 'bg-success' }} px-3 py-2">Current Due: ৳{{ number_format($order->due ?? 0, 0) }}</span>
@@ -274,7 +274,8 @@
                     <tr>
                         <th>Date & Time</th>
                         <th class="text-end">Paid Amount</th>
-                        <th>Method</th>
+                        <th>Payment Type</th>
+                        <th>Provider / Split Details</th>
                         <th>Reference</th>
                         <th>Received By</th>
                         <th class="text-end">Due Before</th>
@@ -284,18 +285,69 @@
                 </thead>
                 <tbody>
                     @forelse($order->duePayments as $duePayment)
+                        @php
+                            $duePaymentType = trim((string) ($duePayment->payment_type ?? ''));
+                            $duePaymentMethodLabel = $duePaymentType === 'Card'
+                                ? 'Bank / Card'
+                                : ($duePaymentType === 'Mobile Banking' ? 'MFS' : ($duePaymentType ?: '—'));
+                            $duePaymentDetails = [];
+                            $duePaymentReferences = [];
+
+                            if ($duePaymentType === 'Card') {
+                                $duePaymentDetails[] = 'Card: ' . ($duePayment->card_type ?: '—');
+                                if ($duePayment->transaction_reference) {
+                                    $duePaymentReferences[] = 'Card: ' . $duePayment->transaction_reference;
+                                }
+                            } elseif ($duePaymentType === 'Mobile Banking') {
+                                $duePaymentDetails[] = 'MFS: ' . ($duePayment->mfs_provider ?: '—');
+                                if ($duePayment->transaction_reference) {
+                                    $duePaymentReferences[] = 'MFS: ' . $duePayment->transaction_reference;
+                                }
+                            } elseif ($duePaymentType === 'Split') {
+                                if ((float) ($duePayment->paid_in_cash ?? 0) > 0) {
+                                    $duePaymentDetails[] = 'Cash: ৳' . number_format((float) $duePayment->paid_in_cash, 0);
+                                }
+                                if ((float) ($duePayment->paid_in_card ?? 0) > 0) {
+                                    $duePaymentDetails[] = 'Bank / Card (' . ($duePayment->card_type ?: '—') . '): ৳' . number_format((float) $duePayment->paid_in_card, 0);
+                                }
+                                if ((float) ($duePayment->paid_in_mfc ?? 0) > 0) {
+                                    $duePaymentDetails[] = 'MFS (' . ($duePayment->mfs_provider ?: '—') . '): ৳' . number_format((float) $duePayment->paid_in_mfc, 0);
+                                }
+                                if ($duePayment->split_card_reference) {
+                                    $duePaymentReferences[] = 'Card: ' . $duePayment->split_card_reference;
+                                }
+                                if ($duePayment->split_mfs_reference) {
+                                    $duePaymentReferences[] = 'MFS: ' . $duePayment->split_mfs_reference;
+                                }
+                            } elseif ($duePaymentType === 'Cash') {
+                                $duePaymentDetails[] = 'Cash';
+                            }
+                        @endphp
                         <tr>
                             <td>{{ optional($duePayment->paid_at)->format('d M Y, h:i A') }}</td>
                             <td class="text-end fw-bold text-success">৳{{ number_format($duePayment->amount, 0) }}</td>
-                            <td><span class="badge bg-secondary">{{ ($duePayment->payment_type ?? '') === 'Card' ? 'Bank / Card' : $duePayment->payment_type }}</span></td>
-                            <td>{{ $duePayment->transaction_reference ?: '—' }}</td>
+                            <td><span class="badge bg-secondary">{{ $duePaymentMethodLabel }}</span></td>
+                            <td>
+                                @forelse($duePaymentDetails as $detail)
+                                    <div>{{ $detail }}</div>
+                                @empty
+                                    —
+                                @endforelse
+                            </td>
+                            <td>
+                                @forelse($duePaymentReferences as $reference)
+                                    <div>{{ $reference }}</div>
+                                @empty
+                                    —
+                                @endforelse
+                            </td>
                             <td>{{ optional($duePayment->user)->name ?? 'System/User #' . ($duePayment->received_by ?? '—') }}</td>
                             <td class="text-end">৳{{ number_format($duePayment->due_before, 0) }}</td>
                             <td class="text-end fw-bold {{ (float)$duePayment->due_after > 0 ? 'text-danger' : 'text-success' }}">৳{{ number_format($duePayment->due_after, 0) }}</td>
                             <td>{{ $duePayment->remark ?: '—' }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="8" class="text-center text-muted py-4">No later due payment has been recorded yet.</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted py-4">No later due payment has been recorded yet.</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -304,79 +356,6 @@
 </main>
 
 @can('order-edit')
-@if(($order->due ?? 0) > 0)
-<div class="modal fade" id="duePaymentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form method="POST" action="{{ route('order.pay_due', $order->id) }}" id="duePaymentForm">
-                @csrf
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Receive Due Payment</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-warning py-2" style="font-size:13px;">Remaining due: <strong>৳{{ number_format($order->due, 2) }}</strong></div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Payment Amount</label>
-                        <input type="number" name="amount" class="form-control" min="0.01" max="{{ (float)$order->due }}" step="0.01" value="{{ old('amount', $order->due) }}" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Payment Method</label>
-                        <select name="payment_type" id="duePaymentType" class="form-control" required>
-                            <option value="Cash" {{ old('payment_type', 'Cash') === 'Cash' ? 'selected' : '' }}>Cash</option>
-                            <option value="Card" {{ old('payment_type') === 'Card' ? 'selected' : '' }}>Bank / Card</option>
-                            <option value="Mobile Banking" {{ old('payment_type') === 'Mobile Banking' ? 'selected' : '' }}>Mobile Banking</option>
-                        </select>
-                    </div>
-                    <div class="mb-3" id="dueReferenceBox" style="display:none;">
-                        <label class="form-label fw-bold" id="dueReferenceLabel">Reference Number</label>
-                        <input type="text" name="transaction_reference" id="dueReferenceInput" class="form-control" value="{{ old('transaction_reference') }}" placeholder="Reference Number">
-                    </div>
-                    <div class="mb-0">
-                        <label class="form-label fw-bold">Remark <span class="text-muted fw-normal">(Optional)</span></label>
-                        <textarea name="remark" class="form-control" rows="2" placeholder="Due payment note">{{ old('remark') }}</textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="progga-btn progga-btn-outline" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-circle"></i> Confirm Due Payment</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-@endif
+    @include('admin.order.partials._due_payment_modal', ['order' => $order])
 @endcan
-@endsection
-
-@section('script')
-<script>
-(function () {
-    const type = document.getElementById('duePaymentType');
-    const box = document.getElementById('dueReferenceBox');
-    const input = document.getElementById('dueReferenceInput');
-    const label = document.getElementById('dueReferenceLabel');
-
-    function syncDueReference() {
-        if (!type || !box || !input) return;
-        const needsReference = type.value === 'Card' || type.value === 'Mobile Banking';
-        box.style.display = needsReference ? 'block' : 'none';
-        input.required = needsReference;
-        if (label) label.textContent = type.value === 'Card' ? 'Bank / Card Reference Number' : 'MFS Reference Number';
-        if (!needsReference) input.value = '';
-    }
-
-    if (type) {
-        type.addEventListener('change', syncDueReference);
-        syncDueReference();
-    }
-
-    @if($errors->has('amount') || $errors->has('payment_type') || $errors->has('transaction_reference'))
-        const modalEl = document.getElementById('duePaymentModal');
-        if (modalEl && window.bootstrap) {
-            bootstrap.Modal.getOrCreateInstance(modalEl).show();
-        }
-    @endif
-})();
-</script>
 @endsection

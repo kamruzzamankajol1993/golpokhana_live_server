@@ -527,11 +527,20 @@ class HomeController extends Controller
             ]);
 
         $dueByOrder = [];
+        $duePaymentHasBreakdown = Schema::hasTable('order_due_payments')
+            && Schema::hasColumn('order_due_payments', 'paid_in_cash')
+            && Schema::hasColumn('order_due_payments', 'paid_in_card')
+            && Schema::hasColumn('order_due_payments', 'paid_in_mfc');
 
         if (Schema::hasTable('order_due_payments') && $orders->isNotEmpty()) {
+            $dueColumns = ['order_id', 'payment_type', 'amount'];
+            if ($duePaymentHasBreakdown) {
+                array_push($dueColumns, 'paid_in_cash', 'paid_in_card', 'paid_in_mfc');
+            }
+
             $dueRows = DB::table('order_due_payments')
                 ->whereIn('order_id', $orders->pluck('id')->all())
-                ->get(['order_id', 'payment_type', 'amount']);
+                ->get($dueColumns);
 
             foreach ($dueRows as $dueRow) {
                 $orderId = (int) $dueRow->order_id;
@@ -540,7 +549,15 @@ class HomeController extends Controller
 
                 $dueByOrder[$orderId] ??= ['cash' => 0.0, 'card' => 0.0, 'mfs' => 0.0, 'total' => 0.0];
 
-                if ($type === 'cash') {
+                $cashPart = $duePaymentHasBreakdown ? max(0, (float) ($dueRow->paid_in_cash ?? 0)) : 0.0;
+                $cardPart = $duePaymentHasBreakdown ? max(0, (float) ($dueRow->paid_in_card ?? 0)) : 0.0;
+                $mfsPart = $duePaymentHasBreakdown ? max(0, (float) ($dueRow->paid_in_mfc ?? 0)) : 0.0;
+
+                if (($cashPart + $cardPart + $mfsPart) > 0) {
+                    $dueByOrder[$orderId]['cash'] += $cashPart;
+                    $dueByOrder[$orderId]['card'] += $cardPart;
+                    $dueByOrder[$orderId]['mfs'] += $mfsPart;
+                } elseif ($type === 'cash') {
                     $dueByOrder[$orderId]['cash'] += $amount;
                 } elseif ($type === 'card') {
                     $dueByOrder[$orderId]['card'] += $amount;
@@ -596,15 +613,22 @@ class HomeController extends Controller
                 ->whereBetween('order_due_payments.paid_at', [$overallStart, $overallEnd]);
 
             $dueIncomeQuery = OrderVisibility::constrain($dueIncomeQuery, $visibleOrderIds);
+            $dueIncomeColumns = [
+                'order_due_payments.paid_at',
+                'order_due_payments.payment_type',
+                'order_due_payments.amount',
+            ];
+            if ($duePaymentHasBreakdown) {
+                $dueIncomeColumns[] = 'order_due_payments.paid_in_cash';
+                $dueIncomeColumns[] = 'order_due_payments.paid_in_card';
+                $dueIncomeColumns[] = 'order_due_payments.paid_in_mfc';
+            }
+
             $dueIncomeRows = $this->applyBusinessHoursFilter(
                 $dueIncomeQuery,
                 'order_due_payments.paid_at',
                 $hours
-            )->get([
-                'order_due_payments.paid_at',
-                'order_due_payments.payment_type',
-                'order_due_payments.amount',
-            ]);
+            )->get($dueIncomeColumns);
 
             foreach ($dueIncomeRows as $dueIncome) {
                 $businessDate = $this->businessDateForTimestamp(Carbon::parse($dueIncome->paid_at), $hours);
@@ -621,8 +645,15 @@ class HomeController extends Controller
 
                 $amount = max(0, (float) $dueIncome->amount);
                 $type = strtolower(trim((string) $dueIncome->payment_type));
+                $cashPart = $duePaymentHasBreakdown ? max(0, (float) ($dueIncome->paid_in_cash ?? 0)) : 0.0;
+                $cardPart = $duePaymentHasBreakdown ? max(0, (float) ($dueIncome->paid_in_card ?? 0)) : 0.0;
+                $mfsPart = $duePaymentHasBreakdown ? max(0, (float) ($dueIncome->paid_in_mfc ?? 0)) : 0.0;
 
-                if ($type === 'cash') {
+                if (($cashPart + $cardPart + $mfsPart) > 0) {
+                    $cashTotals[$key] += $cashPart;
+                    $cardTotals[$key] += $cardPart;
+                    $mfsTotals[$key] += $mfsPart;
+                } elseif ($type === 'cash') {
                     $cashTotals[$key] += $amount;
                 } elseif ($type === 'card') {
                     $cardTotals[$key] += $amount;
