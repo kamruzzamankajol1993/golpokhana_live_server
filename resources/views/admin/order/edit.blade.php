@@ -384,13 +384,6 @@
         </div>
 
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            @can('order-edit')
-                @if(($order->due ?? 0) > 0)
-                    <button type="button" class="progga-btn progga-btn-primary progga-btn-sm" data-bs-toggle="modal" data-bs-target="#duePaymentModal">
-                        <i class="bi bi-cash-coin"></i> Pay Due (৳{{ number_format($order->due, 0) }})
-                    </button>
-                @endif
-            @endcan
             <a href="{{ route('order.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">
                 <i class="bi bi-arrow-left"></i> Back
             </a>
@@ -841,9 +834,6 @@
     </form>
 </main>
 
-@can('order-edit')
-    @include('admin.order.partials._due_payment_modal', ['order' => $order])
-@endcan
 @endsection
 
 @section('script')

@@ -2645,13 +2645,37 @@
             data: formData + '&_token=' + $('meta[name="csrf-token"]').attr('content'),
             success: function(res) {
                 if(res.status === 'success') {
-                    Swal.fire({ icon: 'success', title: 'Paid!', timer: 900, showConfirmButton: false }).then(() => {
+                    // Final invoice printing must start only after the payment modal is fully closed.
+                    // This is especially important for the "Save as Due Order" path: that path already
+                    // passes through a SweetAlert confirmation and leaving the Bootstrap focus trap active
+                    // can prevent the browser print dialog from opening.
+                    let printStarted = false;
+                    let modalEl = document.getElementById('paymentModal');
+
+                    const printFinalInvoice = function() {
+                        if (printStarted) return;
+                        printStarted = true;
+
                         if (res.redirect_url && typeof window.openPosPrintPreview === 'function') {
                             window.openPosPrintPreview(res.redirect_url, 'Invoice', { returnToPos: true });
+                        } else if (res.redirect_url) {
+                            window.location.href = res.redirect_url;
                         } else {
                             window.location.href = "{{ route('pos.index') }}";
                         }
-                    });
+                    };
+
+                    if (modalEl && modalEl.classList.contains('show')) {
+                        $(modalEl).one('hidden.bs.modal', function() {
+                            window.setTimeout(printFinalInvoice, 60);
+                        });
+                        bootstrap.Modal.getInstance(modalEl)?.hide();
+
+                        // Fallback for browsers where hidden.bs.modal is not emitted as expected.
+                        window.setTimeout(printFinalInvoice, 500);
+                    } else {
+                        window.setTimeout(printFinalInvoice, 60);
+                    }
                 } else {
                     Swal.fire('Error', res.message, 'error');
                     btn.html(originalHtml).prop('disabled', false);

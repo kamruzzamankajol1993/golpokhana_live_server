@@ -27,7 +27,7 @@
 
     <div class="progga-tab-nav">
         <div class="progga-tab-item active" data-settings-tab="restaurant">Restaurant Info</div>
-        <div class="progga-tab-item" data-settings-tab="tax">Tax &amp; Billing</div>
+        <div class="progga-tab-item" data-settings-tab="tax">Vat &amp; Billing</div>
         <div class="progga-tab-item" data-settings-tab="invoice">Invoice Settings</div>
         <div class="progga-tab-item" data-settings-tab="pos">POS Preferences</div>
         <div class="progga-tab-item" data-settings-tab="roles">User Roles</div>
@@ -115,17 +115,17 @@
 
     <div id="settingsTax" style="display:none;">
         <div class="progga-card">
-            <div class="progga-card-header"><div class="progga-card-title"><i class="bi bi-percent me-2"></i>Tax Configuration</div></div>
+            <div class="progga-card-header"><div class="progga-card-title"><i class="bi bi-percent me-2"></i>Vat Configuration</div></div>
             <div class="progga-card-body">
                 <form action="{{ route('settings.tax') }}" method="POST">
                     @csrf
                     <div class="row g-3">
-                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">VAT / Tax Rate (%)</label><input type="number" name="vat_rate" class="progga-form-control" value="{{ $tax->vat_rate ?? 5 }}" step="0.01"></div></div>
-                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">Tax Label</label><input type="text" name="tax_label" class="progga-form-control" value="{{ $tax->tax_label ?? 'VAT' }}"></div></div>
-                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">Tax Registration #</label><input type="text" name="tax_registration_no" class="progga-form-control" value="{{ $tax->tax_registration_no ?? '' }}"></div></div>
+                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">VAT Rate (%)</label><input type="number" name="vat_rate" class="progga-form-control" value="{{ $tax->vat_rate ?? 5 }}" step="0.01"></div></div>
+                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">Label</label><input type="text" name="tax_label" class="progga-form-control" value="{{ $tax->tax_label ?? 'VAT' }}"></div></div>
+                        <div class="col-md-4"><div class="progga-form-group"><label class="progga-form-label">Bin No #</label><input type="text" name="tax_registration_no" class="progga-form-control" value="{{ $tax->tax_registration_no ?? '' }}"></div></div>
                         <div class="col-md-6">
                             <div class="progga-form-group">
-                                <label class="progga-form-label">Tax Included in Price?</label>
+                                <label class="progga-form-label">Vat Included in Price?</label>
                                 <label class="progga-toggle" style="margin-top:8px;">
                                     <input type="checkbox" name="is_tax_included" {{ ($tax->is_tax_included ?? false) ? 'checked' : '' }} data-on="Yes (inclusive)" data-off="No (added at checkout)">
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
@@ -134,7 +134,7 @@
                             </div>
                         </div>
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Service Charge (%)</label><input type="number" name="service_charge" class="progga-form-control" value="{{ $tax->service_charge ?? 0 }}" step="0.01"></div></div>
-                        <div class="col-12"><button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Tax Settings</button></div>
+                        <div class="col-12"><button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Vat Settings</button></div>
                     </div>
                 </form>
             </div>

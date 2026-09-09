@@ -152,37 +152,37 @@
     <table class="report-table">
         <tr>
             <td>Outlet Sales</td>
-            <td class="text-end fw-bold">{{ round($salesSummary['outlet_sales'] ?? $salesSummary['sales_total'] ?? $session->sales_total ?? 0) }}</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['outlet_sales'] ?? $salesSummary['sales_total'] ?? $session->sales_total ?? 0) }}</td>
         </tr>
         @foreach(($deliveryPartnerIncome ?? []) as $partner)
         <tr>
             <td>{{ $partner['name'] }}</td>
-            <td class="text-end fw-bold">{{ round($partner['amount']) }}</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($partner['amount']) }}</td>
         </tr>
         @endforeach
         <tr>
             <td>Service Charge ({{ $serviceRate }}%)</td>
-            <td class="text-end">{{ round($salesSummary['service_charge'] ?? $session->service_charge ?? 0) }}</td>
+            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['service_charge'] ?? $session->service_charge ?? 0) }}</td>
         </tr>
         <tr>
             <td>{{ $vatLabel }} ({{ $vatRate }}%)</td>
-            <td class="text-end">{{ round($salesSummary['vat_total'] ?? $session->vat_total ?? 0) }}</td>
+            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['vat_total'] ?? $session->vat_total ?? 0) }}</td>
         </tr>
         <tr style="border-top: 1px dotted #000;">
-            <td style="padding-top: 8px;">(Product Discount)</td>
-            <td class="text-end" style="padding-top: 8px;">({{ round($salesSummary['product_discount'] ?? 0) }})</td>
+            <td style="padding-top: 8px;">Item Discount</td>
+            <td class="text-end" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['product_discount'] ?? 0) }}</td>
         </tr>
         <tr>
-            <td>(Honored)</td>
-            <td class="text-end">({{ round($salesSummary['honored'] ?? 0) }})</td>
+            <td>Honored</td>
+            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['honored'] ?? 0) }}</td>
         </tr>
         <tr>
-            <td>(Discount Total)</td>
-            <td class="text-end">({{ round($salesSummary['discount_total'] ?? 0) }})</td>
+            <td>Discount Total</td>
+            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['discount_total'] ?? 0) }}</td>
         </tr>
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total Sales</td>
-            <td class="text-end" style="padding-top: 8px;">{{ round($salesSummary['grand_total'] ?? $session->grand_total ?? 0) }}</td>
+            <td class="text-end" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['grand_total'] ?? $session->grand_total ?? 0) }}</td>
         </tr>
     </table>
 
@@ -192,17 +192,17 @@
     <table class="report-table">
         <tr>
             <td>Complimentary</td>
-            <td class="text-end fw-bold">{{ round($closingExtraSummary['complimentary'] ?? 0) }}</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($closingExtraSummary['complimentary'] ?? 0) }}</td>
         </tr>
         {{-- Due is intentionally hidden from the Session Report PDF.
         <tr>
             <td>Due</td>
-            <td class="text-end fw-bold">{{ round($closingExtraSummary['due'] ?? 0) }}</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($closingExtraSummary['due'] ?? 0) }}</td>
         </tr>
         --}}
         <tr>
             <td>Customer Advance</td>
-            <td class="text-end fw-bold">{{ round($customerAdvance ?? 0) }}</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($customerAdvance ?? 0) }}</td>
         </tr>
     </table>
 
@@ -210,11 +210,11 @@
     <div class="section-title">Due</div>
 
     <table class="report-table">
-        <tr><td>Customer Due (Dine In)</td><td class="text-end fw-bold">{{ round($closingExtraSummary['due'] ?? 0) }}</td></tr>
+        <tr><td>Customer Due (Dine In)</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($closingExtraSummary['due'] ?? 0) }}</td></tr>
         @foreach(($deliveryPartnerDue ?? []) as $partnerDue)
-        <tr><td>{{ $partnerDue['name'] }} Due</td><td class="text-end fw-bold">{{ round($partnerDue['due']) }}</td></tr>
+        <tr><td>{{ $partnerDue['name'] }} Due</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($partnerDue['due']) }}</td></tr>
         @endforeach
-        <tr style="border-top: 1px solid #000;"><td style="padding-top: 8px;">Total Due</td><td class="text-end fw-bold" style="padding-top: 8px;">{{ round(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
+        <tr style="border-top: 1px solid #000;"><td style="padding-top: 8px;">Total Due</td><td class="text-end fw-bold" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount(($closingExtraSummary['due'] ?? 0) + collect($deliveryPartnerDue ?? [])->sum('due')) }}</td></tr>
     </table>
 
     <div class="dashed-line"></div>
@@ -231,7 +231,7 @@
             @endphp
             <tr @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>
                 <td @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ $methodLabel }} &nbsp; {{ number_format($percentage, 2) }}%</td>
-                <td class="text-end fw-bold" @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ round($amount) }}</td>
+                <td class="text-end fw-bold" @if(in_array($methodKey, ['Card', 'MFC'], true)) style="font-size:10px !important; font-weight:900 !important; color:#000 !important;" @endif>{{ \App\Support\CurrencyFormatter::bdAmount($amount) }}</td>
             </tr>
             @foreach($providerRows as $providerName => $providerAmount)
                 <tr>
@@ -240,14 +240,14 @@
                         <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">{{ $providerName }}</span>
                     </td>
                     <td class="text-end" style="font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
-                        <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">{{ round($providerAmount) }}</span>
+                        <span style="font-size:10px !important; font-weight:900 !important; color:#000 !important;">{{ \App\Support\CurrencyFormatter::bdAmount($providerAmount) }}</span>
                     </td>
                 </tr>
             @endforeach
         @endforeach
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total Collection</td>
-            <td class="text-end" style="padding-top: 8px;">{{ round($totalIncome) }}</td>
+            <td class="text-end" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount($totalIncome) }}</td>
         </tr>
     </table>
 
@@ -259,12 +259,12 @@
             <tr><th>Department</th><th class="text-end">Amount</th></tr>
         </thead>
         <tbody>
-            <tr><td>Dine In</td><td class="text-end fw-bold">{{ round($departmentIncome['dine_in'] ?? 0) }}</td></tr>
-            <tr><td>Delivery</td><td class="text-end fw-bold">{{ round($departmentIncome['delivery'] ?? 0) }}</td></tr>
-            <tr><td>Take Away</td><td class="text-end fw-bold">{{ round($departmentIncome['takeaway'] ?? 0) }}</td></tr>
+            <tr><td>Dine In</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($departmentIncome['dine_in'] ?? 0) }}</td></tr>
+            <tr><td>Delivery</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($departmentIncome['delivery'] ?? 0) }}</td></tr>
+            <tr><td>Take Away</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($departmentIncome['takeaway'] ?? 0) }}</td></tr>
             <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
                 <td style="padding-top: 8px;">Total</td>
-                <td class="text-end" style="padding-top: 8px;">{{ round(array_sum($departmentIncome ?? [])) }}</td>
+                <td class="text-end" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount(array_sum($departmentIncome ?? [])) }}</td>
             </tr>
         </tbody>
     </table>

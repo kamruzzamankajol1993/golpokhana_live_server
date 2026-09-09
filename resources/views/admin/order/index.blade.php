@@ -111,14 +111,16 @@
       min-width: 92px;
       justify-content: center;
     }
-    .progga-order-action-menu .dropdown-menu {
+    .progga-order-action-menu .dropdown-menu,
+    .progga-order-action-dropdown-portal {
       min-width: 190px;
       padding: 6px;
       border: 1px solid var(--progga-border-light);
       border-radius: 10px;
-      z-index: 1080;
+      z-index: 1095;
     }
-    .progga-order-action-menu .dropdown-item {
+    .progga-order-action-menu .dropdown-item,
+    .progga-order-action-dropdown-portal .dropdown-item {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -127,7 +129,8 @@
       font-size: 12px;
       font-weight: 700;
     }
-    .progga-order-action-menu .dropdown-item i {
+    .progga-order-action-menu .dropdown-item i,
+    .progga-order-action-dropdown-portal .dropdown-item i {
       width: 18px;
       text-align: center;
       font-size: 14px;
@@ -276,7 +279,68 @@
 <script>
     let orderDatePicker = null;
 
+    function initOrderActionDropdowns() {
+        if (!window.bootstrap || !bootstrap.Dropdown) return;
+
+        document.querySelectorAll('.progga-order-action-menu [data-bs-toggle="dropdown"]').forEach(function(toggle) {
+            bootstrap.Dropdown.getOrCreateInstance(toggle, {
+                boundary: 'viewport',
+                popperConfig: function(defaultConfig) {
+                    return Object.assign({}, defaultConfig, { strategy: 'fixed' });
+                }
+            });
+        });
+    }
+
+    function restoreOrderActionDropdownMenu(menu) {
+        if (!menu || !menu.__orderDropdownParent) return;
+
+        const parent = menu.__orderDropdownParent;
+        const next = menu.__orderDropdownNext;
+        menu.classList.remove('progga-order-action-dropdown-portal');
+        menu.style.zIndex = '';
+
+        if (parent.isConnected) {
+            if (next && next.parentNode === parent) {
+                parent.insertBefore(menu, next);
+            } else {
+                parent.appendChild(menu);
+            }
+        } else {
+            menu.remove();
+        }
+
+        menu.__orderDropdownParent = null;
+        menu.__orderDropdownNext = null;
+    }
+
+    document.addEventListener('show.bs.dropdown', function(event) {
+        const toggle = event.target;
+        if (!(toggle instanceof Element) || !toggle.matches('.progga-order-action-menu [data-bs-toggle="dropdown"]')) return;
+
+        const menu = toggle.parentElement ? toggle.parentElement.querySelector(':scope > .dropdown-menu') : null;
+        if (!menu || menu.__orderDropdownParent) return;
+
+        menu.__orderDropdownParent = menu.parentNode;
+        menu.__orderDropdownNext = menu.nextSibling;
+        menu.classList.add('progga-order-action-dropdown-portal');
+        menu.style.zIndex = '2000';
+        document.body.appendChild(menu);
+    });
+
+    document.addEventListener('hidden.bs.dropdown', function(event) {
+        const toggle = event.target;
+        if (!(toggle instanceof Element) || !toggle.matches('.progga-order-action-menu [data-bs-toggle="dropdown"]')) return;
+
+        document.querySelectorAll('.progga-order-action-dropdown-portal').forEach(function(menu) {
+            if (menu.__orderDropdownParent === toggle.parentElement) {
+                restoreOrderActionDropdownMenu(menu);
+            }
+        });
+    });
+
     $(document).ready(function() {
+        initOrderActionDropdowns();
         if (typeof flatpickr !== 'undefined') {
             orderDatePicker = flatpickr('#filterDateRange', {
                 mode: 'range',
@@ -323,7 +387,9 @@
             url: url || "{{ route('order.index') }}",
             data: { search: search, status: status, date_from: dateFrom, date_to: dateTo, payment: payment },
             success: function(data) {
+                document.querySelectorAll('.progga-order-action-dropdown-portal').forEach(restoreOrderActionDropdownMenu);
                 $('#order_data_container').html(data).css('opacity', '1');
+                initOrderActionDropdowns();
             }
         });
     }

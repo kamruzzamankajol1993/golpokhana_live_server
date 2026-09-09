@@ -59,7 +59,7 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner', 'duePayments.user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner'])->findOrFail($id);
         return view('admin.order.partials._order_details', compact('order'))->render();
     }
 
@@ -901,6 +901,17 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
 
     /**
+     * Dedicated due settlement page. Due collection and payment history live here,
+     * separate from the order edit/details pages.
+     */
+    public function dueSettlement($id)
+    {
+        $order = Order::with(['customer', 'table', 'waiter', 'user', 'deliveryPartner', 'duePayments.user'])->findOrFail($id);
+
+        return view('admin.order.due_settlement', compact('order'));
+    }
+
+    /**
      * Collect a later payment against an existing due balance and keep an auditable history.
      */
     public function payDue(Request $request, $id)
@@ -924,7 +935,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'split_card_reference' => ['nullable', 'string', 'max:255'],
             'split_mfs_reference' => ['nullable', 'string', 'max:255'],
             'remark' => ['nullable', 'string', 'max:1000'],
-            'return_to' => ['nullable', Rule::in(['details', 'edit'])],
+            'paid_at' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
         ]);
 
         $paymentType = (string) $request->payment_type;
@@ -937,6 +948,9 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
         $transactionReference = null;
         $splitCardReference = null;
         $splitMfsReference = null;
+        $paymentDate = Carbon::createFromFormat('Y-m-d', (string) $request->input('paid_at'));
+        $currentTime = now();
+        $paymentDate->setTime($currentTime->hour, $currentTime->minute, $currentTime->second);
 
         if ($paymentType === 'Card') {
             $cardType = trim((string) $request->input('card_type'));
@@ -1045,7 +1059,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
                 'split_mfs_reference' => $paymentType === 'Split' && $mfsAmount > 0 ? $splitMfsReference : null,
                 'remark' => trim((string) $request->remark) !== '' ? trim((string) $request->remark) : null,
                 'received_by' => auth()->id(),
-                'paid_at' => now(),
+                'paid_at' => $paymentDate,
             ]);
 
             $order->total_paid_amount = round((float) ($order->total_paid_amount ?? 0) + $amount, 2);
@@ -1074,10 +1088,8 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
             DB::commit();
 
-            $returnRoute = $request->input('return_to') === 'edit' ? 'order.edit' : 'order.details';
-
             return redirect()
-                ->route($returnRoute, $order->id)
+                ->route('order.due_settlement', $order->id)
                 ->with('success', 'Due payment of ৳' . number_format($amount, 2) . ' received successfully.');
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -1088,7 +1100,7 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
     public function details($id)
     {
-        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner', 'review', 'duePayments.user'])->findOrFail($id);
+        $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner', 'review'])->findOrFail($id);
 
         return view('admin.order.show', compact('order'));
     }

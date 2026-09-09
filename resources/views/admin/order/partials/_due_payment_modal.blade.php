@@ -3,7 +3,6 @@
     $dueMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
     $dueErrorBag = $errors->getBag('duePayment');
     $dueSelectedType = old('payment_type', 'Cash');
-    $dueReturnTo = request()->routeIs('order.edit') ? 'edit' : 'details';
 @endphp
 
 @if(($order->due ?? 0) > 0)
@@ -16,7 +15,6 @@
                   data-payment-type="{{ $dueSelectedType }}"
                   novalidate>
                 @csrf
-                <input type="hidden" name="return_to" value="{{ $dueReturnTo }}">
 
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Receive Due Payment</h5>
@@ -37,6 +35,17 @@
                             </ul>
                         </div>
                     @endif
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Payment Date <span class="text-danger">*</span></label>
+                        <input type="date"
+                               name="paid_at"
+                               class="form-control"
+                               value="{{ old('paid_at', now()->format('Y-m-d')) }}"
+                               max="{{ now()->format('Y-m-d') }}"
+                               required>
+                        <small class="text-muted">Select the client payment date for this due collection.</small>
+                    </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-bold">Payment Type</label>

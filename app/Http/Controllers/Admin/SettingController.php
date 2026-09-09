@@ -74,7 +74,7 @@ class SettingController extends Controller
 
         $tax = TaxSetting::first() ?? new TaxSetting();
         $tax->fill($data)->save();
-        return back()->with('success', 'Tax configuration updated!');
+        return back()->with('success', 'Vat configuration updated!');
     }
 
     public function updateInvoice(Request $request)

@@ -140,6 +140,11 @@
                     </a>
                   </li>
                   <li>
+                    <a href="{{ route('order.due_settlement', $order->id) }}" class="dropdown-item">
+                      <i class="bi bi-cash-coin"></i><span>Due Settlement</span>
+                    </a>
+                  </li>
+                  <li>
                     <button type="button" class="dropdown-item" onclick="viewDeleteHistory({{ $order->id }})">
                       <i class="bi bi-clock-history"></i><span>Delete History</span>
                     </button>
