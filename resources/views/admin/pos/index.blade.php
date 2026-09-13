@@ -1984,6 +1984,7 @@
     });
 
     const givenMoneyManualToggleEnabled = @json((bool) ($posSetting->given_money_manual_toggle_enabled ?? true));
+    const allowPaymentWithInsufficientGivenMoney = @json((bool) ($posSetting->allow_payment_with_insufficient_given_money ?? false));
     window.givenMoneyWasManuallyEdited = false;
 
     function posPaymentNumber(value) {
@@ -2596,8 +2597,8 @@
         let saveAsDueOrder = $(this).data('saveAsDueOrder') === true;
         $(this).removeData('saveAsDueOrder');
 
-        // Keep the negative Change visible while the operator is entering a short amount.
-        // On submit, offer either correcting the amount or intentionally saving the shortage as Due.
+        // Insufficient Given Money always opens the warning popup.
+        // The POS setting controls the Due Amount display and whether "Save as Due Order" is available.
         if (givenMoney + 0.001 < requiredGivenMoney && !saveAsDueOrder) {
             let paymentForm = $(this);
             $('#payGivenMoney').addClass('is-invalid');
@@ -2605,8 +2606,10 @@
             Swal.fire({
                 icon: 'warning',
                 title: 'Insufficient Given Money',
-                text: 'You entered less money than the payment amount. Correct the amount or save the shortage as a Due Order.',
-                showDenyButton: true,
+                text: allowPaymentWithInsufficientGivenMoney
+                    ? 'You entered less money than the payment amount. Correct the amount or save the shortage as a Due Order.'
+                    : 'You entered less money than the payment amount. Please correct the Given Money amount.',
+                showDenyButton: allowPaymentWithInsufficientGivenMoney,
                 showCancelButton: false,
                 confirmButtonText: 'Correct Amount',
                 denyButtonText: 'Save as Due Order',

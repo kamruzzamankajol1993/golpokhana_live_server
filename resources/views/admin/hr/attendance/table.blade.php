@@ -1,4 +1,11 @@
-<div class="attendance-table-result" data-summary="{{ e(json_encode($summary)) }}">
+<div
+    class="attendance-table-result"
+    data-current-page="{{ $employees->currentPage() }}"
+    data-summary='@json($summary)'
+    data-time-format="{{ $timeFormat ?? 'h:i A' }}"
+    data-minimum-overtime="{{ (int) ($attendanceSetting?->minimum_overtime_minutes ?? 0) }}"
+    data-auto-overtime="{{ ($attendanceSetting?->auto_calculate_overtime ?? true) ? 1 : 0 }}"
+>
     <div class="progga-table-wrapper" style="border: 0; border-radius: 0;">
         <table class="progga-table">
             <thead>
@@ -49,7 +56,7 @@
                                 <img
                                     class="hr-table-avatar"
                                     src="{{ $employee->image
-                                        ? asset($employee->image)
+                                        ? asset(str_starts_with(ltrim($employee->image, '/'), 'public/') ? ltrim($employee->image, '/') : 'public/' . ltrim($employee->image, '/'))
                                         : 'https://ui-avatars.com/api/?name=' . urlencode($employee->name) . '&background=21352a&color=d5aa65&size=80' }}"
                                     alt="{{ $employee->name }}"
                                 >
@@ -73,6 +80,11 @@
                                 @foreach ($shifts as $shift)
                                     <option
                                         value="{{ $shift->id }}"
+                                        data-start="{{ $shift->start_time ? substr((string) $shift->start_time, 0, 5) : '' }}"
+                                        data-end="{{ $shift->end_time ? substr((string) $shift->end_time, 0, 5) : '' }}"
+                                        data-grace="{{ (int) ($shift->grace_minutes ?: ($attendanceSetting?->grace_minutes ?? 0)) }}"
+                                        data-break="{{ (int) $shift->break_minutes }}"
+                                        data-overnight="{{ $shift->is_overnight ? 1 : 0 }}"
                                         {{ (string) $selectedShift === (string) $shift->id ? 'selected' : '' }}
                                     >
                                         {{ $shift->name }}
@@ -122,11 +134,11 @@
                             @endif
 
                             <div class="hr-muted">
-                                Late: <strong>{{ $attendance?->late_minutes ?? 0 }}m</strong>
+                                Late: <strong class="attendance-late-preview">{{ $attendance?->late_minutes ?? 0 }}m</strong>
                             </div>
 
                             <div class="hr-muted">
-                                OT: <strong>{{ $attendance?->overtime_minutes ?? 0 }}m</strong>
+                                OT: <strong class="attendance-ot-preview">{{ $attendance?->overtime_minutes ?? 0 }}m</strong>
                             </div>
                         </td>
 

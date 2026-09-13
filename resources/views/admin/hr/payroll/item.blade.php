@@ -106,8 +106,8 @@
 
             <div class="col-xl-8">
                 <div class="hr-stat-grid payroll-item-stats">
-                    <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-person-check"></i></div><div><div class="hr-stat-value payroll-money">৳{{ number_format((float) $item->prorated_basic_salary, 2) }}</div><div class="hr-stat-label">Payable Basic</div></div></div>
-                    <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-plus-circle"></i></div><div><div class="hr-stat-value payroll-money" id="itemGrossDisplay">৳{{ number_format((float) $item->gross_salary, 2) }}</div><div class="hr-stat-label">Gross Salary</div></div></div>
+                    <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-cash-stack"></i></div><div><div class="hr-stat-value payroll-money" id="itemSalaryDisplay">৳{{ number_format((float) $item->salary_total, 2) }}</div><div class="hr-stat-label">Salary Total</div></div></div>
+                    <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-plus-circle"></i></div><div><div class="hr-stat-value payroll-money" id="itemAllowanceDisplay">৳{{ number_format((float) $item->allowance_total, 2) }}</div><div class="hr-stat-label">Allowance</div></div></div>
                     <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-dash-circle"></i></div><div><div class="hr-stat-value payroll-money" id="itemDeductionDisplay">৳{{ number_format((float) $item->total_deduction, 2) }}</div><div class="hr-stat-label">Deduction</div></div></div>
                     <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-wallet2"></i></div><div><div class="hr-stat-value payroll-money" id="itemNetDisplay">৳{{ number_format((float) $item->net_salary, 2) }}</div><div class="hr-stat-label">Net Salary</div></div></div>
                 </div>
@@ -116,16 +116,15 @@
                     @csrf
                     @method('PUT')
                     <div class="hr-card mb-3">
-                        <div class="hr-card-header">
-                            <div><div class="hr-card-title">Earnings</div><div class="hr-card-subtitle">Fixed, percentage, overtime and manual earnings.</div></div>
-                        </div>
-                        @include('admin.hr.payroll.partials.component_table', ['components' => $earnings, 'editable' => $item->status === 'draft'])
+                        <div class="hr-card-header"><div><div class="hr-card-title">Salary</div><div class="hr-card-subtitle">Dynamic salary rows from employee setup and HR Settings.</div></div></div>
+                        @include('admin.hr.payroll.partials.component_table', ['components' => $salaryComponents, 'editable' => $item->status === 'draft'])
                     </div>
-
                     <div class="hr-card mb-3">
-                        <div class="hr-card-header">
-                            <div><div class="hr-card-title">Deductions</div><div class="hr-card-subtitle">Attendance, leave and manual deductions.</div></div>
-                        </div>
+                        <div class="hr-card-header"><div><div class="hr-card-title">Allowance</div><div class="hr-card-subtitle">OT, meal, arrear and monthly additions. Manual rows can be adjusted while Draft.</div></div></div>
+                        @include('admin.hr.payroll.partials.component_table', ['components' => $allowances, 'editable' => $item->status === 'draft'])
+                    </div>
+                    <div class="hr-card mb-3">
+                        <div class="hr-card-header"><div><div class="hr-card-title">Deduction</div><div class="hr-card-subtitle">Attendance rules, advance/loan recovery and monthly deductions.</div></div></div>
                         @include('admin.hr.payroll.partials.component_table', ['components' => $deductions, 'editable' => $item->status === 'draft'])
                     </div>
 
@@ -184,12 +183,14 @@ $(function () {
     }
 
     function calculatePreview() {
-        let gross = 0;
+        let salary = 0;
+        let allowance = 0;
         let deduction = 0;
         $('.payroll-component-amount').each(function () {
             const amount = parseFloat(this.value) || 0;
-            if (this.dataset.type === 'earning') gross += amount;
-            if (this.dataset.type === 'deduction') deduction += amount;
+            if (this.dataset.group === 'salary') salary += amount;
+            if (this.dataset.group === 'allowance') allowance += amount;
+            if (this.dataset.group === 'deduction') deduction += amount;
 
             const calculated = parseFloat(this.dataset.calculated) || 0;
             const changed = Math.abs(amount - calculated) >= 0.01;
@@ -197,9 +198,10 @@ $(function () {
             row.toggleClass('payroll-overridden-row', changed);
             row.find('.payroll-override-reason-wrap').toggleClass('d-none', !changed || this.dataset.manual === '1');
         });
-        $('#itemGrossDisplay').text(money(gross));
+        $('#itemSalaryDisplay').text(money(salary));
+        $('#itemAllowanceDisplay').text(money(allowance));
         $('#itemDeductionDisplay').text(money(deduction));
-        $('#itemNetDisplay').text(money(Math.max(0, gross - deduction)));
+        $('#itemNetDisplay').text(money(Math.max(0, salary + allowance - deduction)));
     }
 
     $('.payroll-component-amount').on('input', calculatePreview);
@@ -229,7 +231,9 @@ $(function () {
         Swal.fire('Error', @json(session('error')), 'error');
     @endif
 
-    calculatePreview();
+    @if($item->status === 'draft')
+        calculatePreview();
+    @endif
 });
 </script>
 @endsection

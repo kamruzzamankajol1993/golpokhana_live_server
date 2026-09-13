@@ -357,8 +357,8 @@
     ];
     $isDeliveryOrder = strtolower(trim((string) ($order->order_type ?? ''))) === 'delivery';
     $deliveryPartnerValue = $order->delivery_partner ?: 'inhouse';
-    $paymentCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
-    $paymentMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+    $paymentCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Bangla QR Card', 'Other'];
+    $paymentMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'Bangla QR', 'LENDEN', 'Other'];
 @endphp
 <main class="progga-content">
     <div class="progga-page-header">
@@ -683,7 +683,7 @@
                             <select name="card_type" id="editCardType" class="form-select">
                                 <option value="">— Select Card —</option>
                                 @foreach($paymentCardTypes as $cardName)
-                                    <option value="{{ $cardName }}" {{ old('card_type', $order->card_type ?? '') === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                    <option value="{{ $cardName }}" {{ old('card_type', $order->card_type ?? '') === $cardName ? 'selected' : '' }}>{{ $cardName === 'Bangla QR Card' ? 'Bangla QR Card' : $cardName }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -692,7 +692,7 @@
                             <select name="mfs_provider" id="editMfsProvider" class="form-select">
                                 <option value="">— Select MFS —</option>
                                 @foreach($paymentMfsProviders as $mfsName)
-                                    <option value="{{ $mfsName }}" {{ old('mfs_provider', $order->mfs_provider ?? '') === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                    <option value="{{ $mfsName }}" {{ old('mfs_provider', $order->mfs_provider ?? '') === $mfsName ? 'selected' : '' }}>{{ $mfsName === 'Bangla QR' ? 'Bangla QR MFS' : $mfsName }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -732,7 +732,7 @@
                                 <select name="split_card_type" id="editSplitCardType" class="form-select form-select-sm">
                                     <option value="">— Select Card —</option>
                                     @foreach($paymentCardTypes as $cardName)
-                                        <option value="{{ $cardName }}" {{ old('split_card_type', (($order->payment_type ?? '') === 'Split' ? ($order->card_type ?? '') : '')) === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                        <option value="{{ $cardName }}" {{ old('split_card_type', (($order->payment_type ?? '') === 'Split' ? ($order->card_type ?? '') : '')) === $cardName ? 'selected' : '' }}>{{ $cardName === 'Bangla QR Card' ? 'Bangla QR Card' : $cardName }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -741,7 +741,7 @@
                                 <select name="split_mfs_provider" id="editSplitMfsProvider" class="form-select form-select-sm">
                                     <option value="">— Select MFS —</option>
                                     @foreach($paymentMfsProviders as $mfsName)
-                                        <option value="{{ $mfsName }}" {{ old('split_mfs_provider', (($order->payment_type ?? '') === 'Split' ? ($order->mfs_provider ?? '') : '')) === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                        <option value="{{ $mfsName }}" {{ old('split_mfs_provider', (($order->payment_type ?? '') === 'Split' ? ($order->mfs_provider ?? '') : '')) === $mfsName ? 'selected' : '' }}>{{ $mfsName === 'Bangla QR' ? 'Bangla QR MFS' : $mfsName }}</option>
                                     @endforeach
                                 </select>
                             </div>

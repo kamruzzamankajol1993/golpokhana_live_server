@@ -21,11 +21,19 @@
                 </div>
             </div>
 
-            @can('employee-create')
-                <a href="{{ route('hr.employees.create') }}" class="progga-btn progga-btn-primary">
-                    <i class="bi bi-person-plus-fill"></i> Add Employee
-                </a>
-            @endcan
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                @can('employee-delete')
+                    <button type="button" class="progga-btn progga-btn-danger" id="employeeBulkDeleteBtn" disabled>
+                        <i class="bi bi-trash3-fill"></i> Delete Selected <span id="employeeBulkDeleteCount"></span>
+                    </button>
+                @endcan
+
+                @can('employee-create')
+                    <a href="{{ route('hr.employees.create') }}" class="progga-btn progga-btn-primary">
+                        <i class="bi bi-person-plus-fill"></i> Add Employee
+                    </a>
+                @endcan
+            </div>
         </div>
 
         <div class="hr-stat-grid">
@@ -68,7 +76,7 @@
                             type="text"
                             id="employeeSearch"
                             class="progga-form-control"
-                            placeholder="Search name, ID, phone or email"
+                            placeholder="Search name, employee ID, NID, phone or email"
                         >
                     </div>
 
@@ -115,11 +123,8 @@
             </div>
         </div>
 
-        <div class="hr-card" id="employeeTableContainer">
-            <div class="hr-empty">
-                <div class="spinner-border spinner-border-sm"></div>
-                <div class="mt-2">Loading employees...</div>
-            </div>
+        <div class="hr-card" id="employeeTableContainer" data-current-page="{{ $initialTableData['employees']->currentPage() }}">
+            @include('admin.hr.employees.table', $initialTableData)
         </div>
     </div>
 </main>
@@ -129,17 +134,40 @@
     @include('admin.hr.shared.plugins')
     <script>
         $(function () {
-            let currentPage = 1;
+            let currentPage = Number($('#employeeTableContainer').data('current-page') || 1);
             let searchTimer = null;
+            let activeEmployeeRequest = null;
+            let employeePageInitializing = true;
+            const selectedEmployees = new Set();
 
             HrUi.initSelect2('.hr-select2');
+            HrUi.initSelect2($('#employeeTableContainer'));
+
+            function syncEmployeeSelectionUi() {
+                $('#employeeTableContainer .employee-row-checkbox').each(function () {
+                    this.checked = selectedEmployees.has(String(this.value));
+                });
+
+                const visible = $('#employeeTableContainer .employee-row-checkbox').toArray();
+                const selectedVisible = visible.filter(function (checkbox) { return checkbox.checked; }).length;
+                $('#employeeSelectAllVisible')
+                    .prop('checked', visible.length > 0 && selectedVisible === visible.length)
+                    .prop('indeterminate', selectedVisible > 0 && selectedVisible < visible.length);
+
+                const count = selectedEmployees.size;
+                $('#employeeBulkDeleteBtn').prop('disabled', count === 0);
+                $('#employeeBulkDeleteCount').text(count ? '(' + count + ')' : '');
+            }
 
             function loadEmployees(page) {
                 currentPage = page || 1;
-                const container = $('#employeeTableContainer');
-                container.addClass('hr-table-loading');
+                const container = $('#employeeTableContainer').addClass('hr-table-loading');
 
-                $.get("{{ route('hr.employees.index') }}", {
+                if (activeEmployeeRequest && activeEmployeeRequest.readyState !== 4) {
+                    activeEmployeeRequest.abort();
+                }
+
+                const request = $.get("{{ route('hr.employees.index') }}", {
                     page: currentPage,
                     search: $('#employeeSearch').val(),
                     department_id: HrUi.selectValue('employeeDepartment'),
@@ -147,13 +175,22 @@
                     shift_id: HrUi.selectValue('employeeShift'),
                     status: HrUi.selectValue('employeeStatus'),
                     access: HrUi.selectValue('employeeAccess')
-                }).done(function (html) {
+                });
+                activeEmployeeRequest = request;
+
+                request.done(function (html) {
                     container.html(html);
                     HrUi.initSelect2(container);
-                }).fail(function () {
-                    Swal.fire('Error', 'Failed to load employees.', 'error');
+                    container.attr('data-current-page', currentPage);
+                    syncEmployeeSelectionUi();
+                }).fail(function (xhr, statusText) {
+                    if (statusText === 'abort') return;
+                    Swal.fire('Error', xhr.responseJSON?.message || 'Failed to load employees.', 'error');
                 }).always(function () {
-                    container.removeClass('hr-table-loading');
+                    if (activeEmployeeRequest === request) {
+                        container.removeClass('hr-table-loading');
+                        activeEmployeeRequest = null;
+                    }
                 });
             }
 
@@ -165,10 +202,11 @@
             });
 
             $('.hr-select2').on('change', function () {
-                loadEmployees(1);
+                if (!employeePageInitializing) loadEmployees(1);
             });
 
             $('#employeeReset').on('click', function () {
+                employeePageInitializing = true;
                 $('#employeeSearch').val('');
                 [
                     'employeeDepartment',
@@ -177,6 +215,7 @@
                     'employeeStatus',
                     'employeeAccess'
                 ].forEach(function (id) { HrUi.resetSelect(id); });
+                employeePageInitializing = false;
                 loadEmployees(1);
             });
 
@@ -184,6 +223,64 @@
                 event.preventDefault();
                 const url = new URL(this.href);
                 loadEmployees(url.searchParams.get('page') || 1);
+            });
+
+            $(document).on('change', '#employeeSelectAllVisible', function () {
+                const checked = this.checked;
+                $('#employeeTableContainer .employee-row-checkbox').each(function () {
+                    this.checked = checked;
+                    if (checked) selectedEmployees.add(String(this.value));
+                    else selectedEmployees.delete(String(this.value));
+                });
+                syncEmployeeSelectionUi();
+            });
+
+            $(document).on('change', '.employee-row-checkbox', function () {
+                if (this.checked) selectedEmployees.add(String(this.value));
+                else selectedEmployees.delete(String(this.value));
+                syncEmployeeSelectionUi();
+            });
+
+            $('#employeeBulkDeleteBtn').on('click', function () {
+                const ids = Array.from(selectedEmployees);
+                if (!ids.length) return;
+
+                Swal.fire({
+                    title: 'Delete selected employees?',
+                    html: '<strong>' + ids.length + '</strong> employee(s) selected.<br><small>Employees with protected HR, login or salary history will be skipped.</small>',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Delete Selected',
+                    confirmButtonColor: '#c63d3d'
+                }).then(function (result) {
+                    if (!result.isConfirmed) return;
+
+                    const button = $('#employeeBulkDeleteBtn').prop('disabled', true);
+                    $.ajax({
+                        url: "{{ route('hr.employees.bulk.destroy') }}",
+                        type: 'DELETE',
+                        data: {
+                            _token: "{{ csrf_token() }}",
+                            employee_ids: ids
+                        }
+                    }).done(function (response) {
+                        const skipped = Array.isArray(response.skipped_employees) && response.skipped_employees.length
+                            ? '<div class="text-start mt-3"><strong>Skipped:</strong><br>' + response.skipped_employees.map(function (name) { return $('<div>').text(name).html(); }).join('<br>') + '</div>'
+                            : '';
+                        Swal.fire({
+                            icon: response.skipped_count ? 'warning' : 'success',
+                            title: response.skipped_count ? 'Bulk Delete Complete' : 'Deleted',
+                            html: '<p>' + $('<div>').text(response.message).html() + '</p>' + skipped
+                        });
+                        selectedEmployees.clear();
+                        syncEmployeeSelectionUi();
+                        loadEmployees(currentPage);
+                    }).fail(function (xhr) {
+                        Swal.fire('Cannot delete', xhr.responseJSON?.message || 'Bulk delete failed.', 'error');
+                    }).always(function () {
+                        button.prop('disabled', selectedEmployees.size === 0);
+                    });
+                });
             });
 
             $(document).on('change', '.employee-status-select', function () {
@@ -230,6 +327,8 @@
                         type: 'DELETE',
                         data: { _token: "{{ csrf_token() }}" }
                     }).done(function (response) {
+                        selectedEmployees.delete(String(employeeId));
+                        syncEmployeeSelectionUi();
                         Swal.fire({ icon: 'success', title: 'Deleted', text: response.message, timer: 1500, showConfirmButton: false });
                         loadEmployees(currentPage);
                     }).fail(function (xhr) {
@@ -246,7 +345,8 @@
                 Swal.fire('Error', @json(session('error')), 'error');
             @endif
 
-            loadEmployees(1);
+            syncEmployeeSelectionUi();
+            employeePageInitializing = false;
         });
     </script>
 @endsection

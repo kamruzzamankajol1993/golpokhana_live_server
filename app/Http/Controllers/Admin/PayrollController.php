@@ -10,6 +10,7 @@ use App\Models\PayrollPayment;
 use App\Models\PayrollRun;
 use App\Models\RestaurantSetting;
 use App\Services\Hr\PayrollCalculator;
+use App\Services\Hr\PayrollRecoveryService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ use Throwable;
 
 class PayrollController extends Controller
 {
-    public function __construct(private PayrollCalculator $calculator)
+    public function __construct(private PayrollCalculator $calculator, private PayrollRecoveryService $recoveryService)
     {
         $this->middleware('permission:payroll-view')->only([
             'index', 'show', 'itemsTable', 'itemShow', 'summaryPdf', 'precheck', 'singlePrecheck',
@@ -93,11 +94,18 @@ class PayrollController extends Controller
 
         $precheck = $this->calculator->precheck($month);
         $existingRun = PayrollRun::whereDate('payroll_month', $monthDate)->first();
+        [$periodStart, $periodEnd] = $this->calculator->period($month);
+        $eligibleEmployees = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd)
+            ->with(['department', 'designation'])
+            ->orderBy('employee_code')
+            ->get();
 
         return view('admin.hr.payroll.create', [
             'month' => $month,
             'precheck' => $precheck,
             'existingRun' => $existingRun,
+            'eligibleEmployees' => $eligibleEmployees,
+            'manualComponents' => $this->calculator->manualPayrollComponents(),
             'allowNonCurrentMonth' => (bool) $this->calculator->settings()->allow_non_current_month_payroll,
         ]);
     }
@@ -123,6 +131,17 @@ class PayrollController extends Controller
         ] : null;
         $data['allow_non_current_month_payroll'] = (bool) $this->calculator->settings()->allow_non_current_month_payroll;
         $data['is_future_month'] = $monthDate->gt(now()->startOfMonth());
+        [$periodStart, $periodEnd] = $this->calculator->period($validated['month']);
+        $data['eligible_employee_rows'] = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd)
+            ->with('department')
+            ->orderBy('employee_code')
+            ->get()
+            ->map(fn ($employee) => [
+                'id' => $employee->id,
+                'code' => $employee->employee_code,
+                'name' => $employee->name,
+                'department' => $employee->department?->name,
+            ])->values();
 
         return response()->json($data);
     }
@@ -132,6 +151,9 @@ class PayrollController extends Controller
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'manual_components' => ['nullable', 'array'],
+            'manual_components.*' => ['nullable', 'array'],
+            'manual_components.*.*' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ]);
 
         $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
@@ -144,7 +166,15 @@ class PayrollController extends Controller
             return back()->withInput()->with('error', 'No eligible employees were found for this month.');
         }
         if ($precheck['missing_salary_count'] > 0) {
-            return back()->withInput()->with('error', 'Salary setup is missing for ' . $precheck['missing_salary_count'] . ' employee(s). Complete salary setup first.');
+            $firstReason = $precheck['missing_salary'][0]['reason'] ?? null;
+            $message = 'Salary setup is missing for ' . $precheck['missing_salary_count'] . ' employee(s).';
+            if ($firstReason) {
+                $message .= ' ' . $firstReason;
+            }
+            return back()->withInput()->with('error', $message);
+        }
+        if (($precheck['missing_rule_count'] ?? 0) > 0) {
+            return back()->withInput()->with('error', 'Payroll configuration is incomplete for ' . $precheck['missing_rule_count'] . ' employee/component rule(s). Update HR Settings or Employee Payroll Setup first.');
         }
         if ($precheck['missing_attendance_count'] > 0 && !$request->boolean('confirm_incomplete_attendance')) {
             return back()->withInput()->with('error', 'Attendance is incomplete. Check the confirmation box to continue with not-marked days excluded from deduction.');
@@ -160,7 +190,7 @@ class PayrollController extends Controller
         DB::beginTransaction();
         try {
             $run = $this->createRun($validated['month'], $validated['notes'] ?? null);
-            $this->generateItems($run);
+            $this->generateItems($run, (array) ($validated['manual_components'] ?? []));
             $run->syncWorkflowStatus(auth()->id());
 
             DB::commit();
@@ -201,6 +231,7 @@ class PayrollController extends Controller
             'employees' => $employees,
             'selectedEmployee' => $selectedEmployee,
             'precheck' => $precheck,
+            'manualComponents' => $this->calculator->manualPayrollComponents(),
             'allowNonCurrentMonth' => (bool) $this->calculator->settings()->allow_non_current_month_payroll,
         ]);
     }
@@ -228,6 +259,8 @@ class PayrollController extends Controller
             'employee_id' => ['required', 'exists:employees,id'],
             'month' => ['required', 'date_format:Y-m'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'manual_components' => ['nullable', 'array'],
+            'manual_components.*' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ]);
 
         $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
@@ -242,7 +275,10 @@ class PayrollController extends Controller
             return back()->withInput()->with('error', 'This employee is not eligible for the selected payroll month based on joining/exit dates.');
         }
         if (!$precheck['salary_ready']) {
-            return back()->withInput()->with('error', 'Salary setup is missing for this employee in the selected month.');
+            return back()->withInput()->with('error', $precheck['salary_message'] ?? 'Salary setup is missing for this employee in the selected month.');
+        }
+        if (($precheck['missing_rule_count'] ?? 0) > 0) {
+            return back()->withInput()->with('error', 'Payroll configuration is incomplete: ' . implode(', ', $precheck['missing_rules'] ?? []) . '. Update HR Settings or Employee Payroll Setup.');
         }
         if ($precheck['existing_item']) {
             return redirect($precheck['existing_item']['url'])
@@ -275,7 +311,7 @@ class PayrollController extends Controller
                 throw new \RuntimeException('Payroll already exists for this employee and month.');
             }
 
-            $item = $this->generateSingleItem($run, $employee, $validated['notes'] ?? null);
+            $item = $this->generateSingleItem($run, $employee, $validated['notes'] ?? null, (array) ($validated['manual_components'] ?? []));
             $run->syncWorkflowStatus(auth()->id());
 
             DB::commit();
@@ -349,8 +385,9 @@ class PayrollController extends Controller
         return view('admin.hr.payroll.item', [
             'run' => $payrollRun,
             'item' => $payrollItem,
-            'earnings' => $payrollItem->components->where('component_type', 'earning'),
-            'deductions' => $payrollItem->components->where('component_type', 'deduction'),
+            'salaryComponents' => $payrollItem->components->where('component_group', 'salary'),
+            'allowances' => $payrollItem->components->where('component_group', 'allowance'),
+            'deductions' => $payrollItem->components->where('component_group', 'deduction'),
         ]);
     }
 
@@ -374,6 +411,9 @@ class PayrollController extends Controller
             foreach ($validated['components'] as $componentId => $input) {
                 $component = $components->get((int) $componentId);
                 if (!$component) {
+                    continue;
+                }
+                if (in_array($component->source, ['salary_advance', 'loan'], true)) {
                     continue;
                 }
 
@@ -474,6 +514,7 @@ class PayrollController extends Controller
                 'notes' => $validated['payment_notes'] ?? null,
                 'paid_by' => auth()->id(),
             ]);
+            $this->recoveryService->post($payrollItem, Carbon::parse($validated['payment_date']), auth()->id());
             $payrollItem->update([
                 'payment_status' => 'paid',
                 'status' => 'paid',
@@ -525,6 +566,7 @@ class PayrollController extends Controller
                     'notes' => $validated['payment_notes'] ?? null,
                     'paid_by' => auth()->id(),
                 ]);
+                $this->recoveryService->post($item, Carbon::parse($validated['payment_date']), auth()->id());
                 $item->update([
                     'payment_status' => 'paid',
                     'status' => 'paid',
@@ -556,8 +598,16 @@ class PayrollController extends Controller
                     continue;
                 }
 
+                // Recalculate attendance/global rules without losing month-only values
+                // such as Arrear, Fine, Other and Last Month Adjustment.
+                $manualComponentAmounts = PayrollItem::find($draftItem->id)?->components()
+                    ->where('source', 'payroll_manual')
+                    ->pluck('amount', 'salary_component_id')
+                    ->map(fn ($amount) => (float) $amount)
+                    ->all() ?? [];
+
                 $payrollRun->items()->whereKey($draftItem->id)->delete();
-                $this->generateSingleItem($payrollRun, $employee, $draftItem->notes);
+                $this->generateSingleItem($payrollRun, $employee, $draftItem->notes, $manualComponentAmounts);
             }
 
             $payrollRun->update([
@@ -610,7 +660,7 @@ class PayrollController extends Controller
 
         $fileName = 'payslip_' . $payrollItem->employee_code . '_' . $payrollRun->payroll_month->format('Y_m') . '.pdf';
 
-        return $this->inlinePdf($html, $fileName, 'A4', 'P');
+        return $this->inlinePdf($html, $fileName, 'A4', 'P', false);
     }
 
     private function createRun(string $month, ?string $notes = null): PayrollRun
@@ -629,7 +679,7 @@ class PayrollController extends Controller
         ]);
     }
 
-    private function generateItems(PayrollRun $run): void
+    private function generateItems(PayrollRun $run, array $manualComponentAmountsByEmployee = []): void
     {
         $employees = $this->calculator
             ->eligibleEmployeesQuery($run->period_start, $run->period_end)
@@ -638,19 +688,26 @@ class PayrollController extends Controller
             ->get();
 
         foreach ($employees as $employee) {
-            $this->generateSingleItem($run, $employee);
+            $this->generateSingleItem($run, $employee, null, (array) ($manualComponentAmountsByEmployee[$employee->id] ?? []));
         }
     }
 
-    private function generateSingleItem(PayrollRun $run, Employee $employee, ?string $notes = null): PayrollItem
+    private function generateSingleItem(PayrollRun $run, Employee $employee, ?string $notes = null, array $manualComponentAmounts = []): PayrollItem
     {
-        $calculation = $this->calculator->calculate($employee, $run->period_start, $run->period_end);
+        $calculation = $this->calculator->calculate($employee, $run->period_start, $run->period_end, $manualComponentAmounts);
         if ($notes !== null) {
             $calculation['item']['notes'] = $notes;
         }
 
         $item = $run->items()->create($calculation['item']);
         $item->components()->createMany($calculation['components']);
+        foreach (($calculation['recovery_allocations'] ?? []) as $allocation) {
+            $item->recoveryAllocations()->create([
+                'source_type' => $allocation['source_type'],
+                'source_id' => $allocation['source_id'],
+                'amount' => $allocation['amount'],
+            ]);
+        }
 
         return $item;
     }
@@ -708,7 +765,7 @@ class PayrollController extends Controller
         abort_unless((int) $item->payroll_run_id === (int) $run->id, 404);
     }
 
-    private function inlinePdf(string $html, string $fileName, string $format, string $orientation)
+    private function inlinePdf(string $html, string $fileName, string $format, string $orientation, bool $showFooter = true)
     {
         @ini_set('pcre.backtrack_limit', '50000000');
         @ini_set('memory_limit', '1024M');
@@ -732,7 +789,9 @@ class PayrollController extends Controller
             'autoLangToFont' => true,
         ]);
         $mpdf->SetTitle($fileName);
-        $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
+        if ($showFooter) {
+            $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
+        }
         $mpdf->WriteHTML($html);
 
         return response($mpdf->Output($fileName, Destination::STRING_RETURN), 200, [

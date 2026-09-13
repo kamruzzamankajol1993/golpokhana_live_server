@@ -23,8 +23,8 @@
 
             <div class="d-flex gap-2 flex-wrap">
                 @can('employee-salary-view')
-                    <a href="{{ route('hr.employees.salary.show', $employee) }}" class="progga-btn progga-btn-secondary">
-                        <i class="bi bi-wallet2"></i> Salary Setup
+                    <a href="{{ route('hr.employees.edit', $employee) . '#employeePayrollSetupCard' }}" class="progga-btn progga-btn-secondary">
+                        <i class="bi bi-wallet2"></i> Salary & Payroll Setup
                     </a>
                 @endcan
                 @can('employee-edit')
@@ -37,7 +37,7 @@
 
         @php
             $avatar = $employee->image
-                ? asset($employee->image)
+                ? asset('public/' . ltrim($employee->image, '/'))
                 : 'https://ui-avatars.com/api/?name=' . urlencode($employee->name) . '&background=21352a&color=d5aa65&size=180&bold=true';
             $salary = $employee->currentSalaryStructure;
         @endphp
@@ -137,11 +137,20 @@
                         <div class="hr-info-list">
                             <div><span>Gender</span><strong>{{ ucfirst($employee->gender ?: 'N/A') }}</strong></div>
                             <div><span>Date of Birth</span><strong>{{ optional($employee->date_of_birth)->format('d-m-Y') ?: 'N/A' }}</strong></div>
+                            <div><span>NID Number</span><strong>{{ $employee->nid ?: 'N/A' }}</strong></div>
                             <div><span>Emergency Contact</span><strong>{{ $employee->emergency_contact_name ?: 'N/A' }}</strong></div>
                             <div><span>Emergency Phone</span><strong>{{ $employee->emergency_contact_phone ?: 'N/A' }}</strong></div>
                         </div>
                         @if($employee->address)
                             <div class="mt-3"><div class="hr-muted mb-1">Address</div><div>{{ $employee->address }}</div></div>
+                        @endif
+                        @if($employee->nid_image)
+                            <div class="mt-3">
+                                <div class="hr-muted mb-1">NID Image</div>
+                                <a href="{{ asset('public/' . ltrim($employee->nid_image, '/')) }}" target="_blank" rel="noopener">
+                                    <img src="{{ asset('public/' . ltrim($employee->nid_image, '/')) }}" alt="NID of {{ $employee->name }}" style="width:100%;max-width:280px;height:170px;object-fit:contain;border:1px solid var(--progga-border-light);border-radius:10px;background:#fff;">
+                                </a>
+                            </div>
                         @endif
                         @if($employee->notes)
                             <div class="mt-3"><div class="hr-muted mb-1">Notes</div><div>{{ $employee->notes }}</div></div>
@@ -158,7 +167,7 @@
                             <div class="hr-card-subtitle">Employee-wise salary setup. Payroll calculation will use this later.</div>
                         </div>
                         @can('employee-salary-view')
-                            <a href="{{ route('hr.employees.salary.show', $employee) }}" class="progga-btn progga-btn-outline progga-btn-sm">
+                            <a href="{{ route('hr.employees.edit', $employee) . '#employeePayrollSetupCard' }}" class="progga-btn progga-btn-outline progga-btn-sm">
                                 <i class="bi bi-gear"></i> Configure Salary
                             </a>
                         @endcan
@@ -172,13 +181,20 @@
                             </div>
                             <div class="mt-3 d-flex gap-2 flex-wrap">
                                 @foreach($salary->components as $component)
-                                    @if($component->is_active)
+                                    @if($component->is_active && ($component->rule_mode ?: 'custom') !== 'disabled')
+                                        @php
+                                            $masterComponent = $component->salaryComponent;
+                                            $usingGlobal = ($component->rule_mode ?: 'custom') === 'global';
+                                            $globalConfigured = !$usingGlobal || !$masterComponent || $masterComponent->global_configured;
+                                        @endphp
                                         <span class="hr-badge {{ $component->component_type === 'earning' ? 'hr-badge-success' : 'hr-badge-danger' }}">
-                                            {{ $component->salaryComponent->name ?? 'Component' }}:
-                                            @if($component->calculation_type === 'fixed')
-                                                ৳{{ number_format((float) $component->amount, 2) }}
+                                            {{ $masterComponent->name ?? 'Component' }}:
+                                            @if(!$globalConfigured)
+                                                Not Configured
+                                            @elseif($component->calculation_type === 'fixed')
+                                                ৳{{ number_format((float) $component->effective_amount, 2) }}
                                             @elseif($component->calculation_type === 'percentage')
-                                                {{ number_format((float) $component->percentage, 2) }}%
+                                                {{ number_format((float) $component->effective_percentage, 2) }}%
                                             @else
                                                 Manual
                                             @endif

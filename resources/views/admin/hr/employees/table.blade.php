@@ -2,8 +2,15 @@
     <table class="progga-table">
         <thead>
             <tr>
+                @can('employee-delete')
+                    <th style="width:42px;text-align:center">
+                        <input type="checkbox" class="form-check-input" id="employeeSelectAllVisible" title="Select all visible employees">
+                    </th>
+                @endcan
                 <th>#</th>
                 <th>Employee</th>
+                <th>NID</th>
+                <th>NID Image</th>
                 <th>Department / Role</th>
                 <th>Employment</th>
                 <th>Shift</th>
@@ -18,10 +25,20 @@
                 @php
                     $salary = $employee->currentSalaryStructure;
                     $avatar = $employee->image
-                        ? asset($employee->image)
+                        ? asset('public/' . ltrim($employee->image, '/'))
                         : 'https://ui-avatars.com/api/?name=' . urlencode($employee->name) . '&background=21352a&color=d5aa65&size=80&bold=true';
                 @endphp
                 <tr>
+                    @can('employee-delete')
+                        <td style="text-align:center">
+                            <input
+                                type="checkbox"
+                                class="form-check-input employee-row-checkbox"
+                                value="{{ $employee->id }}"
+                                aria-label="Select {{ $employee->name }}"
+                            >
+                        </td>
+                    @endcan
                     <td>{{ $employees->firstItem() + $index }}</td>
                     <td>
                         <div class="hr-person">
@@ -33,6 +50,22 @@
                                 <div class="hr-person-meta">{{ $employee->employee_code }} · {{ $employee->phone }}</div>
                             </div>
                         </div>
+                    </td>
+                    <td>
+                        @if($employee->nid)
+                            <span style="font-weight:700;white-space:nowrap">{{ $employee->nid }}</span>
+                        @else
+                            <span class="hr-muted">N/A</span>
+                        @endif
+                    </td>
+                    <td>
+                        @if($employee->nid_image)
+                            <a href="{{ asset('public/' . ltrim($employee->nid_image, '/')) }}" target="_blank" rel="noopener" title="View NID image">
+                                <img src="{{ asset('public/' . ltrim($employee->nid_image, '/')) }}" alt="NID of {{ $employee->name }}" style="width:64px;height:42px;object-fit:cover;border-radius:7px;border:1px solid var(--progga-border-light);background:#fff;">
+                            </a>
+                        @else
+                            <span class="hr-muted">N/A</span>
+                        @endif
                     </td>
                     <td>
                         <div style="font-weight:700">{{ $employee->department->name ?? 'Not assigned' }}</div>
@@ -49,7 +82,7 @@
                     <td>
                         @if($salary)
                             <div style="font-weight:800">৳{{ number_format((float) $salary->basic_salary, 2) }}</div>
-                            <div class="hr-person-meta">Effective {{ $salary->effective_from->format('d-m-Y') }}</div>
+                            <div class="hr-person-meta">Effective {{ $salary->effective_from?->format('d-m-Y') ?? 'N/A' }}</div>
                         @else
                             <span class="hr-badge hr-badge-warning">Not configured</span>
                         @endif
@@ -110,7 +143,7 @@
 
                             @can('employee-salary-view')
                                 <a
-                                    href="{{ route('hr.employees.salary.show', $employee) }}"
+                                    href="{{ route('hr.employees.edit', $employee) . '#employeePayrollSetupCard' }}"
                                     class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm"
                                     title="Salary setup"
                                 >
@@ -133,7 +166,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9">
+                    <td colspan="@can('employee-delete')12 @else 11 @endcan">
                         <div class="hr-empty">
                             <i class="bi bi-people"></i>
                             No employees found.

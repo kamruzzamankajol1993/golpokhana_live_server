@@ -218,6 +218,16 @@
     </table>
 
     <div class="dashed-line"></div>
+    <div class="section-title">Receivable Amount</div>
+
+    <table class="report-table">
+        <tr>
+            <td>Total Amount</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableAmountTotal ?? 0) }}</td>
+        </tr>
+    </table>
+
+    <div class="dashed-line"></div>
     <div class="section-title">Collection Methods</div>
 
     <table class="report-table">

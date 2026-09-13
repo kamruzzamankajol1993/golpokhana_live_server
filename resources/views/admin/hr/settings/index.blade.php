@@ -296,7 +296,7 @@
         </div>
         <div class="hr-summary-card">
             <div class="hr-summary-icon"><i class="bi bi-cash-stack"></i></div>
-            <div><div class="hr-summary-value">{{ $salaryComponents->count() }}</div><div class="hr-summary-label">Salary Components</div></div>
+            <div><div class="hr-summary-value">{{ $salaryComponents->count() }}</div><div class="hr-summary-label">Payroll Components</div></div>
         </div>
     </div>
 
@@ -311,7 +311,7 @@
         <button type="button" class="progga-tab-item" data-hr-tab="designations" role="tab"><span class="hr-tab-icon"><i class="bi bi-person-workspace"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Designations</span><span class="hr-tab-subtitle">Job titles</span></span></button>
         <button type="button" class="progga-tab-item" data-hr-tab="employment-types" role="tab"><span class="hr-tab-icon"><i class="bi bi-person-check"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Employment Types</span><span class="hr-tab-subtitle">Staff categories</span></span></button>
         <button type="button" class="progga-tab-item" data-hr-tab="leave-types" role="tab"><span class="hr-tab-icon"><i class="bi bi-calendar2-check"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Leave Types</span><span class="hr-tab-subtitle">Policies & limits</span></span></button>
-        <button type="button" class="progga-tab-item" data-hr-tab="salary-components" role="tab"><span class="hr-tab-icon"><i class="bi bi-cash-stack"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Salary Components</span><span class="hr-tab-subtitle">Earnings & deductions</span></span></button>
+        <button type="button" class="progga-tab-item" data-hr-tab="salary-components" role="tab"><span class="hr-tab-icon"><i class="bi bi-cash-stack"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Payroll Components</span><span class="hr-tab-subtitle">Salary, allowance & deduction</span></span></button>
         <button type="button" class="progga-tab-item" data-hr-tab="holidays" role="tab"><span class="hr-tab-icon"><i class="bi bi-calendar-event"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Holidays</span><span class="hr-tab-subtitle">Calendar setup</span></span></button>
         <button type="button" class="progga-tab-item" data-hr-tab="attendance" role="tab"><span class="hr-tab-icon"><i class="bi bi-fingerprint"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Attendance Rules</span><span class="hr-tab-subtitle">Late & overtime</span></span></button>
         <button type="button" class="progga-tab-item" data-hr-tab="payroll" role="tab"><span class="hr-tab-icon"><i class="bi bi-wallet2"></i></span><span class="hr-tab-copy"><span class="hr-tab-title">Payroll Settings</span><span class="hr-tab-subtitle">Salary calculation</span></span></button>
@@ -426,6 +426,43 @@ $(function () {
     if (sessionSuccess) showHrAlert('Success', sessionSuccess, 'success');
     if (sessionError) showHrAlert('Error', sessionError, 'error');
     if (validationError) showHrAlert('Validation Error', validationError, 'error');
+
+
+    const clearHrDataButton = document.getElementById('clearHrDataButton');
+    const clearHrDataForm = document.getElementById('clearHrDataForm');
+    const clearHrDataConfirmation = document.getElementById('clearHrDataConfirmation');
+
+    if (clearHrDataButton && clearHrDataForm && clearHrDataConfirmation) {
+        clearHrDataButton.addEventListener('click', function () {
+            const confirmationText = 'CLEAR HR DATA';
+            const warningText = 'This will permanently clear HR operational/history data. Employees, employee salary setup and HR Settings data will remain. POS, Orders, Customers, Inventory and Main Settings will not be touched.';
+
+            Swal.fire({
+                icon: 'warning',
+                title: 'Clear HR Data?',
+                html: warningText + '<br><br><strong>This action cannot be undone.</strong><br><br>Type <strong>' + confirmationText + '</strong> to continue.',
+                input: 'text',
+                inputPlaceholder: confirmationText,
+                showCancelButton: true,
+                confirmButtonText: 'Clear HR Data',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc3545',
+                focusCancel: true,
+                inputValidator: function (value) {
+                    if (value !== confirmationText) {
+                        return 'Please type ' + confirmationText + ' exactly.';
+                    }
+                }
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+
+                clearHrDataConfirmation.value = confirmationText;
+                clearHrDataButton.disabled = true;
+                clearHrDataButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Cleaning...';
+                clearHrDataForm.submit();
+            });
+        });
+    }
 
     function activateTab(tab) {
         if (!validTabs.includes(tab)) tab = 'general';
@@ -645,36 +682,93 @@ $(function () {
     };
 
     function toggleSalaryCalculationFields() {
-        const type = $('#salaryComponentForm [name="calculation_type"]').val();
+        let type = $('#salaryComponentForm [name="calculation_type"]').val();
+        const rule = $('#salaryComponentForm [name="rule_code"]').val() || 'standard';
+        const isOt = rule === 'ot_day_off' || rule === 'ot_gov_off';
+        const isAutoRecovery = rule === 'salary_advance' || rule === 'loan_adjustment';
+
+        if (isOt && type === 'manual') {
+            setHrSelectValue('hrSalaryCalculationType', 'fixed');
+            type = 'fixed';
+        }
+        if (isAutoRecovery && type !== 'manual') {
+            setHrSelectValue('hrSalaryCalculationType', 'manual');
+            type = 'manual';
+        }
+
+        const isPayrollManual = type === 'manual' && !isAutoRecovery;
         $('#salaryFixedFields').toggle(type === 'fixed');
         $('#salaryPercentageFields').toggle(type === 'percentage');
+        $('#salaryManualInfo').toggleClass('d-none', !isPayrollManual);
+        $('#salaryAutoRecoveryInfo').toggleClass('d-none', !isAutoRecovery);
+
+        $('#salaryFixedLabel').text(isOt ? 'Global Rate Per Hour' : 'Global Amount');
+        $('#salaryFixedSuffix').toggleClass('d-none', !isOt);
+        $('#salaryPercentLabel').text(isOt ? 'Basic Hourly Percentage' : ((rule === 'late' || rule === 'lwp_absent') ? 'Daily Deduction Rate Percentage' : 'Global Percentage'));
+        $('#salaryPercentageOfWrap').toggle(type === 'percentage' && !isOt && rule !== 'late' && rule !== 'lwp_absent');
+        if (isOt || rule === 'late' || rule === 'lwp_absent') setHrSelectValue('hrSalaryPercentageOf', 'basic_salary');
+
+        const forced = isPayrollManual || isAutoRecovery;
+        $('#salaryGlobalConfiguredWrap, #salaryApplyAllWrap, #salaryEmployeeOverrideWrap').toggle(!forced);
+        if (forced) {
+            $('#salaryComponentForm [name="global_configured"]').prop('checked', true).trigger('change');
+            $('#salaryComponentForm [name="apply_to_all"]').prop('checked', true).trigger('change');
+            $('#salaryComponentForm [name="allow_employee_override"]').prop('checked', false).trigger('change');
+        }
     }
-    $('#salaryComponentForm [name="calculation_type"]').on('change', toggleSalaryCalculationFields);
+    $('#salaryComponentForm [name="calculation_type"], #salaryComponentForm [name="rule_code"]').on('change', toggleSalaryCalculationFields);
+
+    function togglePayrollOtFields() {
+        $('[data-ot-rule]').each(function () {
+            const card = $(this);
+            const type = card.find('.ot-rule-type').val();
+            card.find('.ot-fixed-field').toggle(type === 'fixed');
+            card.find('.ot-percent-field').toggle(type === 'percentage');
+        });
+    }
+    $('.ot-rule-type').on('change', togglePayrollOtFields);
+    togglePayrollOtFields();
+
+    function hrTwoDecimal(value) {
+        const number = Number(value ?? 0);
+        return Number.isFinite(number) ? number.toFixed(2) : '0.00';
+    }
 
     window.openSalaryComponentCreate = function () {
-        resetHrForm('#salaryComponentForm', 'Add Salary Component', 'Save Component');
-        setHrSelectValue('hrSalaryComponentType', 'earning');
+        resetHrForm('#salaryComponentForm', 'Add Payroll Component', 'Save Component');
+        setHrSelectValue('hrSalaryComponentGroup', 'salary');
         setHrSelectValue('hrSalaryCalculationType', 'fixed');
+        setHrSelectValue('hrSalaryRuleCode', 'standard');
         setHrSelectValue('hrSalaryPercentageOf', 'basic_salary');
-        $('#salaryComponentForm [name="default_amount"]').val(0);
-        $('#salaryComponentForm [name="default_percentage"]').val(0);
+        $('#salaryComponentForm [name="default_amount"]').val('0.00');
+        $('#salaryComponentForm [name="default_percentage"]').val('0.00');
+        $('#salaryComponentForm [name="global_configured"]').prop('checked', true).trigger('change');
+        $('#salaryComponentForm [name="apply_to_all"]').prop('checked', true).trigger('change');
+        $('#salaryComponentForm [name="allow_employee_override"]').prop('checked', true).trigger('change');
+        $('#salaryComponentForm [name="show_zero_on_payslip"]').prop('checked', true).trigger('change');
         $('#salaryComponentForm [name="is_taxable"]').prop('checked', false).trigger('change');
         $('#salaryComponentForm [name="is_required"]').prop('checked', false).trigger('change');
         toggleSalaryCalculationFields();
         $('#salaryComponentModal').modal('show');
     };
     window.editSalaryComponent = function (record) {
-        resetHrForm('#salaryComponentForm', 'Edit Salary Component', 'Update Component');
+        resetHrForm('#salaryComponentForm', 'Edit Payroll Component', 'Update Component');
         $('#salaryComponentForm [name="id"]').val(record.id);
         $('#salaryComponentForm [name="name"]').val(record.name);
+        $('#salaryComponentForm [name="payslip_label"]').val(record.payslip_label || '');
         $('#salaryComponentForm [name="code"]').val(record.code || '');
-        setHrSelectValue('hrSalaryComponentType', record.type);
+        setHrSelectValue('hrSalaryComponentGroup', record.component_group || (record.type === 'deduction' ? 'deduction' : 'salary'));
         setHrSelectValue('hrSalaryCalculationType', record.calculation_type);
+        setHrSelectValue('hrSalaryRuleCode', record.rule_code || 'standard');
         setHrSelectValue('hrSalaryPercentageOf', record.percentage_of || 'basic_salary');
-        $('#salaryComponentForm [name="default_amount"]').val(record.default_amount || 0);
-        $('#salaryComponentForm [name="default_percentage"]').val(record.default_percentage || 0);
+        $('#salaryComponentForm [name="default_amount"]').val(hrTwoDecimal(record.default_amount));
+        $('#salaryComponentForm [name="default_percentage"]').val(hrTwoDecimal(record.default_percentage));
         $('#salaryComponentForm [name="description"]').val(record.description || '');
         $('#salaryComponentForm [name="sort_order"]').val(record.sort_order || 0);
+        $('#salaryComponentForm [name="global_configured"]').prop('checked', !!record.global_configured).trigger('change');
+        $('#salaryComponentForm [name="apply_to_all"]').prop('checked', !!record.apply_to_all).trigger('change');
+        $('#salaryComponentForm [name="allow_employee_override"]').prop('checked', !!record.allow_employee_override).trigger('change');
+        $('#salaryComponentForm [name="show_zero_on_payslip"]').prop('checked', !!record.show_zero_on_payslip).trigger('change');
         $('#salaryComponentForm [name="is_taxable"]').prop('checked', !!record.is_taxable).trigger('change');
         $('#salaryComponentForm [name="is_required"]').prop('checked', !!record.is_required).trigger('change');
         $('#salaryComponentForm [name="status"]').prop('checked', !!record.status).trigger('change');

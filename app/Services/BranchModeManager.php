@@ -20,6 +20,7 @@ class BranchModeManager
         'employees', 'shift_rosters', 'attendances', 'leave_requests', 'employee_leave_balances',
         'employee_salary_structures', 'employee_salary_components', 'payroll_runs', 'payroll_items',
         'payroll_item_components', 'payroll_payments',
+        'salary_advances', 'salary_advance_repayments', 'employee_loans', 'loan_repayments', 'payroll_recovery_allocations',
         // Inventory stock is branch-owned business data. stock_locations are deliberately
         // excluded because MAIN/KITCHEN rows are default branch configuration.
         'inventory_balances', 'stock_movements',

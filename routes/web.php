@@ -18,6 +18,8 @@ use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\LeaveManagementController;
 use App\Http\Controllers\Admin\HrShiftController;
 use App\Http\Controllers\Admin\PayrollController;
+use App\Http\Controllers\Admin\SalaryAdvanceController;
+use App\Http\Controllers\Admin\LoanController;
 use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\WaiterController;
@@ -302,6 +304,7 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::get('/employees/{employee}/edit', [EmployeeController::class, 'edit'])->name('employees.edit');
         Route::put('/employees/{employee}', [EmployeeController::class, 'update'])->name('employees.update');
         Route::patch('/employees/{employee}/status', [EmployeeController::class, 'updateStatus'])->name('employees.status');
+        Route::delete('/employees/bulk', [EmployeeController::class, 'bulkDestroy'])->name('employees.bulk.destroy');
         Route::delete('/employees/{employee}', [EmployeeController::class, 'destroy'])->name('employees.destroy');
         Route::get('/employees/{employee}/salary', [EmployeeSalaryController::class, 'show'])->name('employees.salary.show');
         Route::post('/employees/{employee}/salary', [EmployeeSalaryController::class, 'store'])->name('employees.salary.store');
@@ -324,6 +327,19 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::patch('/leave-management/{leave}/decision', [LeaveManagementController::class, 'decision'])->name('leaves.decision');
         Route::patch('/leave-management/{leave}/cancel', [LeaveManagementController::class, 'cancel'])->name('leaves.cancel');
         Route::delete('/leave-management/{leave}', [LeaveManagementController::class, 'destroy'])->name('leaves.destroy');
+
+
+        Route::get('/salary-advances', [SalaryAdvanceController::class, 'index'])->name('salary-advances.index');
+        Route::post('/salary-advances', [SalaryAdvanceController::class, 'store'])->name('salary-advances.store');
+        Route::put('/salary-advances/{salaryAdvance}', [SalaryAdvanceController::class, 'update'])->name('salary-advances.update');
+        Route::post('/salary-advances/{salaryAdvance}/repay', [SalaryAdvanceController::class, 'repay'])->name('salary-advances.repay');
+        Route::delete('/salary-advances/{salaryAdvance}', [SalaryAdvanceController::class, 'destroy'])->name('salary-advances.destroy');
+
+        Route::get('/loans', [LoanController::class, 'index'])->name('loans.index');
+        Route::post('/loans', [LoanController::class, 'store'])->name('loans.store');
+        Route::put('/loans/{loan}', [LoanController::class, 'update'])->name('loans.update');
+        Route::post('/loans/{loan}/repay', [LoanController::class, 'repay'])->name('loans.repay');
+        Route::delete('/loans/{loan}', [LoanController::class, 'destroy'])->name('loans.destroy');
 
 
         Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');
@@ -360,6 +376,7 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::post('/settings/general', [HrSettingController::class, 'updateGeneral'])->name('settings.general.update');
         Route::post('/settings/attendance', [HrSettingController::class, 'updateAttendance'])->name('settings.attendance.update');
         Route::post('/settings/payroll', [HrSettingController::class, 'updatePayroll'])->name('settings.payroll.update');
+        Route::post('/settings/clean-data', [HrSettingController::class, 'cleanHrData'])->name('settings.clean-data');
 
         Route::post('/settings/departments', [HrSettingController::class, 'storeDepartment'])->name('settings.departments.store');
         Route::put('/settings/departments/{department}', [HrSettingController::class, 'updateDepartment'])->name('settings.departments.update');

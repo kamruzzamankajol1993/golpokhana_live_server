@@ -204,7 +204,7 @@ button { font-family: var(--font); }
   gap: 10px;
   padding: 9px 10px;
   border-radius: var(--radius-sm);
-  color: white;
+  color: rgba(255,255,255,0.58);
   font-size: 13px; font-weight: 500;
   cursor: pointer;
   transition: var(--t-base);
@@ -1139,12 +1139,12 @@ button { font-family: var(--font); }
 .progga-pos-cat-item:hover .progga-pos-cat-emoji  { filter: grayscale(0.1); transform: scale(1.1); }
 .progga-pos-cat-item.active .progga-pos-cat-emoji { filter: none; transform: scale(1.12); }
 .progga-pos-cat-name {
-  font-size: 8.5px; color: rgba(255,255,255,1);
+  font-size: 8.5px; color: white;
   font-weight: 600; line-height: 1.2;
   white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis;
 }
-.progga-pos-cat-item:hover .progga-pos-cat-name  { color: rgba(255,255,255,0.75); }
+.progga-pos-cat-item:hover .progga-pos-cat-name  { color: white; }
 .progga-pos-cat-item.active .progga-pos-cat-name { color: var(--progga-secondary); font-weight: 700; }
 
 /* Food panel */

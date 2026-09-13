@@ -16,9 +16,9 @@
                 <tr>
                     <td>{{ $key + 1 }}</td>
                     <td><strong><span class="hr-color-dot" style="background:{{ $leaveType->color ?: '#21352a' }};"></span>{{ $leaveType->name }}</strong><div class="hr-settings-help">{{ $leaveType->code ?: 'No code' }}</div></td>
-                    <td>{{ rtrim(rtrim(number_format((float)$leaveType->days_per_year, 2), '0'), '.') }}</td>
+                    <td>{{ number_format((float)$leaveType->days_per_year, 2, '.', '') }}</td>
                     <td><span class="progga-badge {{ $leaveType->is_paid ? 'progga-badge-success' : 'progga-badge-danger' }}">{{ $leaveType->is_paid ? 'Paid' : 'Unpaid' }}</span></td>
-                    <td>{{ $leaveType->allow_carry_forward ? 'Up to '.rtrim(rtrim(number_format((float)$leaveType->max_carry_forward_days, 2), '0'), '.').' days' : 'No' }}</td>
+                    <td>{{ $leaveType->allow_carry_forward ? 'Up to '.number_format((float)$leaveType->max_carry_forward_days, 2, '.', '').' days' : 'No' }}</td>
                     <td>{{ $leaveType->requires_document ? 'Required' : 'Not Required' }}</td>
                     <td><label class="progga-toggle"><input type="checkbox" onchange="toggleHrStatus('leave-types', {{ $leaveType->id }}, this)" {{ $leaveType->status ? 'checked' : '' }} data-on="Active" data-off="Inactive" @cannot('hr-setting-edit') disabled @endcannot><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ $leaveType->status ? 'Active' : 'Inactive' }}</span></label></td>
                     <td><div class="progga-table-actions">

@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             HrPermissionsSeeder::class,
             HrSettingsSeeder::class,
             PayrollModuleSeeder::class,
+            HrSimplifiedPayrollSeeder::class,
             HrEmployeeDataSeeder::class,
         ]);
     }

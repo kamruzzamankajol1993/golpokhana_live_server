@@ -114,6 +114,7 @@
                           <option value="Nexus">Nexus</option>
                           <option value="Diners Club">Diners Club</option>
                           <option value="GPay">GPay</option>
+                          <option value="Bangla QR Card">Bangla QR Card</option>
                           <option value="Other">Other</option>
                       </select>
                   </div>
@@ -135,6 +136,7 @@
                           <option value="Islamic Wallet">Islamic Wallet</option>
                           <option value="Meghna Pay">Meghna Pay</option>
                           <option value="Nagad">Nagad</option>
+                          <option value="Bangla QR">Bangla QR MFS</option>
                           <option value="LENDEN">LENDEN</option>
                           <option value="Other">Other</option>
                       </select>
@@ -174,6 +176,7 @@
                               <option value="Nexus">Nexus</option>
                               <option value="Diners Club">Diners Club</option>
                               <option value="GPay">GPay</option>
+                              <option value="Bangla QR Card">Bangla QR Card</option>
                               <option value="Other">Other</option>
                           </select>
                       </div>
@@ -194,6 +197,7 @@
                               <option value="Islamic Wallet">Islamic Wallet</option>
                               <option value="Meghna Pay">Meghna Pay</option>
                               <option value="Nagad">Nagad</option>
+                              <option value="Bangla QR">Bangla QR MFS</option>
                               <option value="LENDEN">LENDEN</option>
                               <option value="Other">Other</option>
                           </select>
@@ -253,9 +257,11 @@
                   <input type="number" id="payChangeAmount" name="change_amount" class="form-control form-control-sm text-end" style="width: 140px; font-weight:900; border: 1.5px solid #198754; color:#198754;" value="0" readonly>
                 </div>
 
-                <div class="progga-pos-total-row" style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 900; color: #d33; padding-top:10px; border-top:1px dashed var(--progga-border-light);">
+                @if(($posSetting->allow_payment_with_insufficient_given_money ?? false))
+                <div id="paymentDueAmountRow" class="progga-pos-total-row" style="display:flex; justify-content: space-between; font-size: 15px; font-weight: 900; color: #d33; padding-top:10px; border-top:1px dashed var(--progga-border-light);">
                   <span>DUE AMOUNT</span><span id="payDueAmount">৳0</span>
                 </div>
+                @endif
               </div>
               </div>
 

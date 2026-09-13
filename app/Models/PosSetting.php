@@ -17,6 +17,7 @@ class PosSetting extends Model
         'require_table_selection' => 'boolean',
         'show_out_of_stock'                => 'boolean',
         'given_money_manual_toggle_enabled' => 'boolean',
+        'allow_payment_with_insufficient_given_money' => 'boolean',
         'show_honored_percentage_on_invoice' => 'boolean',
         'complimentary_note_required'          => 'boolean',
         'dine_in_waiter_required'              => 'boolean',

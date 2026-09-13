@@ -22,47 +22,7 @@ class EmployeeSalaryController extends Controller
 
     public function show(Employee $employee)
     {
-        $employee->load(['department', 'designation', 'employmentType']);
-
-        $salaryComponents = SalaryComponent::query()
-            ->where('status', true)
-            ->where(function ($query) {
-                $query->whereNull('code')
-                    ->orWhereNotIn('code', ['BASIC', 'OT', 'ABSENT', 'UNPAID', 'HALF-DAY', 'LATE']);
-            })
-            ->orderByRaw("CASE WHEN type = 'earning' THEN 0 ELSE 1 END")
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get();
-
-        $currentStructure = $employee->salaryStructures()
-            ->with('components.salaryComponent')
-            ->where('status', true)
-            ->where('effective_from', '<=', now()->toDateString())
-            ->where(function ($query) {
-                $query->whereNull('effective_to')
-                    ->orWhere('effective_to', '>=', now()->toDateString());
-            })
-            ->latest('effective_from')
-            ->first();
-
-        $latestStructure = $employee->salaryStructures()
-            ->with('components.salaryComponent')
-            ->latest('effective_from')
-            ->first();
-
-        $salaryHistory = $employee->salaryStructures()
-            ->with('components.salaryComponent')
-            ->latest('effective_from')
-            ->get();
-
-        return view('admin.hr.employees.salary', compact(
-            'employee',
-            'salaryComponents',
-            'currentStructure',
-            'latestStructure',
-            'salaryHistory'
-        ));
+        return redirect()->to(route('hr.employees.edit', $employee) . '#employeePayrollSetupCard');
     }
 
     public function store(Request $request, Employee $employee)
@@ -70,7 +30,6 @@ class EmployeeSalaryController extends Controller
         $validated = $request->validate([
             'effective_from' => ['required', 'date', 'after_or_equal:' . $employee->join_date->format('Y-m-d')],
             'basic_salary' => ['required', 'numeric', 'min:0.01', 'max:999999999999.99'],
-            'overtime_rate' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
             'payment_method' => ['required', 'in:cash,bank,mobile_banking'],
             'account_name' => ['nullable', 'string', 'max:180'],
             'account_number' => ['nullable', 'string', 'max:120'],
@@ -113,7 +72,7 @@ class EmployeeSalaryController extends Controller
             $structure->effective_from = $effectiveFrom->toDateString();
             $structure->effective_to = null;
             $structure->basic_salary = $validated['basic_salary'];
-            $structure->overtime_rate = $validated['overtime_rate'] ?? null;
+            $structure->overtime_rate = null;
             $structure->payment_method = $validated['payment_method'];
             $structure->account_name = $validated['account_name'] ?? null;
             $structure->account_number = $validated['account_number'] ?? null;
@@ -126,6 +85,7 @@ class EmployeeSalaryController extends Controller
 
             $activeComponents = SalaryComponent::query()
                 ->where('status', true)
+                ->where('calculation_type', '!=', SalaryComponent::CALCULATION_MANUAL)
                 ->where(function ($query) {
                     $query->whereNull('code')
                         ->orWhereNotIn('code', ['BASIC', 'OT', 'ABSENT', 'UNPAID', 'HALF-DAY', 'LATE']);

@@ -75,6 +75,7 @@
                         <div class="payroll-check-grid">
                             <div class="payroll-check-card"><span>Eligible Employees</span><strong id="checkEligible">{{ $precheck['eligible_employees'] }}</strong></div>
                             <div class="payroll-check-card"><span>Salary Ready</span><strong id="checkSalaryReady">{{ $precheck['salary_ready'] }}</strong></div>
+                            <div class="payroll-check-card {{ ($precheck['missing_rule_count'] ?? 0) ? 'warning' : '' }}"><span>Missing Rules</span><strong id="checkMissingRules">{{ $precheck['missing_rule_count'] ?? 0 }}</strong></div>
                             <div class="payroll-check-card warning"><span>Missing Attendance</span><strong id="checkMissingAttendance">{{ $precheck['missing_attendance_count'] }}</strong></div>
                             <div class="payroll-check-card warning"><span>Pending Leave</span><strong id="checkPendingLeave">{{ $precheck['pending_leave_count'] }}</strong></div>
                         </div>
@@ -93,9 +94,20 @@
                             <strong id="missingSalaryTitle">Salary setup is missing for {{ $precheck['missing_salary_count'] }} employee(s).</strong>
                             <div id="missingSalaryList" class="mt-2 payroll-missing-list">
                                 @foreach($precheck['missing_salary'] as $missing)
-                                    <a href="{{ route('hr.employees.salary.show', $missing['id']) }}" target="_blank">{{ $missing['code'] }} — {{ $missing['name'] }}</a>
+                                    <a href="{{ route('hr.employees.edit', $missing['id']) . '#employeePayrollSetupCard' }}" target="_blank">{{ $missing['code'] }} — {{ $missing['name'] }}@if(!empty($missing['reason'])) — {{ $missing['reason'] }}@endif</a>
                                 @endforeach
                             </div>
+                        </div>
+
+                        <div id="missingRulesAlert" class="alert alert-danger mt-3 {{ ($precheck['missing_rule_count'] ?? 0) ? '' : 'd-none' }}">
+                            <strong id="missingRulesTitle">Payroll rule configuration is missing for {{ $precheck['missing_rule_count'] ?? 0 }} employee/component item(s).</strong>
+                            <div id="missingRulesList" class="mt-2 payroll-missing-list">
+                                @foreach(array_slice($precheck['missing_rules'] ?? [], 0, 20) as $missingRule)
+                                    <a href="{{ route('hr.employees.edit', $missingRule['employee_id']) . '#employeePayrollSetupCard' }}" target="_blank">{{ $missingRule['employee_code'] }} — {{ $missingRule['component'] }}</a>
+                                @endforeach
+                                @if(($precheck['missing_rule_count'] ?? 0) > 20)<span>And {{ ($precheck['missing_rule_count'] ?? 0) - 20 }} more…</span>@endif
+                            </div>
+                            <div class="mt-2"><a href="{{ route('hr.settings.index', ['tab' => 'salary-components']) }}" class="alert-link">Open HR Settings → Payroll Components & Rules</a></div>
                         </div>
                     </div>
                 </div>
@@ -103,6 +115,46 @@
                 <form action="{{ route('hr.payroll.store') }}" method="POST" id="generatePayrollForm">
                     @csrf
                     <input type="hidden" name="month" id="payrollMonthInput" value="{{ $month }}">
+
+                    @if($manualComponents->isNotEmpty())
+                        <div class="hr-card mb-3">
+                            <div class="hr-card-header">
+                                <div>
+                                    <div class="hr-card-title">Monthly Manual Values</div>
+                                    <div class="hr-card-subtitle">Enter only values that belong to this payroll month. Blank = 0. These values are not saved in the employee master.</div>
+                                </div>
+                                <span class="hr-badge hr-badge-neutral">Employee-wise</span>
+                            </div>
+                            <div class="alert alert-light border rounded-0 border-start-0 border-end-0 mb-0 py-2 px-3" style="font-size:12px">
+                                Examples: <strong>Adjustment (Last Month) Addition</strong>, Arrear, Fine, Other and other components configured as <strong>Manual at Payroll</strong>. Salary Advance and Loan are excluded because they are recovered automatically.
+                            </div>
+                            <div class="progga-table-wrapper" style="border:0;border-radius:0;overflow:auto">
+                                <table class="progga-table" style="min-width:900px">
+                                    <thead>
+                                        <tr>
+                                            <th style="min-width:210px">Employee</th>
+                                            @foreach($manualComponents as $component)
+                                                <th style="min-width:170px">{{ $component->display_label }}<div class="hr-person-meta">{{ ucfirst($component->display_group) }}</div></th>
+                                            @endforeach
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkManualAdjustmentBody">
+                                        @forelse($eligibleEmployees as $employee)
+                                            <tr>
+                                                <td><strong>{{ $employee->employee_code }}</strong><div class="hr-person-meta">{{ $employee->name }}{{ $employee->department ? ' · '.$employee->department->name : '' }}</div></td>
+                                                @foreach($manualComponents as $component)
+                                                    <td><div class="input-group input-group-sm"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" name="manual_components[{{ $employee->id }}][{{ $component->id }}]" class="progga-form-control" value="{{ old('manual_components.'.$employee->id.'.'.$component->id, '') }}" placeholder="0.00"></div></td>
+                                                @endforeach
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="{{ 1 + $manualComponents->count() }}"><div class="hr-empty py-3">No eligible employee found for this month.</div></td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="hr-card">
                         <div class="hr-card-header"><div><div class="hr-card-title">Generation Confirmation</div><div class="hr-card-subtitle">All employee records will first be created as Draft.</div></div></div>
                         <div class="hr-card-body">
@@ -127,7 +179,7 @@
                         <div class="hr-card-footer d-flex justify-content-end gap-2">
                             <a href="{{ route('hr.payroll.index') }}" class="progga-btn progga-btn-outline">Cancel</a>
                             @can('payroll-create')
-                                <button type="submit" class="progga-btn progga-btn-primary" id="generatePayrollBtn" {{ $existingRun || $precheck['missing_salary_count'] ? 'disabled' : '' }}>
+                                <button type="submit" class="progga-btn progga-btn-primary" id="generatePayrollBtn" {{ $existingRun || $precheck['missing_salary_count'] || ($precheck['missing_rule_count'] ?? 0) ? 'disabled' : '' }}>
                                     <i class="bi bi-people"></i> Generate All as Draft
                                 </button>
                             @endcan
@@ -147,6 +199,29 @@ $(function () {
     const monthInput = $('#generatePayrollMonth');
     const submitBtn = $('#generatePayrollBtn');
     const currentMonth = @json(now()->format('Y-m'));
+    const manualComponents = @json($manualComponents->map(fn($component) => ['id'=>$component->id,'label'=>$component->display_label,'group'=>ucfirst($component->display_group)])->values());
+
+    function escapeHtml(value) {
+        return $('<div>').text(value == null ? '' : String(value)).html();
+    }
+
+    function renderManualRows(employees) {
+        const body = $('#bulkManualAdjustmentBody');
+        if (!body.length) return;
+        body.empty();
+        if (!employees || !employees.length) {
+            body.append('<tr><td colspan="' + (1 + manualComponents.length) + '"><div class="hr-empty py-3">No eligible employee found for this month.</div></td></tr>');
+            return;
+        }
+        employees.forEach(function (employee) {
+            let html = '<tr><td><strong>' + escapeHtml(employee.code) + '</strong><div class="hr-person-meta">' + escapeHtml(employee.name) + (employee.department ? ' · ' + escapeHtml(employee.department) : '') + '</div></td>';
+            manualComponents.forEach(function (component) {
+                html += '<td><div class="input-group input-group-sm"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" name="manual_components[' + employee.id + '][' + component.id + ']" class="progga-form-control" placeholder="0.00"></div></td>';
+            });
+            html += '</tr>';
+            body.append(html);
+        });
+    }
 
     function moveMonth(value, offset) {
         const parts = value.split('-').map(Number);
@@ -158,10 +233,12 @@ $(function () {
         $('#precheckMonthLabel').text(data.month_label + ' · ' + data.period_start.split('-').reverse().join('-') + ' to ' + data.period_end.split('-').reverse().join('-'));
         $('#checkEligible').text(data.eligible_employees);
         $('#checkSalaryReady').text(data.salary_ready);
+        $('#checkMissingRules').text(data.missing_rule_count || 0);
         $('#checkMissingAttendance').text(data.missing_attendance_count);
         $('#checkPendingLeave').text(data.pending_leave_count);
         $('#payrollMonthInput').val(data.month);
         $('#futureMonthAlert').toggleClass('d-none', !data.is_future_month);
+        renderManualRows(data.eligible_employee_rows || []);
 
         const existing = $('#existingPayrollAlert');
         if (data.existing_run) {
@@ -175,15 +252,30 @@ $(function () {
         if (data.missing_salary_count > 0) {
             $('#missingSalaryTitle').text('Salary setup is missing for ' + data.missing_salary_count + ' employee(s).');
             data.missing_salary.forEach(function (employee) {
-                const url = @json(url('/hr/employees')) + '/' + employee.id + '/salary';
-                salaryList.append($('<a>', { href: url, target: '_blank', text: employee.code + ' — ' + employee.name }));
+                const url = @json(url('/hr/employees')) + '/' + employee.id + '/edit#employeePayrollSetupCard';
+                const label = employee.code + ' — ' + employee.name + (employee.reason ? ' — ' + employee.reason : '');
+                salaryList.append($('<a>', { href: url, target: '_blank', text: label }));
             });
             salaryAlert.removeClass('d-none');
         } else {
             salaryAlert.addClass('d-none');
         }
 
-        submitBtn.prop('disabled', !!data.existing_run || data.missing_salary_count > 0 || data.eligible_employees < 1);
+        const rulesAlert = $('#missingRulesAlert');
+        const rulesList = $('#missingRulesList').empty();
+        if ((data.missing_rule_count || 0) > 0) {
+            $('#missingRulesTitle').text('Payroll rule configuration is missing for ' + data.missing_rule_count + ' employee/component item(s).');
+            (data.missing_rules || []).slice(0, 20).forEach(function (rule) {
+                const url = @json(url('/hr/employees')) + '/' + rule.employee_id + '/edit#employeePayrollSetupCard';
+                rulesList.append($('<a>', { href: url, target: '_blank', text: rule.employee_code + ' — ' + rule.component }));
+            });
+            if (data.missing_rule_count > 20) rulesList.append($('<span>', { text: 'And ' + (data.missing_rule_count - 20) + ' more…' }));
+            rulesAlert.removeClass('d-none');
+        } else {
+            rulesAlert.addClass('d-none');
+        }
+
+        submitBtn.prop('disabled', !!data.existing_run || data.missing_salary_count > 0 || (data.missing_rule_count || 0) > 0 || data.eligible_employees < 1);
     }
 
     function refreshPrecheck() {

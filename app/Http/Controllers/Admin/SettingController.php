@@ -101,6 +101,7 @@ class SettingController extends Controller
         $data['require_table_selection'] = $request->has('require_table_selection');
         $data['show_out_of_stock'] = $request->has('show_out_of_stock');
         $data['given_money_manual_toggle_enabled'] = $request->has('given_money_manual_toggle_enabled');
+        $data['allow_payment_with_insufficient_given_money'] = $request->has('allow_payment_with_insufficient_given_money');
         $data['show_honored_percentage_on_invoice'] = $request->has('show_honored_percentage_on_invoice');
         $data['complimentary_note_required'] = $request->has('complimentary_note_required');
         $data['dine_in_waiter_required'] = $request->has('dine_in_waiter_required');

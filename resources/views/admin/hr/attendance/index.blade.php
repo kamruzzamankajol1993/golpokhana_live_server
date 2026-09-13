@@ -75,7 +75,9 @@
             </div>
         </div>
 
-        <div class="hr-card" id="attendanceTableContainer"><div class="hr-empty"><div class="spinner-border spinner-border-sm"></div><div class="mt-2">Loading attendance...</div></div></div>
+        <div class="hr-card" id="attendanceTableContainer">
+            @include('admin.hr.attendance.table', $initialTableData)
+        </div>
     </div>
 </main>
 
@@ -87,23 +89,119 @@
     @include('admin.hr.shared.plugins')
     <script>
     $(function () {
-        let currentPage = 1;
+        let currentPage = Number($('#attendanceTableContainer .attendance-table-result').data('current-page') || 1);
         let searchTimer = null;
+        let activeAttendanceRequest = null;
+        let attendancePageInitializing = true;
+        const attendanceUses12Hour = @json(($timeFormat ?? 'h:i A') === 'h:i A');
 
         HrUi.initSelect2('.attendance-select2');
+        HrUi.initSelect2($('#attendanceTableContainer'));
         const datePicker = HrUi.initFlatpickr('#attendanceDate', {
-            onChange: function () { loadAttendance(1); }
+            onChange: function () {
+                if (!attendancePageInitializing) loadAttendance(1);
+            }
         });
 
         function initTimePickers() {
             document.querySelectorAll('#attendanceTableContainer .attendance-time').forEach(function (element) {
-                HrUi.initFlatpickr(element, {
+                const wasDisabled = element.disabled;
+                const picker = HrUi.initFlatpickr(element, {
                     enableTime: true,
                     noCalendar: true,
                     dateFormat: 'H:i',
-                    altInput: false,
-                    time_24hr: false
+                    altInput: attendanceUses12Hour,
+                    altFormat: attendanceUses12Hour ? 'h:i K' : 'H:i',
+                    time_24hr: !attendanceUses12Hour,
+                    onChange: function () {
+                        $(element).closest('tr').addClass('attendance-row-dirty');
+                        updateRowMetrics($(element).closest('tr'));
+                    }
                 });
+
+                if (picker?.altInput) {
+                    picker.altInput.disabled = wasDisabled;
+                    picker.altInput.setAttribute('autocomplete', 'off');
+                }
+            });
+
+            refreshLiveMetrics();
+        }
+
+        function parseTimeMinutes(value) {
+            if (!value || !/^\d{1,2}:\d{2}$/.test(value)) return null;
+            const parts = value.split(':').map(Number);
+            if (parts[0] > 23 || parts[1] > 59) return null;
+            return (parts[0] * 60) + parts[1];
+        }
+
+        function liveAttendanceSettings() {
+            const result = $('#attendanceTableContainer .attendance-table-result');
+            return {
+                minimumOvertime: Number(result.attr('data-minimum-overtime') || 0),
+                autoOvertime: Number(result.attr('data-auto-overtime')) !== 0
+            };
+        }
+
+        function updateRowMetrics(row) {
+            if (!row || !row.length) return;
+
+            const status = row.find('.attendance-status').val();
+            if (['absent', 'leave', 'off_day'].includes(status)) {
+                row.find('.attendance-late-preview').text('0m');
+                row.find('.attendance-ot-preview').text('0m');
+                return;
+            }
+
+            const shiftOption = row.find('.attendance-shift option:selected').get(0);
+            const shiftStart = parseTimeMinutes(shiftOption?.dataset.start || '');
+            let shiftEnd = parseTimeMinutes(shiftOption?.dataset.end || '');
+            const checkIn = parseTimeMinutes(row.find('input.check-in').first().val());
+            let checkOut = parseTimeMinutes(row.find('input.check-out').first().val());
+
+            let lateMinutes = 0;
+            let overtimeMinutes = 0;
+
+            if (shiftStart !== null && shiftEnd !== null) {
+                const overnight = Number(shiftOption?.dataset.overnight || 0) === 1 || shiftEnd <= shiftStart;
+                if (overnight) shiftEnd += 1440;
+
+                let normalizedCheckOut = checkOut;
+                if (normalizedCheckOut !== null && checkIn !== null && normalizedCheckOut <= checkIn) {
+                    normalizedCheckOut += 1440;
+                }
+
+                const grace = Number(shiftOption?.dataset.grace || 0);
+                if (checkIn !== null && checkIn > shiftStart + grace) {
+                    lateMinutes = Math.max(0, checkIn - shiftStart);
+                }
+
+                const settings = liveAttendanceSettings();
+                if (normalizedCheckOut !== null && normalizedCheckOut > shiftEnd && settings.autoOvertime) {
+                    const rawOvertime = normalizedCheckOut - shiftEnd;
+                    overtimeMinutes = rawOvertime >= settings.minimumOvertime ? rawOvertime : 0;
+                }
+            }
+
+            row.find('.attendance-late-preview').text(lateMinutes + 'm');
+            row.find('.attendance-ot-preview').text(overtimeMinutes + 'm');
+        }
+
+        function refreshLiveMetrics() {
+            $('#attendanceTableContainer tbody tr[data-employee-id]').each(function () {
+                updateRowMetrics($(this));
+            });
+        }
+
+        function setRowTimeDisabled(row, disabled) {
+            row.find('input.attendance-time').each(function () {
+                const picker = this._flatpickr;
+                this.disabled = disabled;
+                if (picker?.altInput) picker.altInput.disabled = disabled;
+                if (disabled) {
+                    if (picker) picker.clear();
+                    else this.value = '';
+                }
             });
         }
 
@@ -118,14 +216,21 @@
             currentPage = page || 1;
             const container = $('#attendanceTableContainer').addClass('hr-table-loading');
 
-            $.get("{{ route('hr.attendance.index') }}", {
+            if (activeAttendanceRequest && activeAttendanceRequest.readyState !== 4) {
+                activeAttendanceRequest.abort();
+            }
+
+            const request = $.get("{{ route('hr.attendance.index') }}", {
                 page: currentPage,
                 date: $('#attendanceDate').val(),
                 search: $('#attendanceSearch').val(),
                 department_id: HrUi.selectValue('attendanceDepartment'),
                 shift_id: HrUi.selectValue('attendanceShiftFilter'),
                 status: HrUi.selectValue('attendanceStatusFilter')
-            }).done(function (html) {
+            });
+            activeAttendanceRequest = request;
+
+            request.done(function (html) {
                 container.html(html);
                 HrUi.initSelect2(container);
                 const rawSummary = container.find('.attendance-table-result').attr('data-summary');
@@ -133,10 +238,14 @@
                     try { updateSummary(JSON.parse(rawSummary)); } catch (error) {}
                 }
                 initTimePickers();
-            }).fail(function () {
+            }).fail(function (xhr, statusText) {
+                if (statusText === 'abort') return;
                 Swal.fire('Error', 'Failed to load attendance.', 'error');
             }).always(function () {
-                container.removeClass('hr-table-loading');
+                if (activeAttendanceRequest === request) {
+                    container.removeClass('hr-table-loading');
+                    activeAttendanceRequest = null;
+                }
             });
         }
 
@@ -164,11 +273,19 @@
             $(this).closest('tr').addClass('attendance-row-dirty');
         });
 
+        $(document).on('change', '.attendance-shift', function () {
+            updateRowMetrics($(this).closest('tr'));
+        });
+
+        $(document).on('input change', '.attendance-time', function () {
+            updateRowMetrics($(this).closest('tr'));
+        });
+
         $(document).on('change', '.attendance-status', function () {
             const row = $(this).closest('tr');
             const disabled = ['absent', 'leave', 'off_day'].includes(this.value);
-            row.find('.attendance-time').prop('disabled', disabled);
-            if (disabled) row.find('.attendance-time').val('');
+            setRowTimeDisabled(row, disabled);
+            updateRowMetrics(row);
         });
 
         $('#markAllPresent').on('click', function () {
@@ -291,7 +408,8 @@
             });
         });
 
-        loadAttendance(1);
+        initTimePickers();
+        attendancePageInitializing = false;
     });
     </script>
 @endsection

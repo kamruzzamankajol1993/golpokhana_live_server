@@ -160,64 +160,44 @@
     </div>
     @endcan
 
-    @canany(['hr-dashboard-view', 'employee-view', 'attendance-view', 'leave-management-view', 'payroll-view', 'shift-view', 'hr-setting-view'])
+    @canany(['hr-dashboard-view', 'employee-view', 'attendance-view', 'leave-management-view', 'salary-advance-view', 'loan-view', 'payroll-view', 'shift-view', 'hr-setting-view'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Human Resources</div></div>
-
-    @can('hr-dashboard-view')
+    @php $hrMenuOpen = request()->routeIs('hr.*'); @endphp
     <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.dashboard') ? 'active' : '' }}" href="{{ route('hr.dashboard') }}">
-            <i class="bi bi-speedometer2 progga-nav-icon"></i><span>HR Dashboard</span>
+        <a class="progga-nav-link {{ $hrMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#hrModuleDropdown" role="button" aria-expanded="{{ $hrMenuOpen ? 'true' : 'false' }}">
+            <i class="bi bi-people-fill progga-nav-icon"></i><span>HR</span>
+            <i class="bi bi-chevron-down ms-auto" style="font-size:11px;"></i>
         </a>
+        <div class="collapse {{ $hrMenuOpen ? 'show' : '' }}" id="hrModuleDropdown">
+            @can('hr-dashboard-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.dashboard') ? 'active' : '' }}" href="{{ route('hr.dashboard') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-speedometer2 progga-nav-icon"></i><span>HR Dashboard</span></a>
+            @endcan
+            @can('employee-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.employees.*') ? 'active' : '' }}" href="{{ route('hr.employees.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-person-vcard-fill progga-nav-icon"></i><span>Employees</span></a>
+            @endcan
+            @can('attendance-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.attendance.*') ? 'active' : '' }}" href="{{ route('hr.attendance.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-fingerprint progga-nav-icon"></i><span>Attendance</span></a>
+            @endcan
+            @can('leave-management-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.leaves.*') ? 'active' : '' }}" href="{{ route('hr.leaves.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-calendar2-check-fill progga-nav-icon"></i><span>Leave Management</span></a>
+            @endcan
+            @can('salary-advance-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.salary-advances.*') ? 'active' : '' }}" href="{{ route('hr.salary-advances.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-cash-coin progga-nav-icon"></i><span>Salary Advance</span></a>
+            @endcan
+            @can('loan-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.loans.*') ? 'active' : '' }}" href="{{ route('hr.loans.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-bank progga-nav-icon"></i><span>Loan</span></a>
+            @endcan
+            @can('payroll-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.payroll.*') ? 'active' : '' }}" href="{{ route('hr.payroll.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-wallet2 progga-nav-icon"></i><span>Payroll</span></a>
+            @endcan
+            @can('shift-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.shifts.*') ? 'active' : '' }}" href="{{ route('hr.shifts.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-clock-history progga-nav-icon"></i><span>Shifts &amp; Duty Roster</span></a>
+            @endcan
+            @can('hr-setting-view')
+            <a class="progga-nav-link {{ request()->routeIs('hr.settings.*') ? 'active' : '' }}" href="{{ route('hr.settings.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-sliders2-vertical progga-nav-icon"></i><span>HR Settings</span></a>
+            @endcan
+        </div>
     </div>
-    @endcan
-
-    @can('employee-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.employees.*') ? 'active' : '' }}" href="{{ route('hr.employees.index') }}">
-            <i class="bi bi-person-vcard-fill progga-nav-icon"></i><span>Employees</span>
-        </a>
-    </div>
-    @endcan
-
-    @can('attendance-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.attendance.*') ? 'active' : '' }}" href="{{ route('hr.attendance.index') }}">
-            <i class="bi bi-fingerprint progga-nav-icon"></i><span>Attendance</span>
-        </a>
-    </div>
-    @endcan
-
-    @can('leave-management-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.leaves.*') ? 'active' : '' }}" href="{{ route('hr.leaves.index') }}">
-            <i class="bi bi-calendar2-check-fill progga-nav-icon"></i><span>Leave Management</span>
-        </a>
-    </div>
-    @endcan
-
-    @can('payroll-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.payroll.*') ? 'active' : '' }} {{ Route::has('hr.payroll.index') ? '' : 'opacity-50' }}" href="{{ Route::has('hr.payroll.index') ? route('hr.payroll.index') : 'javascript:void(0)' }}" title="{{ Route::has('hr.payroll.index') ? 'Payroll' : 'Available in the next HR phase' }}">
-            <i class="bi bi-wallet2 progga-nav-icon"></i><span>Payroll</span>
-        </a>
-    </div>
-    @endcan
-
-    @can('shift-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.shifts.*') ? 'active' : '' }}" href="{{ route('hr.shifts.index') }}">
-            <i class="bi bi-clock-history progga-nav-icon"></i><span>Shifts</span>
-        </a>
-    </div>
-    @endcan
-
-    @can('hr-setting-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('hr.settings.*') ? 'active' : '' }}" href="{{ route('hr.settings.index') }}">
-            <i class="bi bi-sliders2-vertical progga-nav-icon"></i><span>HR Settings</span>
-        </a>
-    </div>
-    @endcan
     @endcanany
 @canany(['report-sales-order-view', 'report-delivery-view', 'report-due-view', 'report-complimentary-orders-view', 'report-payment-type-sales-view', 'report-food-sales-view', 'report-waiter-daily-orders-view', 'report-kot-view', 'report-pos-session-view'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Analytics</div></div>

@@ -1,6 +1,6 @@
 @php
-    $dueCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
-    $dueMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+    $dueCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Bangla QR Card', 'Other'];
+    $dueMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'Bangla QR', 'LENDEN', 'Other'];
     $dueErrorBag = $errors->getBag('duePayment');
     $dueSelectedType = old('payment_type', 'Cash');
 @endphp
@@ -79,7 +79,7 @@
                             <select name="card_type" id="dueCardType" class="form-select">
                                 <option value="">— Select Card —</option>
                                 @foreach($dueCardTypes as $cardName)
-                                    <option value="{{ $cardName }}" {{ old('card_type') === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                    <option value="{{ $cardName }}" {{ old('card_type') === $cardName ? 'selected' : '' }}>{{ $cardName === 'Bangla QR Card' ? 'Bangla QR Card' : $cardName }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -89,7 +89,7 @@
                             <select name="mfs_provider" id="dueMfsProvider" class="form-select">
                                 <option value="">— Select MFS —</option>
                                 @foreach($dueMfsProviders as $mfsName)
-                                    <option value="{{ $mfsName }}" {{ old('mfs_provider') === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                    <option value="{{ $mfsName }}" {{ old('mfs_provider') === $mfsName ? 'selected' : '' }}>{{ $mfsName === 'Bangla QR' ? 'Bangla QR MFS' : $mfsName }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -160,7 +160,7 @@
                                 <select name="split_card_type" id="dueSplitCardType" class="form-select form-select-sm">
                                     <option value="">— Select Card —</option>
                                     @foreach($dueCardTypes as $cardName)
-                                        <option value="{{ $cardName }}" {{ old('split_card_type') === $cardName ? 'selected' : '' }}>{{ $cardName }}</option>
+                                        <option value="{{ $cardName }}" {{ old('split_card_type') === $cardName ? 'selected' : '' }}>{{ $cardName === 'Bangla QR Card' ? 'Bangla QR Card' : $cardName }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -171,7 +171,7 @@
                                 <select name="split_mfs_provider" id="dueSplitMfsProvider" class="form-select form-select-sm">
                                     <option value="">— Select MFS —</option>
                                     @foreach($dueMfsProviders as $mfsName)
-                                        <option value="{{ $mfsName }}" {{ old('split_mfs_provider') === $mfsName ? 'selected' : '' }}>{{ $mfsName }}</option>
+                                        <option value="{{ $mfsName }}" {{ old('split_mfs_provider') === $mfsName ? 'selected' : '' }}>{{ $mfsName === 'Bangla QR' ? 'Bangla QR MFS' : $mfsName }}</option>
                                     @endforeach
                                 </select>
                             </div>

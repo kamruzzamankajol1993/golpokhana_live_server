@@ -11,6 +11,7 @@ use App\Models\AttendanceSetting;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Holiday;
+use App\Models\HrSetting;
 use App\Models\RestaurantSetting;
 use App\Models\Shift;
 use App\Models\ShiftRoster;
@@ -42,68 +43,92 @@ class AttendanceController extends Controller
     {
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
+        $tableData = $this->attendanceTableData($request, $date);
+
         if ($request->ajax()) {
-            $query = Employee::with(['department', 'designation', 'defaultShift'])
-                ->where('employment_status', 'active')
-                ->orderBy('name');
-
-            if ($request->filled('search')) {
-                $search = trim($request->search);
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('employee_code', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                });
-            }
-
-            if ($request->filled('department_id')) {
-                $query->where('department_id', $request->department_id);
-            }
-
-            if ($request->filled('shift_id')) {
-                $shiftId = $request->shift_id;
-                $query->where(function ($q) use ($date, $shiftId) {
-                    $q->where('default_shift_id', $shiftId)
-                        ->orWhereHas('shiftRosters', fn ($roster) => $roster->whereDate('roster_date', $date)->where('shift_id', $shiftId));
-                });
-            }
-
-            if ($request->filled('status')) {
-                $status = $request->status;
-                if ($status === 'not_marked') {
-                    $query->whereDoesntHave('attendances', fn ($q) => $q->whereDate('attendance_date', $date));
-                } else {
-                    $query->whereHas('attendances', fn ($q) => $q->whereDate('attendance_date', $date)->where('status', $status));
-                }
-            }
-
-            $employees = $query->paginate(10)->withQueryString();
-            $employeeIds = $employees->pluck('id');
-            $attendanceMap = Attendance::whereIn('employee_id', $employeeIds)
-                ->whereDate('attendance_date', $date)
-                ->get()
-                ->keyBy('employee_id');
-            $rosterMap = ShiftRoster::whereIn('employee_id', $employeeIds)
-                ->whereDate('roster_date', $date)
-                ->get()
-                ->keyBy('employee_id');
-            $shifts = Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get();
-            $weeklyOffDays = collect(AttendanceSetting::first()?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
-            $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
-                || Holiday::where('status', true)->whereDate('holiday_date', $date)->exists();
-
-            $summary = $this->summaryForDate($date);
-            return view('admin.hr.attendance.table', compact('employees', 'attendanceMap', 'rosterMap', 'shifts', 'date', 'isGlobalOffDay', 'summary'))->render();
+            return view('admin.hr.attendance.table', $tableData)->render();
         }
-
-        $summary = $this->summaryForDate($date);
 
         return view('admin.hr.attendance.index', [
             'date' => $date,
-            'summary' => $summary,
+            'summary' => $tableData['summary'],
+            'timeFormat' => $tableData['timeFormat'],
             'departments' => Department::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'shifts' => Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
+            'initialTableData' => $tableData,
         ]);
+    }
+
+    /**
+     * Build the attendance table payload for both the initial page render and
+     * later AJAX refreshes. Rendering the first table with the page avoids the
+     * transient first-request race that could leave the table on "Loading..."
+     * until Reload Visible was clicked, while filters/pagination stay AJAX-based.
+     */
+    private function attendanceTableData(Request $request, string $date): array
+    {
+        $query = Employee::with(['department', 'designation', 'defaultShift'])
+            ->where('employment_status', 'active')
+            ->orderBy('name');
+
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('employee_code', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('department_id')) {
+            $query->where('department_id', $request->department_id);
+        }
+
+        if ($request->filled('shift_id')) {
+            $shiftId = $request->shift_id;
+            $query->where(function ($q) use ($date, $shiftId) {
+                $q->where('default_shift_id', $shiftId)
+                    ->orWhereHas('shiftRosters', fn ($roster) => $roster->whereDate('roster_date', $date)->where('shift_id', $shiftId));
+            });
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->status;
+            if ($status === 'not_marked') {
+                $query->whereDoesntHave('attendances', fn ($q) => $q->whereDate('attendance_date', $date));
+            } else {
+                $query->whereHas('attendances', fn ($q) => $q->whereDate('attendance_date', $date)->where('status', $status));
+            }
+        }
+
+        $employees = $query->paginate(10)->withQueryString();
+        $employeeIds = $employees->pluck('id');
+        $attendanceMap = Attendance::whereIn('employee_id', $employeeIds)
+            ->whereDate('attendance_date', $date)
+            ->get()
+            ->keyBy('employee_id');
+        $rosterMap = ShiftRoster::whereIn('employee_id', $employeeIds)
+            ->whereDate('roster_date', $date)
+            ->get()
+            ->keyBy('employee_id');
+        $shifts = Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get();
+        $attendanceSetting = AttendanceSetting::first();
+        $weeklyOffDays = collect($attendanceSetting?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
+        $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
+            || Holiday::where('status', true)->whereDate('holiday_date', $date)->exists();
+        $timeFormat = HrSetting::first()?->time_format ?? 'h:i A';
+
+        return [
+            'employees' => $employees,
+            'attendanceMap' => $attendanceMap,
+            'rosterMap' => $rosterMap,
+            'shifts' => $shifts,
+            'date' => $date,
+            'isGlobalOffDay' => $isGlobalOffDay,
+            'attendanceSetting' => $attendanceSetting,
+            'timeFormat' => $timeFormat,
+            'summary' => $this->summaryForDate($date),
+        ];
     }
 
     public function storeBulk(Request $request)

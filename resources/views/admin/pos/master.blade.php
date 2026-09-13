@@ -251,6 +251,18 @@ let isMasterWaiter = @json(auth()->check() && auth()->user()->hasRole('waiter'))
 
   
 
+    function syncKitchenUnsentTables(tableIds) {
+        const unsentIds = new Set((tableIds || []).map(function(id) { return String(id); }));
+
+        $('.progga-pos-table-card').each(function() {
+            const $card = $(this);
+            const isUnsent = unsentIds.has(String($card.data('table-id')));
+            $card.toggleClass('kitchen-unsent', isUnsent)
+                .attr('data-kitchen-unsent', isUnsent ? '1' : '0')
+                .data('kitchen-unsent', isUnsent ? 1 : 0);
+        });
+    }
+
     function checkLiveNotifications() {
         if ($('.modal.show').length > 0 || !isPolling) return;
 
@@ -259,6 +271,7 @@ let isMasterWaiter = @json(auth()->check() && auth()->user()->hasRole('waiter'))
             type: "GET",
             success: function(res) {
                 if (res.status === 'success') {
+                    syncKitchenUnsentTables(res.kitchen_unsent_table_ids || []);
 
                     // POS workflow note.
                     if (res.order && !isMasterWaiter) {

@@ -29,7 +29,7 @@
             $editingStructure = $latestStructure;
             $componentMap = $editingStructure ? $editingStructure->components->keyBy('salary_component_id') : collect();
             $avatar = $employee->image
-                ? asset($employee->image)
+                ? asset('public/' . ltrim($employee->image, '/'))
                 : 'https://ui-avatars.com/api/?name=' . urlencode($employee->name) . '&background=21352a&color=d5aa65&size=120&bold=true';
         @endphp
 
@@ -112,8 +112,8 @@
                                         @error('basic_salary')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="progga-form-label">Overtime Rate per Hour</label>
-                                        <div class="input-group"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" name="overtime_rate" class="progga-form-control" value="{{ old('overtime_rate', $editingStructure?->overtime_rate ?? '') }}"></div>
+                                        <label class="progga-form-label">Overtime Rules</label>
+                                        <div class="alert alert-light border mb-0 py-2 px-3" style="font-size:12px">Day Off and GOV Off OT rates are configured from Employee Create/Edit using Global or Employee Custom rules.</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="progga-form-label">Payment Method</label>
@@ -179,9 +179,9 @@
                                                 <td><span class="hr-badge hr-badge-neutral">{{ $component->calculation_type === 'fixed' ? 'Employee-wise Fixed' : ucfirst($component->calculation_type) }}</span></td>
                                                 <td>
                                                     @if($component->calculation_type === 'fixed')
-                                                        <div class="input-group"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" class="progga-form-control component-value salary-calc-input" name="components[{{ $component->id }}][amount]" value="{{ $amount }}"></div>
+                                                        <div class="input-group"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" class="progga-form-control component-value salary-calc-input" name="components[{{ $component->id }}][amount]" value="{{ number_format((float) $amount, 2, '.', '') }}"></div>
                                                     @elseif($component->calculation_type === 'percentage')
-                                                        <div class="input-group"><input type="number" step="0.01" min="0" max="100" class="progga-form-control component-value salary-calc-input" name="components[{{ $component->id }}][percentage]" value="{{ $percentage }}"><span class="input-group-text">% of Basic</span></div>
+                                                        <div class="input-group"><input type="number" step="0.01" min="0" max="100" class="progga-form-control component-value salary-calc-input" name="components[{{ $component->id }}][percentage]" value="{{ number_format((float) $percentage, 2, '.', '') }}"><span class="input-group-text">% of Basic</span></div>
                                                     @else
                                                         <div class="hr-manual-component"><i class="bi bi-pencil-square"></i> Amount will be entered during monthly payroll.</div>
                                                     @endif

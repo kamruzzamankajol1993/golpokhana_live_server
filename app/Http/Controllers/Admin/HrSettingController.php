@@ -15,7 +15,9 @@ use App\Models\SalaryComponent;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class HrSettingController extends Controller
 {
@@ -56,6 +58,7 @@ class HrSettingController extends Controller
             'destroyLeaveType',
             'destroySalaryComponent',
             'destroyHoliday',
+            'cleanHrData',
         ]]);
     }
 
@@ -122,7 +125,7 @@ class HrSettingController extends Controller
             ->orderBy('name')
             ->get();
 
-        $salaryComponents = SalaryComponent::orderBy('type')
+        $salaryComponents = SalaryComponent::orderByRaw("CASE component_group WHEN 'salary' THEN 1 WHEN 'allowance' THEN 2 ELSE 3 END")
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get();
@@ -145,6 +148,84 @@ class HrSettingController extends Controller
             'holidays',
             'activeTab'
         ));
+    }
+
+    /**
+     * Clear HR operational/history data only.
+     *
+     * Employee master records, employee salary setup and every table managed from
+     * the HR Settings screen are intentionally preserved. POS, inventory, customer
+     * and application/global settings data are outside the scope of this action.
+     */
+    public function cleanHrData(Request $request)
+    {
+        $request->validate([
+            'confirmation' => ['required', 'in:CLEAR HR DATA'],
+        ], [
+            'confirmation.in' => 'Type CLEAR HR DATA to confirm the cleanup.',
+        ]);
+
+        $tablesToClear = [
+            // Payroll and recovery history. Employee salary structures are kept.
+            'payroll_recovery_allocations',
+            'salary_advance_repayments',
+            'loan_repayments',
+            'payroll_payments',
+            'payroll_item_components',
+            'payroll_items',
+            'payroll_runs',
+            'salary_advances',
+            'employee_loans',
+
+            // Leave, attendance and roster/history data.
+            'leave_requests',
+            'attendances',
+            'shift_rosters',
+            'employee_leave_balances',
+            'employee_branch_transfers',
+
+            // Shift setup belongs to the separate Shifts & Duty Roster module,
+            // not to the HR Settings screen, so it is cleared as requested.
+            'shifts',
+        ];
+
+        try {
+            $summary = DB::transaction(function () use ($tablesToClear) {
+                $deletedRows = 0;
+                $clearedTables = 0;
+
+                foreach ($tablesToClear as $table) {
+                    if (!Schema::hasTable($table)) {
+                        continue;
+                    }
+
+                    $count = DB::table($table)->count();
+                    if ($count > 0) {
+                        DB::table($table)->delete();
+                        $deletedRows += $count;
+                    }
+                    $clearedTables++;
+                }
+
+                return [
+                    'rows' => $deletedRows,
+                    'tables' => $clearedTables,
+                ];
+            }, 5);
+
+            return redirect()
+                ->route('hr.settings.index', ['tab' => 'general'])
+                ->with(
+                    'success',
+                    "HR data cleaned successfully. {$summary['rows']} row(s) removed from {$summary['tables']} HR table(s). Employees, employee salary setup and HR Settings data were preserved."
+                );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()
+                ->route('hr.settings.index', ['tab' => 'general'])
+                ->with('error', 'HR data cleanup failed. No POS, inventory or global settings data was targeted. Please check the application log.');
+        }
     }
 
     public function updateGeneral(Request $request)
@@ -199,8 +280,6 @@ class HrSettingController extends Controller
     public function updatePayroll(Request $request)
     {
         $validated = $request->validate([
-            'salary_cycle_start_day' => ['required', 'integer', 'min:1', 'max:31'],
-            'salary_cycle_end_day' => ['nullable', 'integer', 'min:1', 'max:31'],
             'working_days_method' => ['required', Rule::in(['calendar_days', 'fixed_days', 'attendance_days'])],
             'default_working_days' => ['required', 'numeric', 'min:1', 'max:31'],
             'absent_deduction_method' => ['required', Rule::in(['per_day', 'none'])],
@@ -208,23 +287,57 @@ class HrSettingController extends Controller
             'half_day_deduction_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'late_deduction_method' => ['required', Rule::in(['none', 'half_day_after_count', 'full_day_after_count'])],
             'late_count_threshold' => ['required', 'integer', 'min:1', 'max:31'],
-            'overtime_calculation_method' => ['required', Rule::in(['hourly_rate', 'fixed_rate', 'none'])],
-            'overtime_basis' => ['required', Rule::in(['employee_rate', 'basic_hourly'])],
-            'overtime_rate_multiplier' => ['required', 'numeric', 'min:0', 'max:10'],
+            'ot_day_off_calculation_type' => ['required', Rule::in(['fixed', 'percentage'])],
+            'ot_day_off_amount' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'ot_day_off_percentage' => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'ot_gov_off_calculation_type' => ['required', Rule::in(['fixed', 'percentage'])],
+            'ot_gov_off_amount' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'ot_gov_off_percentage' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'rounding_method' => ['required', Rule::in(['none', 'nearest', 'floor', 'ceil'])],
             'currency' => ['required', 'string', 'max:10'],
         ]);
 
-        $validated['salary_cycle_end_day'] = $request->filled('salary_cycle_end_day')
-            ? (int) $request->salary_cycle_end_day
-            : null;
-        $validated['allow_negative_salary'] = $request->boolean('allow_negative_salary');
-        $validated['lock_paid_payroll'] = $request->boolean('lock_paid_payroll');
-        $validated['allow_non_current_month_payroll'] = $request->boolean('allow_non_current_month_payroll');
-        $validated['status'] = true;
+        DB::beginTransaction();
+        try {
+            $setting = PayrollSetting::first() ?? new PayrollSetting();
+            $setting->fill([
+                'working_days_method' => $validated['working_days_method'],
+                'default_working_days' => $validated['default_working_days'],
+                'absent_deduction_method' => $validated['absent_deduction_method'],
+                'deduction_basis' => $validated['deduction_basis'],
+                'half_day_deduction_percentage' => $validated['half_day_deduction_percentage'],
+                'late_deduction_method' => $validated['late_deduction_method'],
+                'late_count_threshold' => $validated['late_count_threshold'],
+                'rounding_method' => $validated['rounding_method'],
+                'currency' => $validated['currency'],
+                'allow_negative_salary' => $request->boolean('allow_negative_salary'),
+                'lock_paid_payroll' => $request->boolean('lock_paid_payroll'),
+                'allow_non_current_month_payroll' => $request->boolean('allow_non_current_month_payroll'),
+                'status' => true,
+            ])->save();
 
-        $setting = PayrollSetting::first() ?? new PayrollSetting();
-        $setting->fill($validated)->save();
+            $this->saveOvertimeRule(
+                'ot_day_off',
+                'OT Amount (Day Off)',
+                'OT_DAY_OFF',
+                $validated['ot_day_off_calculation_type'],
+                (float) ($validated['ot_day_off_amount'] ?? 0),
+                (float) ($validated['ot_day_off_percentage'] ?? 0)
+            );
+            $this->saveOvertimeRule(
+                'ot_gov_off',
+                'OT Amount (GOV Off)',
+                'OT_GOV_OFF',
+                $validated['ot_gov_off_calculation_type'],
+                (float) ($validated['ot_gov_off_amount'] ?? 0),
+                (float) ($validated['ot_gov_off_percentage'] ?? 0)
+            );
+
+            DB::commit();
+        } catch (Exception $exception) {
+            DB::rollBack();
+            return back()->withInput()->with('error', 'Could not update payroll settings. ' . $exception->getMessage());
+        }
 
         return redirect()->route('hr.settings.index', ['tab' => 'payroll'])
             ->with('success', 'Payroll settings updated successfully!');
@@ -397,6 +510,37 @@ class HrSettingController extends Controller
         return $this->transactionalDelete($holiday, 'Holiday deleted successfully!');
     }
 
+    private function saveOvertimeRule(string $ruleCode, string $name, string $code, string $calculationType, float $amount, float $percentage): void
+    {
+        $component = SalaryComponent::where('rule_code', $ruleCode)->first();
+        if (!$component) {
+            $component = SalaryComponent::where('code', $code)->first() ?? new SalaryComponent();
+            $component->name = $component->name ?: $name;
+            $component->code = $component->code ?: $code;
+            $component->component_group = 'allowance';
+            $component->type = 'earning';
+            $component->rule_code = $ruleCode;
+            $component->sort_order = $ruleCode === 'ot_day_off' ? 110 : 120;
+            $component->show_zero_on_payslip = true;
+        }
+
+        // Keep the two OT components structurally consistent even when an old row is reused.
+        $component->component_group = 'allowance';
+        $component->type = 'earning';
+        $component->rule_code = $ruleCode;
+        $component->sort_order = $ruleCode === 'ot_day_off' ? 110 : 120;
+        $component->show_zero_on_payslip = true;
+        $component->calculation_type = $calculationType;
+        $component->percentage_of = $calculationType === 'percentage' ? 'basic_salary' : null;
+        $component->default_amount = $calculationType === 'fixed' ? $amount : 0;
+        $component->default_percentage = $calculationType === 'percentage' ? $percentage : 0;
+        $component->global_configured = true;
+        $component->apply_to_all = true;
+        $component->allow_employee_override = true;
+        $component->status = true;
+        $component->save();
+    }
+
     private function validateDepartment(Request $request, ?int $ignoreId = null): array
     {
         $validated = $request->validate([
@@ -480,9 +624,11 @@ class HrSettingController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120', Rule::unique('salary_components', 'name')->ignore($ignoreId)],
+            'payslip_label' => ['nullable', 'string', 'max:120'],
             'code' => ['nullable', 'string', 'max:30', Rule::unique('salary_components', 'code')->ignore($ignoreId)],
-            'type' => ['required', Rule::in(['earning', 'deduction'])],
+            'component_group' => ['required', Rule::in(['salary', 'allowance', 'deduction'])],
             'calculation_type' => ['required', Rule::in(['fixed', 'percentage', 'manual'])],
+            'rule_code' => ['nullable', Rule::in(['standard', 'ot_day_off', 'ot_gov_off', 'late', 'lwp_absent', 'salary_advance', 'loan_adjustment', 'basic'])],
             'percentage_of' => ['nullable', Rule::in(['basic_salary', 'gross_salary'])],
             'default_amount' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
             'default_percentage' => ['nullable', 'numeric', 'min:0', 'max:1000'],
@@ -490,16 +636,38 @@ class HrSettingController extends Controller
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
         ]);
 
-        $validated['percentage_of'] = $validated['calculation_type'] === 'percentage'
-            ? ($validated['percentage_of'] ?? 'basic_salary')
-            : null;
-        $validated['default_amount'] = $validated['calculation_type'] === 'fixed'
-            ? (float) ($validated['default_amount'] ?? 0)
-            : 0;
-        $validated['default_percentage'] = $validated['calculation_type'] === 'percentage'
-            ? (float) ($validated['default_percentage'] ?? 0)
-            : 0;
-        $validated['is_taxable'] = $request->boolean('is_taxable');
+        $validated['type'] = $validated['component_group'] === 'deduction' ? 'deduction' : 'earning';
+        $validated['payslip_label'] = trim((string) ($validated['payslip_label'] ?? '')) ?: null;
+        $validated['rule_code'] = $validated['rule_code'] ?? 'standard';
+
+        $isOvertime = in_array($validated['rule_code'], ['ot_day_off', 'ot_gov_off'], true);
+        $isAttendanceDeduction = in_array($validated['rule_code'], ['late', 'lwp_absent'], true);
+        $isAutoRecovery = in_array($validated['rule_code'], ['salary_advance', 'loan_adjustment'], true);
+        $isPayrollManual = $validated['calculation_type'] === 'manual' && !$isAutoRecovery;
+
+        if ($isOvertime && $validated['calculation_type'] === 'manual') {
+            throw ValidationException::withMessages([
+                'calculation_type' => 'Overtime must use Fixed Per Hour or % of Basic Hourly. Manual OT is not allowed.',
+            ]);
+        }
+
+        if ($validated['calculation_type'] === 'percentage') {
+            // OT is always based on Basic Hourly. Attendance deductions use the
+            // Payroll Settings deduction basis at calculation time. Standard
+            // percentage components keep the base selected by the client.
+            $validated['percentage_of'] = ($isOvertime || $isAttendanceDeduction)
+                ? 'basic_salary'
+                : ($validated['percentage_of'] ?? 'basic_salary');
+        } else {
+            $validated['percentage_of'] = null;
+        }
+        $validated['default_amount'] = $validated['calculation_type'] === 'fixed' ? (float) ($validated['default_amount'] ?? 0) : 0;
+        $validated['default_percentage'] = $validated['calculation_type'] === 'percentage' ? (float) ($validated['default_percentage'] ?? 0) : 0;
+        $validated['global_configured'] = $isPayrollManual || $isAutoRecovery ? true : $request->boolean('global_configured');
+        $validated['apply_to_all'] = $isPayrollManual || $isAutoRecovery ? true : $request->boolean('apply_to_all');
+        $validated['allow_employee_override'] = $isPayrollManual || $isAutoRecovery ? false : $request->boolean('allow_employee_override');
+        $validated['show_zero_on_payslip'] = $request->boolean('show_zero_on_payslip');
+        $validated['is_taxable'] = $validated['component_group'] === 'deduction' ? false : $request->boolean('is_taxable');
         $validated['is_required'] = $request->boolean('is_required');
         $validated['status'] = $request->boolean('status');
         $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);

@@ -131,6 +131,15 @@ public function index(\Illuminate\Http\Request $request)
         && Schema::hasColumn('pos_settings', 'random_half_order_button_visible')
         && (bool) ($posSetting->random_half_order_button_visible ?? true);
 
+    // QR/Waiter orders received by POS but not sent to the kitchen yet.
+    // Visual-only flag: existing table/order workflow remains unchanged.
+    $kitchenUnsentTableIds = Order::query()
+        ->whereNotNull('table_id')
+        ->whereIn('status', ['QR_Pending', 'QR_Hold', 'Waiter_Hold'])
+        ->pluck('table_id')
+        ->map(fn ($id) => (int) $id)
+        ->flip();
+
     // A dine-in table remains Occupied after a guest bill/pre-invoice is printed,
     // but the POS table screen shows it with a separate visual state.
     $billPrintedTableIds = collect();
@@ -147,6 +156,7 @@ public function index(\Illuminate\Http\Request $request)
     foreach ($tables as $table) {
         $table->bill_printed = strtolower((string) $table->initial_status) === 'occupied'
             && $billPrintedTableIds->has((int) $table->id);
+        $table->kitchen_unsent = $kitchenUnsentTableIds->has((int) $table->id);
     }
 
     $availCount = $tables->filter(function($table) { return strtolower($table->initial_status) === 'available'; })->count();
@@ -1034,6 +1044,19 @@ public function printSessionReport($id)
     $sessionStart = Carbon::parse($session->start_time);
     $reportEnd = Carbon::parse($session->end_time ?: now());
 
+    // Receivable Amount is money collected during THIS work period against
+    // dues that came from orders created before this session started.
+    // We use the due-payment ledger transaction time (created_at), not the old
+    // order creation time, so a due collected today appears in today's session.
+    $receivableAmountTotal = 0.0;
+    if (Schema::hasTable('order_due_payments')) {
+        $receivableAmountTotal = (float) DB::table('order_due_payments')
+            ->join('orders', 'order_due_payments.order_id', '=', 'orders.id')
+            ->whereBetween('order_due_payments.created_at', [$sessionStart, $reportEnd])
+            ->where('orders.created_at', '<', $sessionStart)
+            ->sum('order_due_payments.amount');
+    }
+
     // Only the order creation time decides whether an order belongs to this session.
     // Completed is NOT required; Pending/Cooking/Ready orders are included too.
     $orders = $this->reportableOrdersForSessionWindow($sessionStart, $reportEnd)
@@ -1283,7 +1306,8 @@ public function printSessionReport($id)
         'closingExtraSummary',
         'customerAdvance',
         'deliveryPartnerDue',
-        'deliveryPartnerIncome'
+        'deliveryPartnerIncome',
+        'receivableAmountTotal'
     ));
 }
 
@@ -3284,8 +3308,8 @@ public function tableReservationStatuses()
         }
 
         $selectedPaymentMethod = $request->input('payment_method');
-        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
-        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Bangla QR Card', 'Other'];
+        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'Bangla QR', 'LENDEN', 'Other'];
 
         if ($selectedPaymentMethod === 'Card'
             && !in_array(trim((string) $request->input('card_type')), $allowedCardTypes, true)) {
@@ -3466,6 +3490,9 @@ public function tableReservationStatuses()
             $givenMoney = max(0, round((float) ($request->given_money ?? 0), 2));
             $requiredGivenMoney = round($currentPayment + $tipsAmount, 2);
             $saveAsDueOrder = (int) $request->input('save_as_due_order', 0) === 1;
+            $allowInsufficientGivenMoney = Schema::hasTable('pos_settings')
+                && Schema::hasColumn('pos_settings', 'allow_payment_with_insufficient_given_money')
+                && (bool) (DB::table('pos_settings')->value('allow_payment_with_insufficient_given_money') ?? false);
 
             if ($givenMoney + 0.001 < $requiredGivenMoney) {
                 if (!$saveAsDueOrder) {
@@ -3473,40 +3500,52 @@ public function tableReservationStatuses()
 
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'You entered less money than the payment amount. Please correct the Given Money amount or save it as a Due Order.'
+                        'message' => 'You entered less money than the payment amount. Please correct the Given Money amount.'
                     ], 422);
                 }
 
-                $tipsAmount = min($tipsAmount, $givenMoney);
-                $receivedForBill = max(0, round($givenMoney - $tipsAmount, 2));
-                $currentPayment = min($currentPayment, $receivedForBill, $remainingPayable);
+                if (!$allowInsufficientGivenMoney) {
+                    DB::rollBack();
 
-                if ($paymentMethod === 'Cash') {
-                    $cash = $currentPayment;
-                    $card = 0;
-                    $mfc = 0;
-                } elseif ($paymentMethod === 'Card') {
-                    $cash = 0;
-                    $card = $currentPayment;
-                    $mfc = 0;
-                } elseif ($paymentMethod === 'Mobile Banking') {
-                    $cash = 0;
-                    $card = 0;
-                    $mfc = $currentPayment;
-                } elseif ($paymentMethod === 'Split') {
-                    $originalSplitTotal = max(0, round($cash + $card + $mfc, 2));
-                    if ($originalSplitTotal > 0 && $currentPayment > 0) {
-                        $cash = round($currentPayment * ($cash / $originalSplitTotal), 2);
-                        $card = round($currentPayment * ($card / $originalSplitTotal), 2);
-                        $mfc = max(0, round($currentPayment - $cash - $card, 2));
-                    } else {
-                        $cash = 0;
-                        $card = 0;
-                        $mfc = 0;
-                    }
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Save as Due Order is disabled in POS Settings.'
+                    ], 422);
                 }
 
-                $totalPaid = min((float) $grand_total, round($advanceAmount + $currentPayment, 2));
+                // Save only the amount actually received and carry the shortage as Due.
+                if ($saveAsDueOrder) {
+                    $tipsAmount = min($tipsAmount, $givenMoney);
+                    $receivedForBill = max(0, round($givenMoney - $tipsAmount, 2));
+                    $currentPayment = min($currentPayment, $receivedForBill, $remainingPayable);
+
+                    if ($paymentMethod === 'Cash') {
+                        $cash = $currentPayment;
+                        $card = 0;
+                        $mfc = 0;
+                    } elseif ($paymentMethod === 'Card') {
+                        $cash = 0;
+                        $card = $currentPayment;
+                        $mfc = 0;
+                    } elseif ($paymentMethod === 'Mobile Banking') {
+                        $cash = 0;
+                        $card = 0;
+                        $mfc = $currentPayment;
+                    } elseif ($paymentMethod === 'Split') {
+                        $originalSplitTotal = max(0, round($cash + $card + $mfc, 2));
+                        if ($originalSplitTotal > 0 && $currentPayment > 0) {
+                            $cash = round($currentPayment * ($cash / $originalSplitTotal), 2);
+                            $card = round($currentPayment * ($card / $originalSplitTotal), 2);
+                            $mfc = max(0, round($currentPayment - $cash - $card, 2));
+                        } else {
+                            $cash = 0;
+                            $card = 0;
+                            $mfc = 0;
+                        }
+                    }
+
+                    $totalPaid = min((float) $grand_total, round($advanceAmount + $currentPayment, 2));
+                }
             }
 
             // Advance is excluded from Given Money/Change because it was collected at booking time.

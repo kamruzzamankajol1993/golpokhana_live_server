@@ -53,11 +53,49 @@ class LoginController extends Controller
         // do not ask each user/browser to Continue Previous or Start New.
         $request->session()->forget('force_pos_unfinished_prompt');
 
-        if ($user->hasRole('waiter')) {
+        // Keep the application's existing role-based landing pages intact.
+        // HR dashboard is only the login landing page for users whose assigned
+        // role is actually HR-related. Permission alone is not enough because
+        // Super Admin roles also own HR permissions but must keep the normal dashboard.
+        if ($this->hasHrLandingRole($user)) {
+            return redirect()->route('hr.dashboard');
+        }
+
+        // Preserve the existing waiter landing page and support legacy role casing.
+        if ($this->hasWaiterLandingRole($user)) {
             return redirect()->route('pos.index');
         }
 
         return redirect()->route('home');
+    }
+
+    private function hasHrLandingRole($user): bool
+    {
+        $roleNames = $user->getRoleNames()
+            ->map(fn ($role) => strtolower(trim((string) $role)));
+
+        // Super Admin / Super Admin Limited keep the application's original
+        // post-login destination even though they have HR permissions.
+        if ($roleNames->contains(fn ($role) => in_array($role, ['super admin', 'super admin limited'], true))) {
+            return false;
+        }
+
+        return $roleNames->contains(function ($role) {
+            $normalized = preg_replace('/[\s_-]+/', ' ', $role);
+
+            return $normalized === 'hr'
+                || str_starts_with($normalized, 'hr ')
+                || $normalized === 'human resource'
+                || $normalized === 'human resources'
+                || str_starts_with($normalized, 'human resource ')
+                || str_starts_with($normalized, 'human resources ');
+        });
+    }
+
+    private function hasWaiterLandingRole($user): bool
+    {
+        return $user->getRoleNames()
+            ->contains(fn ($role) => strtolower(trim((string) $role)) === 'waiter');
     }
 
     private function closeTimedOutPosSessionsForUser(int $userId): void

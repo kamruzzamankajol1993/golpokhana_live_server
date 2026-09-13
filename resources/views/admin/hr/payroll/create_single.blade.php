@@ -92,6 +92,7 @@
                         <div class="payroll-check-grid payroll-single-check-grid">
                             <div class="payroll-check-card"><span>Eligible</span><strong id="singleEligible">—</strong></div>
                             <div class="payroll-check-card"><span>Salary Setup</span><strong id="singleSalaryReady">—</strong></div>
+                            <div class="payroll-check-card"><span>Missing Rules</span><strong id="singleMissingRules">—</strong></div>
                             <div class="payroll-check-card warning"><span>Missing Attendance</span><strong id="singleMissingAttendance">—</strong></div>
                             <div class="payroll-check-card warning"><span>Pending Leave</span><strong id="singlePendingLeave">—</strong></div>
                         </div>
@@ -102,6 +103,7 @@
                         <div id="singleExistingRunAlert" class="alert alert-info mt-3 d-none"></div>
                         <div id="singleExistingItemAlert" class="alert alert-danger mt-3 d-none"></div>
                         <div id="singleSalaryAlert" class="alert alert-danger mt-3 d-none"></div>
+                        <div id="singleRulesAlert" class="alert alert-danger mt-3 d-none"></div>
                         <div id="singleEligibilityAlert" class="alert alert-danger mt-3 d-none"></div>
                         <div id="singleLockedAlert" class="alert alert-danger mt-3 d-none"></div>
                     </div>
@@ -122,6 +124,21 @@
                         <div class="hr-card-body">
                             @if($errors->any())
                                 <div class="alert alert-danger">{{ $errors->first() }}</div>
+                            @endif
+
+                            @if($manualComponents->isNotEmpty())
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center justify-content-between mb-2"><div class="fw-bold">Monthly Manual Values</div><span class="hr-muted">Blank = 0</span></div>
+                                    <div class="alert alert-light border py-2 px-3 mb-2" style="font-size:12px">These values belong only to this payroll month and are not saved in Employee Create/Edit. Example: <strong>Adjustment (Last Month) Addition</strong>, Arrear, Fine and Other.</div>
+                                    <div class="row g-2">
+                                        @foreach($manualComponents as $component)
+                                            <div class="col-md-6">
+                                                <label class="progga-form-label">{{ $component->display_label }} <span class="hr-person-meta">({{ ucfirst($component->display_group) }})</span></label>
+                                                <div class="input-group"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" name="manual_components[{{ $component->id }}]" class="progga-form-control" value="{{ old('manual_components.'.$component->id, '') }}" placeholder="0.00"></div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
                             @endif
 
                             <label class="payroll-confirm-row">
@@ -174,9 +191,9 @@ $(function () {
 
     function resetCheck() {
         lastCheck = null;
-        $('#singleEligible, #singleSalaryReady, #singleMissingAttendance, #singlePendingLeave').text('—');
+        $('#singleEligible, #singleSalaryReady, #singleMissingRules, #singleMissingAttendance, #singlePendingLeave').text('—');
         $('#singlePrecheckLabel').text('Select an employee and month to check readiness.');
-        $('#singleFutureAlert, #singleExistingRunAlert, #singleExistingItemAlert, #singleSalaryAlert, #singleEligibilityAlert, #singleLockedAlert').addClass('d-none').empty();
+        $('#singleFutureAlert, #singleExistingRunAlert, #singleExistingItemAlert, #singleSalaryAlert, #singleRulesAlert, #singleEligibilityAlert, #singleLockedAlert').addClass('d-none').empty();
         createBtn.prop('disabled', true);
     }
 
@@ -185,6 +202,7 @@ $(function () {
         $('#singlePrecheckLabel').text(data.employee_code + ' — ' + data.employee_name + ' · ' + data.month_label);
         $('#singleEligible').text(data.eligible ? 'Yes' : 'No');
         $('#singleSalaryReady').text(data.salary_ready ? 'Ready' : 'Missing');
+        $('#singleMissingRules').text(data.missing_rule_count || 0);
         $('#singleMissingAttendance').text(data.missing_attendance_count);
         $('#singlePendingLeave').text(data.pending_leave_count);
         $('#singleEmployeeInput').val(data.employee_id);
@@ -203,11 +221,13 @@ $(function () {
             $('#singleExistingItemAlert').addClass('d-none').empty();
         }
 
-        $('#singleSalaryAlert').toggleClass('d-none', data.salary_ready).text(data.salary_ready ? '' : 'Employee salary setup is missing for the selected month.');
+        $('#singleSalaryAlert').toggleClass('d-none', data.salary_ready).text(data.salary_ready ? '' : (data.salary_message || 'Employee salary setup is missing for the selected month.'));
+        const missingRules = data.missing_rules || [];
+        $('#singleRulesAlert').toggleClass('d-none', missingRules.length === 0).html(missingRules.length ? '<strong>Missing payroll rule(s):</strong> ' + missingRules.join(', ') + '. <a class="alert-link" href="' + @json(route('hr.settings.index', ['tab' => 'salary-components'])) + '" target="_blank">Open HR Settings</a> or update this employee payroll setup.' : '');
         $('#singleEligibilityAlert').toggleClass('d-none', data.eligible).text(data.eligible ? '' : 'Employee is not eligible for this month based on joining/exit dates.');
         $('#singleLockedAlert').toggleClass('d-none', !data.run_locked).text(data.run_locked ? 'This payroll run is fully paid and locked by Payroll Settings.' : '');
 
-        createBtn.prop('disabled', !data.eligible || !data.salary_ready || !!data.existing_item || !!data.run_locked);
+        createBtn.prop('disabled', !data.eligible || !data.salary_ready || (data.missing_rule_count || 0) > 0 || !!data.existing_item || !!data.run_locked);
     }
 
     function runCheck() {

@@ -5,6 +5,7 @@ namespace App\Services\Hr;
 use App\Models\Attendance;
 use App\Models\AttendanceSetting;
 use App\Models\Employee;
+use App\Models\EmployeeSalaryComponent;
 use App\Models\EmployeeSalaryStructure;
 use App\Models\Holiday;
 use App\Models\LeaveRequest;
@@ -15,6 +16,7 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class PayrollCalculator
 {
@@ -22,567 +24,319 @@ class PayrollCalculator
     private AttendanceSetting $attendanceSetting;
     private Collection $salaryComponents;
 
-    public function __construct()
+    public function __construct(private PayrollRecoveryService $recoveryService)
     {
         $this->payrollSetting = PayrollSetting::firstOrCreate([], [
-            'salary_cycle_start_day' => 1,
-            'working_days_method' => 'calendar_days',
-            'default_working_days' => 30,
-            'absent_deduction_method' => 'per_day',
-            'deduction_basis' => 'basic_salary',
-            'half_day_deduction_percentage' => 50,
-            'late_deduction_method' => 'none',
-            'late_count_threshold' => 3,
-            'overtime_calculation_method' => 'hourly_rate',
-            'overtime_basis' => 'employee_rate',
-            'overtime_rate_multiplier' => 1.5,
-            'rounding_method' => 'nearest',
-            'allow_negative_salary' => false,
-            'lock_paid_payroll' => true,
-            'allow_non_current_month_payroll' => false,
-            'currency' => 'BDT',
-            'status' => true,
+            'salary_cycle_start_day'=>1,'working_days_method'=>'calendar_days','default_working_days'=>30,
+            'absent_deduction_method'=>'per_day','deduction_basis'=>'basic_salary','half_day_deduction_percentage'=>50,
+            'late_deduction_method'=>'none','late_count_threshold'=>3,'overtime_calculation_method'=>'hourly_rate',
+            'overtime_basis'=>'employee_rate','overtime_rate_multiplier'=>1.5,'rounding_method'=>'nearest',
+            'allow_negative_salary'=>false,'lock_paid_payroll'=>true,'allow_non_current_month_payroll'=>false,
+            'currency'=>'BDT','status'=>true,
         ]);
-
         $this->attendanceSetting = AttendanceSetting::firstOrCreate([], [
-            'grace_minutes' => 10,
-            'half_day_after_minutes' => 240,
-            'absent_after_minutes' => 480,
-            'minimum_overtime_minutes' => 30,
-            'default_working_hours' => 8,
-            'weekly_off_days' => [],
-            'allow_manual_attendance' => true,
-            'auto_calculate_late' => true,
-            'auto_calculate_overtime' => true,
-            'status' => true,
+            'grace_minutes'=>10,'half_day_after_minutes'=>240,'absent_after_minutes'=>480,'minimum_overtime_minutes'=>30,
+            'default_working_hours'=>8,'weekly_off_days'=>[],'allow_manual_attendance'=>true,
+            'auto_calculate_late'=>true,'auto_calculate_overtime'=>true,'status'=>true,
         ]);
+        $this->reloadComponents();
+    }
 
+    private function reloadComponents(): void
+    {
         $this->salaryComponents = SalaryComponent::where('status', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get()
-            ->keyBy(fn (SalaryComponent $component) => strtoupper((string) ($component->code ?: $component->name)));
+            ->orderByRaw("CASE component_group WHEN 'salary' THEN 1 WHEN 'allowance' THEN 2 ELSE 3 END")
+            ->orderBy('sort_order')->orderBy('name')->get();
     }
 
     public function period(string $month): array
     {
-        $monthDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-
-        return [$monthDate->copy()->startOfMonth(), $monthDate->copy()->endOfMonth()];
+        $date=Carbon::createFromFormat('Y-m',$month)->startOfMonth();
+        return [$date->copy()->startOfMonth(),$date->copy()->endOfMonth()];
     }
 
     public function eligibleEmployeesQuery(Carbon $start, Carbon $end): Builder
     {
-        return Employee::query()
-            ->whereDate('join_date', '<=', $end)
-            ->where(function (Builder $query) use ($start) {
-                $query->whereNull('exit_date')->orWhereDate('exit_date', '>=', $start);
-            });
+        return Employee::query()->whereDate('join_date','<=',$end)
+            ->where(fn(Builder $q)=>$q->whereNull('exit_date')->orWhereDate('exit_date','>=',$start));
     }
 
     public function precheck(string $month): array
     {
-        [$start, $end] = $this->period($month);
-        $employees = $this->eligibleEmployeesQuery($start, $end)
-            ->with(['department', 'designation'])
-            ->orderBy('employee_code')
-            ->get();
-
-        $missingSalary = [];
-        $missingAttendance = 0;
-
-        foreach ($employees as $employee) {
-            if (!$this->salaryStructureFor($employee, $end)) {
-                $missingSalary[] = [
-                    'id' => $employee->id,
-                    'code' => $employee->employee_code,
-                    'name' => $employee->name,
+        [$start,$end]=$this->period($month);
+        $employees=$this->eligibleEmployeesQuery($start,$end)->with(['department','designation'])->orderBy('employee_code')->get();
+        $missingSalary=[];$missingAttendance=0;$missingRules=[];
+        foreach($employees as $employee){
+            $structure=$this->salaryStructureFor($employee,$end);
+            if(!$structure){
+                $missingSalary[]=[
+                    'id'=>$employee->id,
+                    'code'=>$employee->employee_code,
+                    'name'=>$employee->name,
+                    'reason'=>$this->salaryMissingReason($employee,$end),
                 ];
-            }
-
-            $missingAttendance += $this->missingAttendanceCount($employee, $start, $end);
+            } else foreach($this->missingRulesFor($structure) as $rule){$missingRules[]=['employee_id'=>$employee->id,'employee_code'=>$employee->employee_code,'employee_name'=>$employee->name,'component'=>$rule];}
+            $missingAttendance+=$this->missingAttendanceCount($employee,$start,$end);
         }
-
-        $pendingLeave = LeaveRequest::where('status', 'pending')
-            ->whereDate('from_date', '<=', $end)
-            ->whereDate('to_date', '>=', $start)
-            ->count();
-
+        $pending=LeaveRequest::where('status','pending')->whereDate('from_date','<=',$end)->whereDate('to_date','>=',$start)->count();
         return [
-            'month' => $start->format('Y-m'),
-            'month_label' => $start->format('F Y'),
-            'period_start' => $start->toDateString(),
-            'period_end' => $end->toDateString(),
-            'eligible_employees' => $employees->count(),
-            'salary_ready' => $employees->count() - count($missingSalary),
-            'missing_salary_count' => count($missingSalary),
-            'missing_salary' => $missingSalary,
-            'missing_attendance_count' => $missingAttendance,
-            'pending_leave_count' => $pendingLeave,
+            'month'=>$start->format('Y-m'),'month_label'=>$start->format('F Y'),'period_start'=>$start->toDateString(),'period_end'=>$end->toDateString(),
+            'eligible_employees'=>$employees->count(),'salary_ready'=>$employees->count()-count($missingSalary),'missing_salary_count'=>count($missingSalary),'missing_salary'=>$missingSalary,
+            'missing_rule_count'=>count($missingRules),'missing_rules'=>$missingRules,'missing_attendance_count'=>$missingAttendance,'pending_leave_count'=>$pending,
         ];
     }
 
-
-    public function precheckEmployee(Employee $employee, string $month): array
+    public function precheckEmployee(Employee $employee,string $month): array
     {
-        [$start, $end] = $this->period($month);
-
-        $eligible = $employee->join_date
-            && $employee->join_date->lte($end)
-            && (!$employee->exit_date || $employee->exit_date->gte($start));
-
-        $hasSalary = $eligible && (bool) $this->salaryStructureFor($employee, $end);
-        $missingAttendance = $eligible ? $this->missingAttendanceCount($employee, $start, $end) : 0;
-        $pendingLeave = $eligible
-            ? LeaveRequest::where('employee_id', $employee->id)
-                ->where('status', 'pending')
-                ->whereDate('from_date', '<=', $end)
-                ->whereDate('to_date', '>=', $start)
-                ->count()
-            : 0;
-
+        [$start,$end]=$this->period($month);
+        $eligible=$employee->join_date && $employee->join_date->lte($end) && (!$employee->exit_date || $employee->exit_date->gte($start));
+        $structure=$eligible?$this->salaryStructureFor($employee,$end):null;
+        $missingRules=$structure?$this->missingRulesFor($structure):[];
+        $pending=$eligible?LeaveRequest::where('employee_id',$employee->id)->where('status','pending')->whereDate('from_date','<=',$end)->whereDate('to_date','>=',$start)->count():0;
         return [
-            'month' => $start->format('Y-m'),
-            'month_label' => $start->format('F Y'),
-            'period_start' => $start->toDateString(),
-            'period_end' => $end->toDateString(),
-            'employee_id' => $employee->id,
-            'employee_code' => $employee->employee_code,
-            'employee_name' => $employee->name,
-            'eligible' => $eligible,
-            'salary_ready' => $hasSalary,
-            'missing_attendance_count' => $missingAttendance,
-            'pending_leave_count' => $pendingLeave,
+            'month'=>$start->format('Y-m'),'month_label'=>$start->format('F Y'),'period_start'=>$start->toDateString(),'period_end'=>$end->toDateString(),
+            'employee_id'=>$employee->id,'employee_code'=>$employee->employee_code,'employee_name'=>$employee->name,'eligible'=>$eligible,'salary_ready'=>(bool)$structure,
+            'salary_message'=>$eligible && !$structure ? $this->salaryMissingReason($employee,$end) : null,
+            'missing_rule_count'=>count($missingRules),'missing_rules'=>$missingRules,'missing_attendance_count'=>$eligible?$this->missingAttendanceCount($employee,$start,$end):0,'pending_leave_count'=>$pending,
         ];
     }
 
-    public function calculate(Employee $employee, Carbon $start, Carbon $end): array
+    public function calculate(Employee $employee,Carbon $start,Carbon $end,array $manualComponentAmounts=[]): array
     {
-        $structure = $this->salaryStructureFor($employee, $end);
-        if (!$structure) {
-            throw new \RuntimeException("Salary structure is missing for {$employee->employee_code}.");
-        }
+        $this->reloadComponents();
+        $structure=$this->salaryStructureFor($employee,$end);
+        if(!$structure) throw new RuntimeException($this->salaryMissingReason($employee,$end));
+        $missing=$this->missingRulesFor($structure);
+        if($missing) throw new RuntimeException('Payroll rule is not configured: '.implode(', ',$missing).'. Update HR Settings or Employee payroll setup.');
 
-        $employmentStart = $employee->join_date && $employee->join_date->gt($start)
-            ? $employee->join_date->copy()->startOfDay()
-            : $start->copy();
-        $employmentEnd = $employee->exit_date && $employee->exit_date->lt($end)
-            ? $employee->exit_date->copy()->startOfDay()
-            : $end->copy();
+        $employmentStart=$employee->join_date && $employee->join_date->gt($start)?$employee->join_date->copy()->startOfDay():$start->copy();
+        $employmentEnd=$employee->exit_date && $employee->exit_date->lt($end)?$employee->exit_date->copy()->startOfDay():$end->copy();
+        $monthDays=max(1,$start->daysInMonth);$payableCalendarDays=max(0,$employmentStart->diffInDays($employmentEnd)+1);$factor=min(1,$payableCalendarDays/$monthDays);
+        $fullBasic=(float)$structure->basic_salary;$proratedBasic=round($fullBasic*$factor,2);
 
-        $monthDays = max(1, $start->daysInMonth);
-        $payableCalendarDays = max(0, $employmentStart->diffInDays($employmentEnd) + 1);
-        $prorationFactor = min(1, $payableCalendarDays / $monthDays);
-        $fullBasicSalary = (float) $structure->basic_salary;
-        $proratedBasic = round($fullBasicSalary * $prorationFactor, 2);
+        $attendanceRows=Attendance::where('employee_id',$employee->id)->whereBetween('attendance_date',[$employmentStart,$employmentEnd])->get();
+        $statusCounts=$attendanceRows->countBy('status');
+        $unpaidLeaveDays=$this->unpaidLeaveDays($employee,$employmentStart,$employmentEnd);
+        $paidLeaveDays=max(0,(float)($statusCounts['leave']??0)-$unpaidLeaveDays);
+        $expectedWorkingDays=max(1,$this->expectedWorkingDates($employee,$employmentStart,$employmentEnd)->count());
+        $salaryDivisor=match($this->payrollSetting->working_days_method){'fixed_days'=>max(1,(float)$this->payrollSetting->default_working_days),'attendance_days'=>$expectedWorkingDays,default=>$monthDays};
+        $dailyBasic=$salaryDivisor>0?$fullBasic/$salaryDivisor:0;
+        $hoursPerDay=max(1,(float)$this->attendanceSetting->default_working_hours);
+        $basicHourly=$dailyBasic/$hoursPerDay;
 
-        $attendanceRows = Attendance::where('employee_id', $employee->id)
-            ->whereBetween('attendance_date', [$employmentStart, $employmentEnd])
-            ->get();
-        $statusCounts = $attendanceRows->countBy('status');
-        $overtimeMinutes = (int) $attendanceRows->sum('overtime_minutes');
-        $unpaidLeaveDays = $this->unpaidLeaveDays($employee, $employmentStart, $employmentEnd);
-        $paidLeaveDays = max(0, (float) ($statusCounts['leave'] ?? 0) - $unpaidLeaveDays);
-        $expectedWorkingDays = max(1, $this->expectedWorkingDates($employee, $employmentStart, $employmentEnd)->count());
+        $ot=$this->splitOvertimeMinutes($employee,$attendanceRows,$employmentStart,$employmentEnd);
+        $recovery=$this->recoveryService->preview($employee,$start);
+        $components=[];$runningSalary=0.0;$runningAllowance=0.0;
 
-        $salaryDivisor = match ($this->payrollSetting->working_days_method) {
-            'fixed_days' => max(1, (float) $this->payrollSetting->default_working_days),
-            'attendance_days' => $expectedWorkingDays,
-            default => $monthDays,
-        };
+        foreach($this->salaryComponents as $master){
+            $code=strtoupper((string)($master->code?:'COMP-'.$master->id));
+            $group=$master->display_group;
+            if($code==='BASIC'){
+                $row=$this->componentRow($master,'salary','employee_salary',$fullBasic,$factor,$proratedBasic,false,(int)$master->sort_order);
+                $components[]=$row;$runningSalary+=(float)$row['amount'];continue;
+            }
 
-        // Use the full monthly rate for per-day deductions. The earning side is
-        // prorated separately for joining/exit dates; using the prorated amount here
-        // would under-deduct an absence for a mid-month joiner.
-        $baseForDeduction = $this->payrollSetting->deduction_basis === 'gross_salary'
-            ? $this->estimatedProratedGross($structure, 1, $fullBasicSalary)
-            : $fullBasicSalary;
-        $dailyRate = $salaryDivisor > 0 ? $baseForDeduction / $salaryDivisor : 0;
+            $ruleCode=strtolower((string)($master->rule_code?:'standard'));
 
-        $components = [];
-        $components[] = $this->componentRow(
-            $this->componentByCode('BASIC'),
-            'Basic Salary',
-            'BASIC',
-            'earning',
-            'employee_fixed',
-            $fullBasicSalary,
-            $prorationFactor,
-            $proratedBasic,
-            false,
-            1
-        );
-
-        $reservedCodes = ['BASIC', 'OT', 'ABSENT', 'UNPAID', 'HALF-DAY', 'LATE'];
-        foreach ($structure->components as $employeeComponent) {
-            if (!$employeeComponent->is_active || !$employeeComponent->salaryComponent) {
+            // Manual-at-payroll components are intentionally not part of the employee master setup.
+            // Their value is supplied for the current payroll only and stored in the payroll snapshot.
+            if($master->calculation_type==='manual' && !in_array($ruleCode,['salary_advance','loan_adjustment'],true)){
+                $amount=round(max(0,(float)($manualComponentAmounts[$master->id]??0)),2);
+                if(abs($amount)<.005 && !$master->show_zero_on_payslip) continue;
+                $row=$this->componentRow($master,$group,'payroll_manual',$amount,$amount>0?1:0,$amount,true,(int)$master->sort_order,'manual');
+                $components[]=$row;
+                if($group==='salary')$runningSalary+=(float)$row['amount']; elseif($group==='allowance')$runningAllowance+=(float)$row['amount'];
                 continue;
             }
 
-            $master = $employeeComponent->salaryComponent;
-            $code = strtoupper((string) ($master->code ?: 'COMP-' . $master->id));
-            if (in_array($code, $reservedCodes, true)) {
-                continue;
+            $rule=$this->resolveRule($master,$structure);
+            if(!$rule['applicable']) continue;
+            $amount=0.0;$rate=0.0;$qty=1.0;$calcType=$rule['calculation_type'];$manual=false;$source=$rule['source'];
+
+            if($ruleCode==='ot_day_off' || $ruleCode==='ot_gov_off'){
+                $minutes=$ruleCode==='ot_gov_off'?$ot['gov']:$ot['day_off'];$qty=round($minutes/60,4);
+                if($calcType==='percentage'){$rate=round($basicHourly*((float)$rule['percentage']/100),4);}else{$rate=(float)$rule['amount'];}
+                $amount=round($rate*$qty,2);$calcType='overtime_hours';
+            } elseif($ruleCode==='late'){
+                $lateDays=(float)($statusCounts['late']??0);$qty=$this->lateEquivalentDays($lateDays);
+                $deductionBase=$this->payrollSetting->deduction_basis==='gross_salary'?max(0,$runningSalary+$runningAllowance):$fullBasic;
+                $dailyDeductionRate=$salaryDivisor>0?$deductionBase/$salaryDivisor:0;
+                if($calcType==='percentage'){$rate=round($dailyDeductionRate*((float)$rule['percentage']/100),4);}else{$rate=(float)$rule['amount'];}
+                $amount=round($rate*$qty,2);$calcType='late_rule';
+            } elseif($ruleCode==='lwp_absent'){
+                $absent=(float)($statusCounts['absent']??0);$half=(float)($statusCounts['half_day']??0);$halfFactor=max(0,min(100,(float)$this->payrollSetting->half_day_deduction_percentage))/100;
+                $automaticAbsent=$this->payrollSetting->absent_deduction_method==='per_day'?$absent:0;
+                $qty=$automaticAbsent+$unpaidLeaveDays+($half*$halfFactor);
+                $deductionBase=$this->payrollSetting->deduction_basis==='gross_salary'?max(0,$runningSalary+$runningAllowance):$fullBasic;
+                $dailyDeductionRate=$salaryDivisor>0?$deductionBase/$salaryDivisor:0;
+                if($calcType==='percentage'){$rate=round($dailyDeductionRate*((float)$rule['percentage']/100),4);}else{$rate=(float)$rule['amount'];}
+                $amount=round($rate*$qty,2);$calcType='attendance_leave_rule';
+            } elseif($ruleCode==='salary_advance'){
+                $amount=(float)$recovery['salary_advance'];$rate=$amount;$qty=$amount>0?1:0;$calcType='auto_recovery';$manual=false;$source='salary_advance';
+            } elseif($ruleCode==='loan_adjustment'){
+                $amount=(float)$recovery['loan'];$rate=$amount;$qty=$amount>0?1:0;$calcType='auto_recovery';$manual=false;$source='loan';
+            } elseif($calcType==='fixed'){
+                $rate=(float)$rule['amount'];$qty=$group==='salary'?$factor:1;$amount=round($rate*$qty,2);
+            } elseif($calcType==='percentage'){
+                $rate=(float)$rule['percentage'];$base=$master->percentage_of==='gross_salary'?($runningSalary+$runningAllowance):$proratedBasic;$qty=$base;$amount=round($base*$rate/100,2);
             }
 
-            $amount = 0;
-            $rate = 0;
-            $quantity = 1;
-            $isManual = $employeeComponent->calculation_type === 'manual';
-
-            if ($employeeComponent->calculation_type === 'fixed') {
-                $rate = (float) $employeeComponent->amount;
-                $quantity = $prorationFactor;
-                $amount = round($rate * $quantity, 2);
-            } elseif ($employeeComponent->calculation_type === 'percentage') {
-                $rate = (float) $employeeComponent->percentage;
-                $quantity = $proratedBasic;
-                $amount = round($proratedBasic * $rate / 100, 2);
-            }
-
-            $components[] = $this->componentRow(
-                $master,
-                $master->name,
-                $code,
-                $employeeComponent->component_type,
-                $employeeComponent->calculation_type,
-                $rate,
-                $quantity,
-                $amount,
-                $isManual,
-                (int) $master->sort_order + ($master->type === 'deduction' ? 100 : 10)
-            );
+            if(abs($amount)<.005 && !$master->show_zero_on_payslip) continue;
+            $row=$this->componentRow($master,$group,$source,$rate,$qty,$amount,$manual,(int)$master->sort_order,$calcType);
+            $components[]=$row;
+            if($group==='salary')$runningSalary+=(float)$row['amount']; elseif($group==='allowance')$runningAllowance+=(float)$row['amount'];
         }
 
-        $overtimeHours = round($overtimeMinutes / 60, 4);
-        $overtimeRate = $this->resolveOvertimeRate($structure, $fullBasicSalary, $salaryDivisor);
-        $overtimeAmount = $this->payrollSetting->overtime_calculation_method === 'none'
-            ? 0
-            : round($overtimeHours * $overtimeRate, 2);
-        $components[] = $this->componentRow(
-            $this->componentByCode('OT'),
-            'Overtime',
-            'OT',
-            'earning',
-            'overtime_hours',
-            $overtimeRate,
-            $overtimeHours,
-            $overtimeAmount,
-            false,
-            90
-        );
-
-        $absentDays = (float) ($statusCounts['absent'] ?? 0);
-        $absentAmount = $this->payrollSetting->absent_deduction_method === 'per_day'
-            ? round($dailyRate * $absentDays, 2)
-            : 0;
-        $components[] = $this->componentRow(
-            $this->componentByCode('ABSENT'),
-            'Absent Deduction',
-            'ABSENT',
-            'deduction',
-            'attendance_days',
-            $dailyRate,
-            $absentDays,
-            $absentAmount,
-            false,
-            101
-        );
-
-        $unpaidAmount = round($dailyRate * $unpaidLeaveDays, 2);
-        $components[] = $this->componentRow(
-            $this->componentByCode('UNPAID'),
-            'Unpaid Leave Deduction',
-            'UNPAID',
-            'deduction',
-            'leave_days',
-            $dailyRate,
-            $unpaidLeaveDays,
-            $unpaidAmount,
-            false,
-            102
-        );
-
-        $halfDays = (float) ($statusCounts['half_day'] ?? 0);
-        $halfRate = max(0, min(100, (float) $this->payrollSetting->half_day_deduction_percentage)) / 100;
-        $halfDayAmount = round($dailyRate * $halfRate * $halfDays, 2);
-        $components[] = $this->componentRow(
-            $this->componentByCode('HALF-DAY'),
-            'Half Day Deduction',
-            'HALF-DAY',
-            'deduction',
-            'half_days',
-            $dailyRate * $halfRate,
-            $halfDays,
-            $halfDayAmount,
-            false,
-            103
-        );
-
-        $lateDays = (float) ($statusCounts['late'] ?? 0);
-        $lateEquivalentDays = $this->lateEquivalentDays($lateDays);
-        $lateAmount = round($dailyRate * $lateEquivalentDays, 2);
-        $components[] = $this->componentRow(
-            $this->componentByCode('LATE'),
-            'Late Deduction',
-            'LATE',
-            'deduction',
-            'late_count',
-            $dailyRate,
-            $lateEquivalentDays,
-            $lateAmount,
-            false,
-            104
-        );
-
-        $gross = round(collect($components)->where('component_type', 'earning')->sum('amount'), 2);
-        $deduction = round(collect($components)->where('component_type', 'deduction')->sum('amount'), 2);
-        $net = $this->roundNet($gross - $deduction);
-        if (!$this->payrollSetting->allow_negative_salary) {
-            $net = max(0, $net);
-        }
+        $salaryTotal=round((float)collect($components)->where('component_group','salary')->sum('amount'),2);
+        $allowanceTotal=round((float)collect($components)->where('component_group','allowance')->sum('amount'),2);
+        $deduction=round((float)collect($components)->where('component_group','deduction')->sum('amount'),2);
+        $gross=round($salaryTotal+$allowanceTotal,2);$net=$this->roundNet($gross-$deduction);if(!$this->payrollSetting->allow_negative_salary)$net=max(0,$net);
+        $overtimeMinutes=(int)($ot['day_off']+$ot['gov']);
 
         return [
-            'item' => [
-                'employee_id' => $employee->id,
-                'employee_salary_structure_id' => $structure->id,
-                'employee_code' => $employee->employee_code,
-                'employee_name' => $employee->name,
-                'department_name' => $employee->department?->name,
-                'designation_name' => $employee->designation?->name,
-                'joining_date' => $employee->join_date?->toDateString(),
-                'exit_date' => $employee->exit_date?->toDateString(),
-                'salary_divisor' => $salaryDivisor,
-                'payable_days' => $payableCalendarDays,
-                'basic_salary' => $fullBasicSalary,
-                'prorated_basic_salary' => $proratedBasic,
-                'gross_salary' => $gross,
-                'total_deduction' => $deduction,
-                'net_salary' => $net,
-                'present_days' => (float) ($statusCounts['present'] ?? 0),
-                'late_days' => $lateDays,
-                'absent_days' => $absentDays,
-                'half_days' => $halfDays,
-                'paid_leave_days' => $paidLeaveDays,
-                'unpaid_leave_days' => $unpaidLeaveDays,
-                'off_days' => (float) ($statusCounts['off_day'] ?? 0),
-                'overtime_minutes' => $overtimeMinutes,
-                'attendance_summary' => [
-                    'present' => (float) ($statusCounts['present'] ?? 0),
-                    'late' => $lateDays,
-                    'absent' => $absentDays,
-                    'half_day' => $halfDays,
-                    'paid_leave' => $paidLeaveDays,
-                    'unpaid_leave' => $unpaidLeaveDays,
-                    'off_day' => (float) ($statusCounts['off_day'] ?? 0),
-                    'not_marked' => $this->missingAttendanceCount($employee, $employmentStart, $employmentEnd),
-                    'overtime_minutes' => $overtimeMinutes,
-                ],
-                'payment_method' => $structure->payment_method,
-                'account_name' => $structure->account_name,
-                'account_number' => $structure->account_number,
-                'mobile_banking_provider' => $structure->mobile_banking_provider,
-                'payment_status' => 'unpaid',
-                'status' => 'draft',
-                'approved_by' => null,
-                'approved_at' => null,
+            'item'=>[
+                'employee_id'=>$employee->id,'employee_salary_structure_id'=>$structure->id,'employee_code'=>$employee->employee_code,'employee_name'=>$employee->name,
+                'department_name'=>$employee->department?->name,'designation_name'=>$employee->designation?->name,'joining_date'=>$employee->join_date?->toDateString(),'exit_date'=>$employee->exit_date?->toDateString(),
+                'salary_divisor'=>$salaryDivisor,'payable_days'=>$payableCalendarDays,'basic_salary'=>$fullBasic,'prorated_basic_salary'=>$proratedBasic,'salary_total'=>$salaryTotal,'allowance_total'=>$allowanceTotal,
+                'gross_salary'=>$gross,'total_deduction'=>$deduction,'net_salary'=>$net,'present_days'=>(float)($statusCounts['present']??0),'late_days'=>(float)($statusCounts['late']??0),'absent_days'=>(float)($statusCounts['absent']??0),
+                'half_days'=>(float)($statusCounts['half_day']??0),'paid_leave_days'=>$paidLeaveDays,'unpaid_leave_days'=>$unpaidLeaveDays,'off_days'=>(float)($statusCounts['off_day']??0),'overtime_minutes'=>$overtimeMinutes,
+                'attendance_summary'=>['present'=>(float)($statusCounts['present']??0),'late'=>(float)($statusCounts['late']??0),'absent'=>(float)($statusCounts['absent']??0),'half_day'=>(float)($statusCounts['half_day']??0),'paid_leave'=>$paidLeaveDays,'unpaid_leave'=>$unpaidLeaveDays,'off_day'=>(float)($statusCounts['off_day']??0),'not_marked'=>$this->missingAttendanceCount($employee,$employmentStart,$employmentEnd),'overtime_minutes'=>$overtimeMinutes,'ot_day_off_minutes'=>$ot['day_off'],'ot_gov_off_minutes'=>$ot['gov']],
+                'payment_method'=>$structure->payment_method,'account_name'=>$structure->account_name,'account_number'=>$structure->account_number,'mobile_banking_provider'=>$structure->mobile_banking_provider,
+                'payment_status'=>'unpaid','status'=>'draft','approved_by'=>null,'approved_at'=>null,
             ],
-            'components' => $components,
+            'components'=>$components,'recovery_allocations'=>$recovery['allocations'],
         ];
     }
 
-    public function settings(): PayrollSetting
-    {
-        return $this->payrollSetting;
-    }
+    public function settings(): PayrollSetting { return $this->payrollSetting; }
 
-    private function salaryStructureFor(Employee $employee, Carbon $date): ?EmployeeSalaryStructure
+    public function manualPayrollComponents(): Collection
     {
-        return EmployeeSalaryStructure::with('components.salaryComponent')
-            ->where('employee_id', $employee->id)
-            ->where('status', true)
-            ->whereDate('effective_from', '<=', $date)
-            ->where(function (Builder $query) use ($date) {
-                $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
-            })
-            ->latest('effective_from')
-            ->first();
-    }
-
-    private function expectedWorkingDates(Employee $employee, Carbon $start, Carbon $end): Collection
-    {
-        $weeklyOff = collect($this->attendanceSetting->weekly_off_days ?? [])
-            ->map(fn ($day) => strtolower((string) $day));
-        $holidays = Holiday::where('status', true)
-            ->whereBetween('holiday_date', [$start, $end])
-            ->pluck('holiday_date')
-            ->map(fn ($date) => Carbon::parse($date)->toDateString())
-            ->flip();
-        $rosterOff = ShiftRoster::where('employee_id', $employee->id)
-            ->whereBetween('roster_date', [$start, $end])
-            ->where('status', 'off')
-            ->pluck('roster_date')
-            ->map(fn ($date) => Carbon::parse($date)->toDateString())
-            ->flip();
-
-        return collect(CarbonPeriod::create($start, $end))
-            ->filter(function (Carbon $date) use ($weeklyOff, $holidays, $rosterOff) {
-                return !$weeklyOff->contains(strtolower($date->format('l')))
-                    && !$holidays->has($date->toDateString())
-                    && !$rosterOff->has($date->toDateString());
+        return $this->salaryComponents
+            ->filter(function($component){
+                $ruleCode=strtolower((string)($component->rule_code?:'standard'));
+                return $component->calculation_type==='manual' && !in_array($ruleCode,['salary_advance','loan_adjustment'],true);
             })
             ->values();
     }
 
-    private function missingAttendanceCount(Employee $employee, Carbon $start, Carbon $end): int
+    private function missingRulesFor(EmployeeSalaryStructure $structure): array
     {
-        $checkEnd = $end->isFuture() ? now()->startOfDay() : $end->copy();
-        if ($checkEnd->lt($start)) {
-            return 0;
+        $missing=[];
+        foreach($this->salaryComponents as $master){
+            if(strtoupper((string)$master->code)==='BASIC') continue;
+            $ruleCode=strtolower((string)($master->rule_code?:'standard'));
+            if($master->calculation_type==='manual' || in_array($ruleCode,['salary_advance','loan_adjustment'],true)) continue;
+            $rule=$this->resolveRule($master,$structure);
+            if($rule['applicable'] && !$rule['configured']) $missing[]=$master->display_label;
         }
-
-        $expected = $this->expectedWorkingDates($employee, $start, $checkEnd);
-        $marked = Attendance::where('employee_id', $employee->id)
-            ->whereBetween('attendance_date', [$start, $checkEnd])
-            ->pluck('attendance_date')
-            ->map(fn ($date) => Carbon::parse($date)->toDateString())
-            ->flip();
-        $approvedLeaveDates = $this->approvedLeaveDates($employee, $start, $checkEnd);
-
-        return $expected->filter(function (Carbon $date) use ($marked, $approvedLeaveDates) {
-            return !$marked->has($date->toDateString()) && !$approvedLeaveDates->has($date->toDateString());
-        })->count();
+        return array_values(array_unique($missing));
     }
 
-    private function approvedLeaveDates(Employee $employee, Carbon $start, Carbon $end, ?bool $paid = null): Collection
+    private function resolveRule(SalaryComponent $master,EmployeeSalaryStructure $structure): array
     {
-        $query = LeaveRequest::where('employee_id', $employee->id)
-            ->where('status', 'approved')
-            ->whereDate('from_date', '<=', $end)
-            ->whereDate('to_date', '>=', $start);
-
-        if ($paid !== null) {
-            $query->where('is_paid', $paid);
+        $employeeRule=$structure->components->firstWhere('salary_component_id',$master->id);
+        if($employeeRule && $master->allow_employee_override){
+            $mode=$employeeRule->rule_mode?:'custom';
+            if($mode==='disabled') return ['applicable'=>false,'configured'=>true,'source'=>'employee_disabled','calculation_type'=>$master->calculation_type,'amount'=>0,'percentage'=>0];
+            if($mode==='custom') return ['applicable'=>true,'configured'=>true,'source'=>'employee','calculation_type'=>$master->calculation_type,'amount'=>(float)$employeeRule->amount,'percentage'=>(float)$employeeRule->percentage];
         }
-
-        $dates = collect();
-        foreach ($query->get() as $leave) {
-            $leaveFrom = Carbon::parse($leave->from_date)->startOfDay();
-            $leaveTo = Carbon::parse($leave->to_date)->startOfDay();
-            $from = $leaveFrom->gt($start) ? $leaveFrom : $start->copy();
-            $to = $leaveTo->lt($end) ? $leaveTo : $end->copy();
-            foreach (CarbonPeriod::create($from, $to) as $date) {
-                $dates->put($date->toDateString(), true);
-            }
-        }
-
-        return $dates;
+        if(!$master->apply_to_all && !$employeeRule) return ['applicable'=>false,'configured'=>true,'source'=>'not_applicable','calculation_type'=>$master->calculation_type,'amount'=>0,'percentage'=>0];
+        return ['applicable'=>true,'configured'=>(bool)$master->global_configured,'source'=>'global','calculation_type'=>$master->calculation_type,'amount'=>(float)$master->default_amount,'percentage'=>(float)$master->default_percentage];
     }
 
-    private function unpaidLeaveDays(Employee $employee, Carbon $start, Carbon $end): float
+    private function salaryStructureFor(Employee $employee,Carbon $date): ?EmployeeSalaryStructure
     {
-        $unpaidDates = $this->approvedLeaveDates($employee, $start, $end, false);
-        $expected = $this->expectedWorkingDates($employee, $start, $end)
-            ->map(fn (Carbon $date) => $date->toDateString())
-            ->flip();
-
-        return (float) $unpaidDates->keys()->filter(fn ($date) => $expected->has($date))->count();
+        return EmployeeSalaryStructure::with('components.salaryComponent')->where('employee_id',$employee->id)->where('status',true)->whereDate('effective_from','<=',$date)
+            ->where(fn(Builder $q)=>$q->whereNull('effective_to')->orWhereDate('effective_to','>=',$date))->latest('effective_from')->first();
     }
 
-    private function estimatedProratedGross(EmployeeSalaryStructure $structure, float $factor, float $proratedBasic): float
+    private function salaryMissingReason(Employee $employee,Carbon $date): string
     {
-        $gross = $proratedBasic;
-        foreach ($structure->components as $component) {
-            if (!$component->is_active || $component->component_type !== 'earning') {
-                continue;
-            }
-            $code = strtoupper((string) ($component->salaryComponent?->code ?? ''));
-            if (in_array($code, ['OT', 'BASIC'], true)) {
-                continue;
-            }
-            if ($component->calculation_type === 'fixed') {
-                $gross += (float) $component->amount * $factor;
-            } elseif ($component->calculation_type === 'percentage') {
-                $gross += $proratedBasic * (float) $component->percentage / 100;
-            }
+        $future=EmployeeSalaryStructure::where('employee_id',$employee->id)->where('status',true)
+            ->whereDate('effective_from','>',$date)->orderBy('effective_from')->first();
+        if($future){
+            return "Salary is configured from {$future->effective_from->format('d-m-Y')}, which starts after the selected payroll month for {$employee->employee_code}. Change Effective From to the employee joining date if salary should apply from joining.";
         }
 
-        return round($gross, 2);
+        $latest=EmployeeSalaryStructure::where('employee_id',$employee->id)->where('status',true)
+            ->whereDate('effective_from','<=',$date)->latest('effective_from')->first();
+        if($latest && $latest->effective_to && $latest->effective_to->lt($date)){
+            return "Salary setup for {$employee->employee_code} ends on {$latest->effective_to->format('d-m-Y')} and does not cover the selected payroll month.";
+        }
+
+        return "Salary setup is missing for {$employee->employee_code} in the selected payroll month.";
     }
 
-    private function resolveOvertimeRate(EmployeeSalaryStructure $structure, float $basicSalary, float $salaryDivisor): float
+    private function splitOvertimeMinutes(Employee $employee,Collection $rows,Carbon $start,Carbon $end): array
     {
-        $employeeRate = (float) $structure->overtime_rate;
+        if(!($this->attendanceSetting->auto_calculate_overtime??true)) return ['day_off'=>0,'gov'=>0];
 
-        // Fixed-rate mode always uses the employee-specific hourly OT rate.
-        // A missing rate intentionally produces zero so it can be reviewed in Draft.
-        if ($this->payrollSetting->overtime_calculation_method === 'fixed_rate') {
-            return max(0, $employeeRate);
+        $holidays=Holiday::where('status',true)->whereBetween('holiday_date',[$start,$end])
+            ->get(['holiday_date','holiday_type'])
+            ->keyBy(fn($holiday)=>Carbon::parse($holiday->holiday_date)->toDateString());
+        $rosterOff=ShiftRoster::where('employee_id',$employee->id)->whereBetween('roster_date',[$start,$end])->where('status','off')
+            ->pluck('roster_date')->map(fn($d)=>Carbon::parse($d)->toDateString())->flip();
+        $weeklyOff=collect($this->attendanceSetting->weekly_off_days??[])->map(fn($d)=>strtolower((string)$d));
+        $minimum=max(0,(int)($this->attendanceSetting->minimum_overtime_minutes??0));
+        $dayOff=0;$gov=0;
+
+        foreach($rows as $row){
+            $date=Carbon::parse($row->attendance_date);$key=$date->toDateString();$holiday=$holidays->get($key);
+            $isGov=$holiday && strtolower((string)$holiday->holiday_type)==='public';
+            $isOtherHoliday=$holiday && !$isGov;
+            $isDayOff=$isOtherHoliday||$rosterOff->has($key)||$weeklyOff->contains(strtolower($date->format('l')))||$row->status==='off_day';
+            if(!$isGov&&!$isDayOff) continue;
+
+            // On a weekly/roster/public holiday the whole worked duration is OT, not only time after a normal shift.
+            $minutes=max(0,(int)($row->worked_minutes??0));
+            if($minutes<=0)$minutes=max(0,(int)$row->overtime_minutes);
+            if($minutes<$minimum)continue;
+            if($isGov)$gov+=$minutes;else$dayOff+=$minutes;
         }
+        return ['day_off'=>$dayOff,'gov'=>$gov];
+    }
 
-        if ($this->payrollSetting->overtime_basis === 'employee_rate' && $employeeRate > 0) {
-            return $employeeRate;
-        }
+    private function expectedWorkingDates(Employee $employee,Carbon $start,Carbon $end): Collection
+    {
+        $weeklyOff=collect($this->attendanceSetting->weekly_off_days??[])->map(fn($d)=>strtolower((string)$d));
+        $holidays=Holiday::where('status',true)->whereBetween('holiday_date',[$start,$end])->pluck('holiday_date')->map(fn($d)=>Carbon::parse($d)->toDateString())->flip();
+        $rosterOff=ShiftRoster::where('employee_id',$employee->id)->whereBetween('roster_date',[$start,$end])->where('status','off')->pluck('roster_date')->map(fn($d)=>Carbon::parse($d)->toDateString())->flip();
+        return collect(CarbonPeriod::create($start,$end))->filter(fn(Carbon $d)=>!$weeklyOff->contains(strtolower($d->format('l')))&&!$holidays->has($d->toDateString())&&!$rosterOff->has($d->toDateString()))->values();
+    }
 
-        $hours = max(1, (float) $this->attendanceSetting->default_working_hours);
-        $hourly = ($basicSalary / max(1, $salaryDivisor)) / $hours;
+    private function missingAttendanceCount(Employee $employee,Carbon $start,Carbon $end): int
+    {
+        $checkEnd=$end->isFuture()?now()->startOfDay():$end->copy();if($checkEnd->lt($start))return 0;
+        $expected=$this->expectedWorkingDates($employee,$start,$checkEnd);$marked=Attendance::where('employee_id',$employee->id)->whereBetween('attendance_date',[$start,$checkEnd])->pluck('attendance_date')->map(fn($d)=>Carbon::parse($d)->toDateString())->flip();$leave=$this->approvedLeaveDates($employee,$start,$checkEnd);
+        return $expected->filter(fn(Carbon $d)=>!$marked->has($d->toDateString())&&!$leave->has($d->toDateString()))->count();
+    }
 
-        return round($hourly * (float) $this->payrollSetting->overtime_rate_multiplier, 4);
+    private function approvedLeaveDates(Employee $employee,Carbon $start,Carbon $end,?bool $paid=null): Collection
+    {
+        $q=LeaveRequest::where('employee_id',$employee->id)->where('status','approved')->whereDate('from_date','<=',$end)->whereDate('to_date','>=',$start);if($paid!==null)$q->where('is_paid',$paid);
+        $dates=collect();foreach($q->get() as $leave){$from=Carbon::parse($leave->from_date)->startOfDay();$to=Carbon::parse($leave->to_date)->startOfDay();$from=$from->gt($start)?$from:$start->copy();$to=$to->lt($end)?$to:$end->copy();foreach(CarbonPeriod::create($from,$to) as $d)$dates->put($d->toDateString(),true);}return $dates;
+    }
+
+    private function unpaidLeaveDays(Employee $employee,Carbon $start,Carbon $end): float
+    {
+        $unpaid=$this->approvedLeaveDates($employee,$start,$end,false);$expected=$this->expectedWorkingDates($employee,$start,$end)->map(fn(Carbon $d)=>$d->toDateString())->flip();return (float)$unpaid->keys()->filter(fn($d)=>$expected->has($d))->count();
     }
 
     private function lateEquivalentDays(float $lateCount): float
     {
-        $threshold = max(1, (int) $this->payrollSetting->late_count_threshold);
-        $groups = floor($lateCount / $threshold);
-
-        return match ($this->payrollSetting->late_deduction_method) {
-            'half_day_after_count' => $groups * 0.5,
-            'full_day_after_count' => $groups,
-            default => 0,
-        };
+        $threshold=max(1,(int)$this->payrollSetting->late_count_threshold);$groups=floor($lateCount/$threshold);
+        return match($this->payrollSetting->late_deduction_method){'half_day_after_count'=>$groups*.5,'full_day_after_count'=>$groups,default=>0};
     }
 
     private function roundNet(float $amount): float
     {
-        return match ($this->payrollSetting->rounding_method) {
-            'nearest' => round($amount),
-            'floor' => floor($amount),
-            'ceil' => ceil($amount),
-            default => round($amount, 2),
-        };
+        return match($this->payrollSetting->rounding_method){'nearest'=>round($amount),'floor'=>floor($amount),'ceil'=>ceil($amount),default=>round($amount,2)};
     }
 
-    private function componentByCode(string $code): ?SalaryComponent
+    private function componentRow(SalaryComponent $master,string $group,string $source,float $rate,float $quantity,float $amount,bool $manual,int $sortOrder,?string $calcType=null): array
     {
-        return $this->salaryComponents->get(strtoupper($code));
-    }
-
-    private function componentRow(
-        ?SalaryComponent $master,
-        string $name,
-        string $code,
-        string $type,
-        string $calculationType,
-        float $rate,
-        float $quantity,
-        float $amount,
-        bool $manual,
-        int $sortOrder
-    ): array {
-        return [
-            'salary_component_id' => $master?->id,
-            'component_name' => $master?->name ?: $name,
-            'component_code' => $master?->code ?: $code,
-            'component_type' => $type,
-            'calculation_type' => $calculationType,
-            'rate' => round($rate, 4),
-            'quantity' => round($quantity, 4),
-            'calculated_amount' => round($amount, 2),
-            'amount' => round($amount, 2),
-            'is_manual' => $manual,
-            'is_overridden' => false,
-            'override_reason' => null,
-            'sort_order' => $sortOrder,
-        ];
+        return ['salary_component_id'=>$master->id,'component_name'=>$master->display_label,'component_code'=>$master->code,'component_type'=>$group==='deduction'?'deduction':'earning','component_group'=>$group,'source'=>$source,
+            'calculation_type'=>$calcType?:$master->calculation_type,'rate'=>round($rate,4),'quantity'=>round($quantity,4),'calculated_amount'=>round($amount,2),'amount'=>round($amount,2),'is_manual'=>$manual,'is_overridden'=>false,'override_reason'=>null,'sort_order'=>$sortOrder];
     }
 }

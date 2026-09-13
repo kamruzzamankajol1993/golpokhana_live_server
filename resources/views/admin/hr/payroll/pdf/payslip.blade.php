@@ -1,71 +1,57 @@
 <!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<style>
-body{font-family:dejavusans,sans-serif;color:#1e2924;font-size:11px}.header{border-bottom:3px solid #21352a;padding-bottom:10px;margin-bottom:14px}.brand{font-size:20px;font-weight:bold;color:#21352a}.muted{color:#6b7c74}.title{text-align:right;font-size:20px;font-weight:bold;color:#21352a}.meta{width:100%;border-collapse:collapse;margin-bottom:14px}.meta td{padding:5px 7px;border:1px solid #dfe5e1}.summary{width:100%;border-collapse:collapse;margin:12px 0}.summary td{padding:9px;border:1px solid #dfe5e1;text-align:center}.summary strong{font-size:15px;color:#21352a}.table{width:100%;border-collapse:collapse;margin-top:10px}.table th{background:#21352a;color:#fff;padding:7px;text-align:left}.table td{border:1px solid #dfe5e1;padding:7px}.amount{text-align:right}.total{font-weight:bold;background:#f2f5f3}.net{font-size:16px;background:#e9f5ee}.status{display:inline-block;padding:4px 8px;border-radius:10px;background:#edf5fd;color:#1466a0;font-weight:bold}.footer-note{margin-top:20px;border-top:1px solid #dfe5e1;padding-top:8px;color:#6b7c74;font-size:9px}.signatures{width:100%;margin-top:42px}.signatures td{text-align:center;width:33%}.line{border-top:1px solid #777;padding-top:4px;margin:0 20px}
-</style>
-</head>
+<head><meta charset="utf-8"><style>
+@page{margin:8mm 8mm 9mm 8mm}body{font-family:dejavusans,sans-serif;color:#111;font-size:10.5px;margin:0}.sheet{border:1px solid #3447ad;min-height:270mm;padding:8px;box-sizing:border-box}.company{text-align:center}.company-name{font-size:20px;font-weight:700}.concern{font-size:10px;font-weight:400}.address{font-size:10px;margin-top:5px}.title{font-size:19px;font-weight:700;margin-top:8px}.date-table{border-collapse:collapse;width:34%;margin-top:24px}.date-table td{border:1px solid #111;padding:4px 5px;font-size:10px}.date-label{font-weight:700;text-align:center;width:58%}.meta{width:100%;border-collapse:collapse;margin-top:20px}.meta td{border:1px solid #111;padding:4px 5px}.meta .label{font-weight:700;width:20%}.meta .value{text-align:center;font-size:11px}.spacer{height:35px}.columns{width:100%;border-collapse:collapse;table-layout:fixed}.columns>tbody>tr>td{vertical-align:top;padding:0;width:33.333%}.pay-table{width:100%;border-collapse:collapse;table-layout:fixed}.pay-table th,.pay-table td{border:1px solid #111;padding:4px 5px;vertical-align:middle}.pay-table th{background:#d9d9d9;font-size:10px;text-align:center;font-weight:700}.pay-table td:first-child{text-align:center}.pay-table .amt{text-align:center;width:31%}.pay-table .total td{background:#d9d9d9;font-weight:700}.bottom-wrap{margin-top:30px;width:54%}.bottom{width:100%;border-collapse:collapse}.bottom td{border:1px solid #111;padding:5px 7px;text-align:center;font-size:10.5px}.bottom .net td{background:#c6e0b4;font-weight:700;font-style:italic}.note{text-align:center;font-weight:700;font-style:italic;margin-top:48px;font-size:10px}.sign{width:100%;margin-top:28px}.sign td{width:70%;border:0}.sign .sigcell{width:30%;text-align:center;vertical-align:bottom}.sigline{border-top:1px solid #111;padding-top:3px;font-weight:700;font-size:12px}.sigspace{height:42px}.muted{color:#555}
+</style></head>
 <body>
-<table class="header" width="100%"><tr><td><div class="brand">{{ $restaurant->restaurant_name ?? $restaurant->name ?? config('app.name') }}</div><div class="muted">{{ $restaurant->address ?? '' }}</div><div class="muted">{{ $restaurant->phone ?? '' }}</div></td><td class="title">PAYSLIP<div class="muted" style="font-size:11px;font-weight:normal">{{ $run->month_label }}</div></td></tr></table>
+@php
+    $salaryRows = $item->components->where('component_group','salary')->values();
+    $allowanceRows = $item->components->where('component_group','allowance')->values();
+    $deductionRows = $item->components->where('component_group','deduction')->values();
+    $companyName = $restaurant->restaurant_name ?? $restaurant->name ?? 'JK Food Arena Limited';
+    $companyAddress = $restaurant->address ?? 'Noor Tower, Block -D, HOME- 29/31, Road NO- 01, Aftab Nagar Main Road, Dhaka 1212';
+    $concern = 'a concern of JK Lifestyle Limited';
+    $docDate = $item->payment?->payment_date ?? now();
+@endphp
+<div class="sheet">
+    <div class="company">
+        <div class="company-name">{{ $companyName }} <span class="concern">{{ $concern }}</span></div>
+        <div class="address">{{ $companyAddress }}</div>
+        <div class="title">Salary Pay Slip</div>
+    </div>
 
-<table class="meta">
-<tr><td><strong>Employee</strong></td><td>{{ $item->employee_name }}</td><td><strong>Employee ID</strong></td><td>{{ $item->employee_code }}</td></tr>
-<tr><td><strong>Department</strong></td><td>{{ $item->department_name ?: 'N/A' }}</td><td><strong>Designation</strong></td><td>{{ $item->designation_name ?: 'N/A' }}</td></tr>
-<tr><td><strong>Payroll Code</strong></td><td>{{ $run->payroll_code }}</td><td><strong>Workflow Status</strong></td><td><span class="status">{{ strtoupper($item->status) }}</span></td></tr>
-<tr><td><strong>Payment Status</strong></td><td>{{ strtoupper($item->payment_status) }}</td><td><strong>Approved By</strong></td><td>{{ $item->approvedBy->name ?? 'N/A' }}</td></tr>
-<tr><td><strong>Period</strong></td><td>{{ $run->period_start->format('d-m-Y') }} to {{ $run->period_end->format('d-m-Y') }}</td><td><strong>Payment Method</strong></td><td>{{ ucwords(str_replace('_', ' ', $item->payment?->payment_method ?: $item->payment_method)) }}</td></tr>
-</table>
+    <table class="date-table"><tr><td class="date-label">Date:</td><td>{{ \Carbon\Carbon::parse($docDate)->format('d-M-y') }}</td></tr></table>
 
-<table class="summary"><tr><td><span class="muted">Present</span><br><strong>{{ (float) $item->present_days }}</strong></td><td><span class="muted">Late</span><br><strong>{{ (float) $item->late_days }}</strong></td><td><span class="muted">Absent</span><br><strong>{{ (float) $item->absent_days }}</strong></td><td><span class="muted">Leave</span><br><strong>{{ (float) $item->paid_leave_days + (float) $item->unpaid_leave_days }}</strong></td><td><span class="muted">Overtime</span><br><strong>{{ intdiv($item->overtime_minutes, 60) }}h {{ $item->overtime_minutes % 60 }}m</strong></td></tr></table>
+    <table class="meta">
+        <tr><td class="label">Employee Name:</td><td class="value">{{ $item->employee_name }}</td></tr>
+        <tr><td class="label">Employee ID:</td><td class="value">{{ $item->employee_code }}</td></tr>
+        <tr><td class="label">Designation:</td><td class="value">{{ $item->designation_name ?: 'N/A' }}</td></tr>
+        <tr><td class="label">Department:</td><td class="value">{{ $item->department_name ?: 'N/A' }}</td></tr>
+        <tr><td class="label">Month &amp; Year:</td><td class="value">For the Month of {{ $run->payroll_month->format('F Y') }}</td></tr>
+    </table>
 
-<table width="100%"><tr><td width="49%" valign="top">
-<table class="table"><thead><tr><th>Earnings</th><th class="amount">Amount</th></tr></thead><tbody>
-@foreach($item->components->where('component_type', 'earning') as $component)
-<tr>
-    <td>
-        {{ $component->component_name }}
-        @if($component->is_overridden)
-            <small>*</small>
-        @endif
-    </td>
-    <td class="amount">৳{{ number_format((float) $component->amount, 2) }}</td>
-</tr>
-@endforeach
-<tr class="total"><td>Gross Salary</td><td class="amount">৳{{ number_format((float) $item->gross_salary, 2) }}</td></tr>
-</tbody></table>
-</td><td width="2%"></td><td width="49%" valign="top">
-<table class="table"><thead><tr><th>Deductions</th><th class="amount">Amount</th></tr></thead><tbody>
-@foreach($item->components->where('component_type', 'deduction') as $component)
-<tr>
-    <td>
-        {{ $component->component_name }}
-        @if($component->is_overridden)
-            <small>*</small>
-        @endif
-    </td>
-    <td class="amount">৳{{ number_format((float) $component->amount, 2) }}</td>
-</tr>
-@endforeach
-<tr class="total"><td>Total Deduction</td><td class="amount">৳{{ number_format((float) $item->total_deduction, 2) }}</td></tr>
-</tbody></table>
-</td></tr></table>
+    <div class="spacer"></div>
+    <table class="columns"><tr>
+        <td><table class="pay-table"><thead><tr><th>Salary</th><th class="amt">Amount</th></tr></thead><tbody>
+            @foreach($salaryRows as $row)<tr><td>{{ $row->component_name }}</td><td class="amt">{{ number_format((float)$row->amount,0) }}</td></tr>@endforeach
+            <tr class="total"><td>Total</td><td class="amt">{{ number_format((float)$item->salary_total,0) }}</td></tr>
+        </tbody></table></td>
+        <td><table class="pay-table"><thead><tr><th>Allowance</th><th class="amt">Amount</th></tr></thead><tbody>
+            @foreach($allowanceRows as $row)<tr><td>{{ $row->component_name }}</td><td class="amt">{{ number_format((float)$row->amount,0) }}</td></tr>@endforeach
+            <tr class="total"><td>Total</td><td class="amt">{{ number_format((float)$item->allowance_total,0) }}</td></tr>
+        </tbody></table></td>
+        <td><table class="pay-table"><thead><tr><th>Deductions</th><th class="amt">Amount</th></tr></thead><tbody>
+            @foreach($deductionRows as $row)<tr><td>{{ $row->component_name }}</td><td class="amt">{{ number_format((float)$row->amount,0) }}</td></tr>@endforeach
+            <tr class="total"><td>Total</td><td class="amt">{{ number_format((float)$item->total_deduction,0) }}</td></tr>
+        </tbody></table></td>
+    </tr></table>
 
-<table class="table"><tr class="net"><td><strong>NET SALARY</strong></td><td class="amount"><strong>৳{{ number_format((float) $item->net_salary, 2) }}</strong></td></tr></table>
+    <div class="bottom-wrap"><table class="bottom">
+        <tr><td>Gross Salary</td><td>{{ number_format((float)$item->salary_total,0) }}</td></tr>
+        <tr class="net"><td>Net Salary/ Bank Salary</td><td>{{ number_format((float)$item->net_salary,0) }}</td></tr>
+    </table></div>
 
-@if($item->payment)
-<div style="margin-top:12px">
-    <strong>Payment:</strong> {{ $item->payment->payment_date->format('d-m-Y') }} · {{ ucwords(str_replace('_', ' ', $item->payment->payment_method)) }}
-    @if($item->payment->reference_number)
-        · Ref: {{ $item->payment->reference_number }}
-    @endif
+    <div class="note">Note: All the amount disbursed into respective bank account.</div>
+    <table class="sign"><tr><td></td><td class="sigcell"><div class="sigspace"></div><div class="sigline">HOD</div></td></tr></table>
 </div>
-@endif
-@if($item->notes)
-    <div style="margin-top:10px"><strong>Note:</strong> {{ $item->notes }}</div>
-@endif
-
-<table class="signatures"><tr><td><div class="line">Employee Signature</div></td><td><div class="line">Prepared By</div></td><td><div class="line">Approved By</div></td></tr></table>
-<div class="footer-note">This payslip is generated from the payroll snapshot. Later changes to attendance or salary setup do not alter approved payroll records.</div>
-</body>
-</html>
+</body></html>

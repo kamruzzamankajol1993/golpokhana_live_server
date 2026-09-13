@@ -205,6 +205,21 @@
                         </div>
                         <div class="col-md-6">
                             <div class="progga-form-group">
+                                <label class="progga-form-label">Allow Save as Due Order</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox"
+                                           id="allowPaymentWithInsufficientGivenMoney"
+                                           name="allow_payment_with_insufficient_given_money"
+                                           value="1"
+                                           {{ ($pos->allow_payment_with_insufficient_given_money ?? false) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="allowPaymentWithInsufficientGivenMoneyLabel">{{ ($pos->allow_payment_with_insufficient_given_money ?? false) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">On: the payment modal shows Due Amount and, when Given Money is insufficient, the warning popup shows the Save as Due Order button. Off: Due Amount is hidden; the warning popup still opens, but Save as Due Order is hidden and the amount must be corrected.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
                                 <label class="progga-form-label">Show Discount Percentage on Invoice</label>
                                 <label class="progga-toggle" style="margin-top:8px;">
                                     <input type="checkbox"
@@ -484,6 +499,14 @@
         givenMoneyManualToggleSetting.addEventListener('change', function () {
             var label = document.getElementById('givenMoneyManualToggleEnabledLabel');
             if (label) label.textContent = givenMoneyManualToggleSetting.checked ? 'On' : 'Off';
+        });
+    }
+
+    var allowPaymentWithInsufficientGivenMoneySetting = document.getElementById('allowPaymentWithInsufficientGivenMoney');
+    if (allowPaymentWithInsufficientGivenMoneySetting) {
+        allowPaymentWithInsufficientGivenMoneySetting.addEventListener('change', function () {
+            var label = document.getElementById('allowPaymentWithInsufficientGivenMoneyLabel');
+            if (label) label.textContent = allowPaymentWithInsufficientGivenMoneySetting.checked ? 'On' : 'Off';
         });
     }
 

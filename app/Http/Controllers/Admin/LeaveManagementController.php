@@ -96,6 +96,8 @@ class LeaveManagementController extends Controller
                 return [
                     'leave_type_id' => $balance->leave_type_id,
                     'name' => $balance->leaveType?->name,
+                    'mode' => $balance->entitlement_mode ?: 'global',
+                    'global_entitled' => (float) ($balance->leaveType?->days_per_year ?? 0),
                     'entitled' => (float) $balance->entitled_days,
                     'used' => (float) $balance->used_days,
                     'available' => $balance->available_days,
@@ -422,10 +424,22 @@ class LeaveManagementController extends Controller
                     return $this->calculateWorkingDays($from, $to);
                 });
 
-            EmployeeLeaveBalance::updateOrCreate(
-                ['employee_id' => $employee->id, 'leave_type_id' => $type->id, 'year' => $year],
-                ['entitled_days' => $type->days_per_year, 'used_days' => $used]
-            );
+            $balance = EmployeeLeaveBalance::firstOrNew([
+                'employee_id' => $employee->id,
+                'leave_type_id' => $type->id,
+                'year' => $year,
+            ]);
+
+            $mode = $balance->exists && $balance->entitlement_mode === 'custom'
+                ? 'custom'
+                : 'global';
+
+            $balance->entitlement_mode = $mode;
+            if ($mode === 'global') {
+                $balance->entitled_days = $type->days_per_year;
+            }
+            $balance->used_days = $used;
+            $balance->save();
         }
     }
 

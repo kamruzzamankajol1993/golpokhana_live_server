@@ -364,10 +364,18 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             ->orderBy('waiter_calls.id', 'asc')
             ->first();
 
+        $kitchenUnsentTableIds = \App\Models\Order::query()
+            ->whereNotNull('table_id')
+            ->whereIn('status', ['QR_Pending', 'QR_Hold', 'Waiter_Hold'])
+            ->pluck('table_id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
         return response()->json([
-            'status'      => 'success',
-            'order'       => $newOrder,
-            'waiter_call' => $waiterCall
+            'status'                   => 'success',
+            'order'                    => $newOrder,
+            'waiter_call'              => $waiterCall,
+            'kitchen_unsent_table_ids' => $kitchenUnsentTableIds,
         ]);
     }
 
@@ -508,8 +516,8 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             'delivery_partner' => ['nullable', 'nullable'],
         ]);
 
-        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
-        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Bangla QR Card', 'Other'];
+        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'Bangla QR', 'LENDEN', 'Other'];
         $editPaymentMethod = (string) $request->input('payment_method');
 
         if ($editPaymentMethod === 'Card') {
@@ -918,8 +926,8 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
     {
         abort_unless(auth()->user()?->can('order-edit'), 403);
 
-        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Other'];
-        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'LENDEN', 'Other'];
+        $allowedCardTypes = ['Visa', 'Mastercard', 'American Express', 'UnionPay', 'JCB', 'Nexus', 'Diners Club', 'GPay', 'Bangla QR Card', 'Other'];
+        $allowedMfsProviders = ['Rocket', 'bKash', 'MYCash', 'Islami Bank mCash', 'tap', 'FirstCash', 'Upay', 'OK Wallet', 'RUPALICASH', 'TeleCash', 'Islamic Wallet', 'Meghna Pay', 'Nagad', 'Bangla QR', 'LENDEN', 'Other'];
 
         $request->validateWithBag('duePayment', [
             'payment_type' => ['required', Rule::in(['Cash', 'Card', 'Mobile Banking', 'Split'])],

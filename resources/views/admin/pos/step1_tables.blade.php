@@ -34,8 +34,9 @@
             @php
                 $statusClass = strtolower($table->initial_status);
                 $isBillPrinted = $statusClass === 'occupied' && !empty($table->bill_printed);
+                $isKitchenUnsent = !empty($table->kitchen_unsent);
             @endphp
-            <div class="progga-pos-table-card {{ $statusClass }}{{ $isBillPrinted ? ' bill-printed' : '' }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-reserved-customer-id="{{ $table->reserved_customer_id ?? '' }}" data-reserved-booking-id="{{ $table->reserved_booking_id ?? '' }}" data-status="{{ $statusClass }}" data-bill-printed="{{ $isBillPrinted ? '1' : '0' }}">
+            <div class="progga-pos-table-card {{ $statusClass }}{{ $isBillPrinted ? ' bill-printed' : '' }}{{ $isKitchenUnsent ? ' kitchen-unsent' : '' }}" data-table-id="{{ $table->id }}" data-table-num="{{ $table->table_number }}" data-reserved-customer-id="{{ $table->reserved_customer_id ?? '' }}" data-reserved-booking-id="{{ $table->reserved_booking_id ?? '' }}" data-status="{{ $statusClass }}" data-bill-printed="{{ $isBillPrinted ? '1' : '0' }}" data-kitchen-unsent="{{ $isKitchenUnsent ? '1' : '0' }}">
               <span class="progga-pos-table-icon" style="display:none;">🪑</span>
               <div class="progga-pos-table-num">{{ $table->table_number }}</div>
               <div class="progga-pos-table-zone">{{ $table->zone->name ?? 'Main' }}</div>
@@ -151,6 +152,20 @@
         background: #ffd62e !important;
         border-color: #ffd62e !important;
         color: #3b2a00 !important;
+      }
+
+      /* QR/Waiter order received but not sent to kitchen yet. */
+      .progga-pos-table-card.kitchen-unsent,
+      .progga-pos-table-card.kitchen-unsent:hover {
+        background: #b42318 !important;
+        border-color: #991b1b !important;
+        box-shadow: 0 10px 26px rgba(153, 27, 27, .30) !important;
+      }
+      .progga-pos-table-card.kitchen-unsent .progga-pos-table-num,
+      .progga-pos-table-card.kitchen-unsent .progga-pos-table-zone,
+      .progga-pos-table-card.kitchen-unsent .progga-pos-table-info,
+      .progga-pos-table-card.kitchen-unsent .progga-pos-table-info i {
+        color: #fff !important;
       }
 
       @media (max-width: 767.98px) {

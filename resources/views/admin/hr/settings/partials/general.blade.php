@@ -114,3 +114,43 @@
         </form>
     </div>
 </div>
+
+@can('hr-setting-delete')
+<div class="progga-card mt-3" style="border:1px solid rgba(220,53,69,.40);">
+    <div class="progga-card-header">
+        <div>
+            <div class="progga-card-title" style="color:#b02a37;"><i class="bi bi-trash3 me-2"></i>HR Data Cleanup</div>
+            <div class="hr-settings-help">Clear HR operational/history data without touching Employees or HR Settings configuration.</div>
+        </div>
+    </div>
+    <div class="progga-card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-lg-8">
+                <p class="mb-2" style="font-size:13px;"><strong>Clear HR data and keep only Employee data + HR Settings data.</strong></p>
+                <small class="text-muted d-block">
+                    This clears Attendance, Leave history/balances, Salary Advance, Loan, Payroll history/payments,
+                    Shift &amp; Duty Roster data and employee branch-transfer history.
+                    Employee records, employee salary setup, Departments, Designations, Employment Types, Leave Types,
+                    Payroll Components, Holidays, Attendance Rules, Payroll Settings and General HR Settings are preserved.
+                </small>
+                <small class="text-muted d-block mt-2">
+                    POS, Orders, Customers, Inventory and Main Settings data are not touched by this button.
+                </small>
+                <div class="alert alert-danger py-2 px-3 mt-3 mb-0" style="font-size:12px;">
+                    <strong>Warning:</strong> This action is permanent. Take a database backup before cleaning live HR data.
+                </div>
+            </div>
+            <div class="col-lg-4 text-lg-end">
+                <button type="button" id="clearHrDataButton" class="progga-btn" style="background:#dc3545;color:#fff;border-color:#dc3545;">
+                    <i class="bi bi-trash3"></i> Clear HR Data
+                </button>
+            </div>
+        </div>
+
+        <form id="clearHrDataForm" action="{{ route('hr.settings.clean-data') }}" method="POST" style="display:none;">
+            @csrf
+            <input type="hidden" name="confirmation" id="clearHrDataConfirmation" value="">
+        </form>
+    </div>
+</div>
+@endcan
