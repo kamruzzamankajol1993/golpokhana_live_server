@@ -173,7 +173,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="progga-form-label">Joining Date <span class="progga-required">*</span></label>
-                        <input type="text" id="employeeJoinDate" class="progga-form-control employee-date" name="join_date" value="{{ old('join_date', $isEdit ? optional($employee->join_date)->format('Y-m-d') : now()->toDateString()) }}" required>
+                        <input type="text" id="employeeJoinDate" class="progga-form-control employee-date" name="join_date" value="{{ old('join_date', $isEdit ? optional(isset($employee) ? $employee->join_date : null)->format('Y-m-d') : now()->toDateString()) }}" required>
                         @error('join_date')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                     <div class="col-md-3">
@@ -302,7 +302,7 @@
                 <div class="row g-3 mb-4">
                     <div class="col-md-3">
                         <label class="progga-form-label">Effective From <span class="progga-required">*</span></label>
-                        <input type="text" id="employeeSalaryEffectiveFrom" class="progga-form-control employee-date" name="salary_effective_from" value="{{ old('salary_effective_from', optional($salaryStructure?->effective_from)->format('Y-m-d') ?: optional($employee->join_date)->format('Y-m-d') ?: old('join_date', now()->toDateString())) }}">
+                        <input type="text" id="employeeSalaryEffectiveFrom" class="progga-form-control employee-date" name="salary_effective_from" value="{{ old('salary_effective_from', optional($salaryStructure?->effective_from)->format('Y-m-d') ?: optional(isset($employee) ? $employee->join_date : null)->format('Y-m-d') ?: old('join_date', now()->toDateString())) }}">
                         <div class="hr-person-meta mt-1">For the first salary setup, keep this equal to Joining Date if payroll should start from joining.</div>
                     </div>
                     <div class="col-md-3">

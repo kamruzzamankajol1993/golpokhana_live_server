@@ -40,7 +40,7 @@
             <option value="day" {{ $currentFilterType === 'day' ? 'selected' : '' }}>Date Wise</option>
             <option value="month" {{ $currentFilterType === 'month' ? 'selected' : '' }}>Month Wise</option>
             <option value="year" {{ $currentFilterType === 'year' ? 'selected' : '' }}>Year Wise</option>
-            <option value="range" {{ $currentFilterType === 'range' ? 'selected' : '' }}>From Date - To Date</option>
+            <option value="range" {{ $currentFilterType === 'range' ? 'selected' : '' }}>Date Range</option>
             <option value="hour" {{ $currentFilterType === 'hour' ? 'selected' : '' }}>Hour Wise</option>
             <option value="business_day" {{ $currentFilterType === 'business_day' ? 'selected' : '' }}>Business Day</option>
         </select>

@@ -115,9 +115,18 @@ class LoginController extends Controller
         $user = Auth::user();
 
         if ($user) {
-            // Logout closes the POS work period. Only occupied tables block logout;
-            // unpaid/due bills do not block logout.
-            $blockers = $this->getPosLogoutBlockers();
+            // Manager logout is protected while active POS orders/tables exist.
+            // Other users can logout normally even if orders remain open.
+            $blockers = $this->isManagerRole($user)
+                ? $this->getPosLogoutBlockers()
+                : [
+                    'blocked' => false,
+                    'occupied_table_count' => 0,
+                    'pending_takeaway_delivery_count' => 0,
+                    'pending_takeaway_delivery_order_ids' => [],
+                    'unpaid_bill_count' => 0,
+                    'message' => '',
+                ];
             if ($blockers['blocked']) {
                 if ($request->expectsJson()) {
                     return response()->json([
@@ -144,6 +153,15 @@ class LoginController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    private function isManagerRole($user): bool
+    {
+        return $user->getRoleNames()
+            ->map(fn ($role) => strtolower(trim((string) $role)))
+            ->contains(function ($role) {
+                return $role === 'manager' || str_contains($role, 'manager');
+            });
     }
 
     /**
