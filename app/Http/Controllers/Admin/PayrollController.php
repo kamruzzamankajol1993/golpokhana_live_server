@@ -787,6 +787,7 @@ class PayrollController extends Controller
             'tempDir' => $tempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
         $mpdf->SetTitle($fileName);
         if ($showFooter) {

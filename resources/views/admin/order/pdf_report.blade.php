@@ -3,7 +3,7 @@
 @endphp
 
 @if($mode === 'styles')
-body { font-family: sans-serif; font-size: 8px; color: #333333; }
+body { font-family: freesans, sans-serif; font-size: 8px; color: #333333; }
 .header { text-align: center; margin-bottom: 8px; border-bottom: 2px solid #21352a; padding-bottom: 7px; }
 .header h2 { margin: 0 0 4px 0; color: #21352a; font-size: 17px; }
 .header p { margin: 0; color: #666666; font-size: 9px; }

@@ -572,6 +572,8 @@ class AttendanceController extends Controller
             'tempDir' => $tempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            // Keep all PDF monetary glyphs, including ৳, on a font that supports Bengali Unicode.
+            'default_font' => 'freesans',
         ]);
         $mpdf->SetTitle($fileName);
         $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');

@@ -227,7 +227,7 @@
             </button>
         @endif
 
-        @if(!auth()->user()->hasRole('waiter'))
+        @if(!($isWaiterUser ?? false))
             <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm text-decoration-none" data-bs-toggle="modal" data-bs-target="#sessionHistoryModal">
                 <i class="bi bi-history"></i> Session History
             </button>
@@ -300,7 +300,7 @@
             </button>
         @endif
 
-        @if(!auth()->user()->hasRole('waiter'))
+        @if(!($isWaiterUser ?? false))
             <button type="button" class="progga-btn progga-btn-secondary pos-mobile-menu-action w-100 js-mobile-session-history">
                 <i class="bi bi-history"></i> Session History
             </button>
@@ -776,7 +776,7 @@
     let posComplimentaryActionPassword = '';
     let posComplimentaryNote = '';
     let isOffcanvasComplimentaryMode = false;
-    let isWaiter = @json(auth()->user()->hasRole('waiter'));
+    let isWaiter = @json((bool) ($isWaiterUser ?? false));
     const complimentaryNoteRequired = @json((bool) ($posSetting->complimentary_note_required ?? false));
     const dineInWaiterRequired = @json((bool) ($posSetting->dine_in_waiter_required ?? false));
 
@@ -1014,6 +1014,11 @@
         $('#customerSearchContainer').show();
         $('#new_cus_name, #new_cus_phone').val('');
         $('#showNewCustomerFormBtn').text('+ Add New Customer').removeClass('progga-btn-danger').addClass('progga-btn-primary');
+
+        @if(($isWaiterUser ?? false) && !empty($loggedInWaiter))
+            // Every waiter-created order starts with the logged-in waiter selected.
+            $('#posWaiterSelect').val('{{ $loggedInWaiter->id }}').trigger('change');
+        @endif
     }
 
     function openAllTypeOrderModal() {

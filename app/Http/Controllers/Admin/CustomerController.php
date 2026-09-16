@@ -154,7 +154,9 @@ class CustomerController extends Controller
         try {
             // mPDF এর অবজেক্ট তৈরি
             $mpdf = new Mpdf([
-                'default_font' => 'sans-serif',
+                'default_font' => 'freesans',
+                'autoScriptToLang' => true,
+                'autoLangToFont' => true,
                 'format' => 'A4'
             ]);
 

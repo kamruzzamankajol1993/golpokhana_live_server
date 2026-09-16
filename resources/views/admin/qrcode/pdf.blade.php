@@ -5,7 +5,7 @@
     <title>Table QR Codes</title>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: freesans, sans-serif;
             margin: 0;
             padding: 0;
             background: #ffffff;

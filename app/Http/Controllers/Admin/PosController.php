@@ -118,6 +118,15 @@ public function index(\Illuminate\Http\Request $request)
     }
 
     $waiters = Waiter::where('status', 1)->get();
+
+    // Waiter role names may exist as "waiter" or "Waiter" in older data.
+    // Resolve the role case-insensitively and use the explicit users <-> waiters link
+    // so the New Order modal can reliably preselect the logged-in waiter.
+    $isWaiterUser = $this->userHasRoleCaseInsensitive($user, 'waiter');
+    $loggedInWaiter = $isWaiterUser && $user
+        ? $waiters->first(fn ($waiter) => (int) $waiter->user_id === (int) $user->id)
+        : null;
+
     $customers = Customer::orderBy('name', 'asc')->get();
     $deliveryPartners = DeliveryPartner::where('status',1)->orderBy('name')->get();
     $tableId = request()->get('table_id');
@@ -211,7 +220,9 @@ public function index(\Illuminate\Http\Request $request)
         'selectedTableId',
         'selectedTable',
         'selectedBookingId',
-        'posSessionLifetimeMinutes'
+        'posSessionLifetimeMinutes',
+        'isWaiterUser',
+        'loggedInWaiter'
     ));
 }
 
@@ -487,6 +498,9 @@ public function kotList(Request $request)
             'mode' => 'utf-8', 'format' => 'A4', 'orientation' => 'L',
             'margin_left' => 8, 'margin_right' => 8, 'margin_top' => 10, 'margin_bottom' => 10,
             'tempDir' => $tempDir,
+            'autoScriptToLang' => true, 'autoLangToFont' => true,
+            // Use a Unicode font with Bengali Taka-sign coverage for every POS report PDF.
+            'default_font' => 'freesans',
         ]);
         $mpdf->SetTitle($title);
         $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
@@ -1818,6 +1832,17 @@ public function placeOrder(Request $request)
         }
 
         $actor = auth()->user();
+        $isWaiterActor = $this->userHasRoleCaseInsensitive($actor, 'waiter');
+        $loggedInWaiterForOrder = $isWaiterActor && $actor
+            ? Waiter::where('user_id', $actor->id)->where('status', 1)->first()
+            : null;
+
+        // A waiter-originated order must stay assigned to that logged-in waiter.
+        // This is enforced server-side as well as preselected in the modal.
+        if ($loggedInWaiterForOrder) {
+            $request->merge(['waiter_id' => $loggedInWaiterForOrder->id]);
+        }
+
         $sessionManagerId = app(PosSessionManagerResolver::class)->resolveId($actor);
 
         if ($sessionManagerId) {
@@ -1906,7 +1931,7 @@ public function placeOrder(Request $request)
         DB::beginTransaction();
         try {
             // ইউজারের রোল অনুযায়ী স্ট্যাটাস নির্ধারণ
-            $isWaiter = auth()->user()->hasRole('waiter');
+            $isWaiter = $isWaiterActor;
             $newStatus = $isWaiter ? 'Waiter_Hold' : 'Pending';
 
             // ১. কার্টে থাকা আইটেমের টোটাল হিসাব করা
@@ -2203,7 +2228,7 @@ public function placeOrder(Request $request)
 
         if(!$order) return response()->json(['status' => 'error', 'message' => 'No active order found.']);
 
-        $isWaiter = auth()->user()->hasRole('waiter');
+        $isWaiter = $this->userHasRoleCaseInsensitive(auth()->user(), 'waiter');
 
         // চেক করা হচ্ছে অর্ডারে কোনো Hold KOT আছে কি না (অর্থাৎ ওয়েটার নতুন কিছু অ্যাড করেছে কি না)
         $holdKots = $order->kots->where('kitchen_status', 'Hold');
@@ -2729,7 +2754,7 @@ public function tableReservationStatuses()
             return response()->json(['status' => 'error', 'message' => 'This order should be opened from table view.']);
         }
 
-        $isWaiter = auth()->user()->hasRole('waiter');
+        $isWaiter = $this->userHasRoleCaseInsensitive(auth()->user(), 'waiter');
         $holdKots = $order->kots->where('kitchen_status', 'Hold');
 
         // Front Desk যদি Waiter Hold item approve করে, order-wise cart-এ load হবে।

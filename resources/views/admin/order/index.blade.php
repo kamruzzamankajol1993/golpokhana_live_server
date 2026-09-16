@@ -219,6 +219,7 @@
           <option value="Cooking">Cooking</option>
           <option value="Ready">Ready</option>
           <option value="Completed">Completed</option>
+          <option value="Due">Due</option>
           <option value="Cancelled">Cancelled</option>
         </select>
       </div>

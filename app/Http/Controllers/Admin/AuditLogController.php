@@ -138,6 +138,8 @@ class AuditLogController extends Controller
             'mode' => 'utf-8', 'format' => 'A3', 'orientation' => 'L',
             'margin_left' => 6, 'margin_right' => 6, 'margin_top' => 8, 'margin_bottom' => 8,
             'tempDir' => $tempDir, 'autoScriptToLang' => true, 'autoLangToFont' => true,
+            // FreeSans contains the Unicode Bengali Taka sign (U+09F3); DejaVu Sans does not.
+            'default_font' => 'freesans',
         ]);
         $fileName = 'audit-log-' . now()->format('Y-m-d-His') . '.pdf';
         $mpdf->SetTitle($fileName);

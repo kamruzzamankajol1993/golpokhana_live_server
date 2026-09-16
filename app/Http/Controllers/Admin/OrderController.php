@@ -118,9 +118,13 @@ class OrderController extends Controller
             });
         }
 
-        // Status filter.
+        // Status filter. "Due" is a financial state rather than an orders.status
+        // value, so it filters by the remaining due amount. Because every screen/
+        // PDF/Excel export reuses this query builder, the result stays consistent.
         $status = trim((string) $request->input('status', ''));
-        if ($status !== '') {
+        if (strcasecmp($status, 'Due') === 0) {
+            $query->where('due', '>', 0);
+        } elseif ($status !== '') {
             $query->where('status', $status);
         }
 
@@ -201,6 +205,10 @@ class OrderController extends Controller
             'margin_header' => 5,
             'margin_footer' => 5,
             'tempDir' => $mpdfTempDir,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            // FreeSans is bundled with mPDF and includes the ৳ glyph.
+            'default_font' => 'freesans',
         ]);
 
         $mpdf->SetTitle('Order Report - ' . now()->format('d M, Y'));

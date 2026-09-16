@@ -20,7 +20,6 @@ use App\Http\Controllers\Admin\HrShiftController;
 use App\Http\Controllers\Admin\PayrollController;
 use App\Http\Controllers\Admin\SalaryAdvanceController;
 use App\Http\Controllers\Admin\LoanController;
-use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\WaiterController;
 use App\Http\Controllers\Admin\CustomerController;
@@ -50,6 +49,7 @@ Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name
 Route::get('/dashboard/chart-data', [App\Http\Controllers\HomeController::class, 'chartData'])->name('dashboard.chart_data');
 Route::get('/dashboard/top-selling-items', [App\Http\Controllers\HomeController::class, 'topSellingItems'])->name('dashboard.top_selling_items');
 Route::get('/dashboard/top-selling-items/pdf', [App\Http\Controllers\HomeController::class, 'downloadTopSellingItemsPdf'])->name('dashboard.top_selling_items.pdf');
+Route::get('/dashboard/top-selling-items/excel', [App\Http\Controllers\HomeController::class, 'downloadTopSellingItemsExcel'])->name('dashboard.top_selling_items.excel');
 Route::get('/download-pdf', [PDFController::class, 'generatePDF']);
 Route::get('/admin/login', [LoginController::class, 'showLoginForm'])->name('admin.login');
 
@@ -270,13 +270,13 @@ Route::get('customer-export-excel', [CustomerController::class, 'exportExcel'])-
     Route::post('reward-points/update', [RewardPointSettingController::class, 'update'])->name('reward-points.update');
 
 
-// Zone Management Routes
-    Route::resource('zone', ZoneController::class);
+// Table Management owns the single Floor / Zone module.
     Route::resource('floor-zone', App\Http\Controllers\Admin\FloorZoneController::class);
 
     // Shift Management Routes
     Route::resource('shift', ShiftController::class);
 Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->name('waiter.status');
+    Route::post('waiter-link-user', [WaiterController::class, 'linkUser'])->name('waiter.link_user');
     // Waiter Management Routes
     Route::resource('waiter', WaiterController::class);
 

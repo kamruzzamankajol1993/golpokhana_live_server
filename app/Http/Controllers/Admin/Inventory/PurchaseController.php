@@ -219,7 +219,9 @@ class PurchaseController extends Controller
             'margin_top' => 14,
             'margin_bottom' => 16,
             'tempDir' => $tempDir,
-            'default_font' => 'dejavusans',
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
 
         $fileName = 'purchase-invoice-' . preg_replace('/[^A-Za-z0-9._-]+/', '-', $purchase->purchase_no) . '.pdf';

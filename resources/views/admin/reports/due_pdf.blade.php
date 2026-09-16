@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <title>Due Report</title>
     <style>
-        body { font-family: sans-serif; font-size: 10px; color: #2f3437; }
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        /* FreeSans includes U+09F3 (৳); DejaVu Sans used previously does not. */
+        body { font-family: freesans, sans-serif; font-size: 10px; color: #2f3437; }
         .header { text-align: center; margin-bottom: 12px; border-bottom: 2px solid #21352a; padding-bottom: 9px; }
         .header h2 { margin: 0 0 3px; color: #21352a; font-size: 20px; }
         .header .title { margin-top: 6px; font-size: 14px; font-weight: bold; }
@@ -33,9 +35,9 @@
     <table class="summary">
         <tr>
             <td><span class="label">Due Orders</span><span class="value">{{ $totalOrders }}</span></td>
-            <td><span class="label">Grand Total</span><span class="value">৳{{ number_format($totalGrand, 2) }}</span></td>
-            <td><span class="label">Paid Amount</span><span class="value">৳{{ number_format($totalPaid, 2) }}</span></td>
-            <td><span class="label">Total Due</span><span class="value">৳{{ number_format($totalDue, 2) }}</span></td>
+            <td><span class="label">Grand Total</span><span class="value"><span class="taka-symbol">&#2547;</span>{{ number_format($totalGrand, 2) }}</span></td>
+            <td><span class="label">Paid Amount</span><span class="value"><span class="taka-symbol">&#2547;</span>{{ number_format($totalPaid, 2) }}</span></td>
+            <td><span class="label">Total Due</span><span class="value"><span class="taka-symbol">&#2547;</span>{{ number_format($totalDue, 2) }}</span></td>
         </tr>
     </table>
 
@@ -59,13 +61,8 @@
         <tbody>
             @forelse($orders as $order)
                 @php
-                    $partnerLabels = [
-                        'foodpanda' => 'Foodpanda',
-                        'foodi' => 'Foodi',
-                        'pathao_food' => 'Pathao Food',
-                    ];
-                    $partnerKey = strtolower(trim((string) ($order->delivery_partner ?? '')));
-                    $partnerLabel = $partnerKey !== '' ? ($partnerLabels[$partnerKey] ?? $order->delivery_partner) : '—';
+                    // Keep the PDF consistent with the Due Report screen: resolve stored partner IDs to names.
+                    $partnerLabel = $order->delivery_partner_display_name ?: '—';
                     $payment = $order->reportPaymentText(0, true);
                 @endphp
                 <tr>
@@ -76,9 +73,9 @@
                     <td>{{ $partnerLabel }}</td>
                     <td>{{ optional($order->customer)->name ?? 'Walk-in' }}</td>
                     <td>{{ optional($order->customer)->phone ?? optional($order->customer)->mobile ?? '—' }}</td>
-                    <td class="text-right">৳{{ number_format((float)($order->grand_total ?? 0), 2) }}</td>
-                    <td class="text-right">৳{{ number_format((float)($order->total_paid_amount ?? 0), 2) }}</td>
-                    <td class="text-right"><strong>৳{{ number_format((float)($order->due ?? 0), 2) }}</strong></td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->grand_total ?? 0), 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->total_paid_amount ?? 0), 2) }}</td>
+                    <td class="text-right"><strong><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->due ?? 0), 2) }}</strong></td>
                     <td>{{ $payment }}</td>
                     <td>{{ $order->status ?? '—' }}</td>
                 </tr>
@@ -90,9 +87,9 @@
         <tfoot>
             <tr>
                 <th colspan="7" class="text-right">Total ({{ $orders->count() }} Orders)</th>
-                <th class="text-right">৳{{ number_format($totalGrand, 2) }}</th>
-                <th class="text-right">৳{{ number_format($totalPaid, 2) }}</th>
-                <th class="text-right">৳{{ number_format($totalDue, 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalGrand, 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalPaid, 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalDue, 2) }}</th>
                 <th colspan="2"></th>
             </tr>
         </tfoot>

@@ -13,12 +13,6 @@
             </div>
         </div>
         <div class="d-flex gap-2">
-            @can('zone-view')
-            <button class="progga-btn progga-btn-secondary" data-bs-toggle="modal" data-bs-target="#zoneModal">
-                <i class="bi bi-geo-alt-fill"></i> Zones
-            </button>
-            @endcan
-
             @can('shift-view')
             <button class="progga-btn progga-btn-info" data-bs-toggle="modal" data-bs-target="#shiftModal">
                 <i class="bi bi-clock-history"></i> Shifts
@@ -120,7 +114,7 @@
 
 @include('admin.waiter.modals.add_waiter')
 @include('admin.waiter.modals.edit_waiter')
-@include('admin.waiter.modals.zone_modal')
+@include('admin.waiter.modals.link_user')
 @include('admin.waiter.modals.shift_modal')
 
 @endsection
@@ -163,28 +157,6 @@
         // Initial Load
         fetchWaiters();
 
-
-        function refreshZoneDropdowns() {
-        $.get("{{ route('zone.index') }}?dropdown=1", function(data) {
-            // ওয়েটার মোডাল এবং ফিল্টার ড্রপডাউনগুলো সিলেক্ট করা
-            let selectors = $('select[name="zone_id"], #zoneFilter');
-            selectors.each(function() {
-                let currentSelect = $(this);
-                let placeholder = currentSelect.find('option:first').text();
-                currentSelect.empty().append(`<option value="">${placeholder}</option>`);
-
-                data.forEach(item => {
-                    currentSelect.append(`<option value="${item.id}">${item.name}</option>`);
-                });
-
-                // Select2 থাকলে সেটি রিফ্রেশ করা
-                if (currentSelect.hasClass('select2-hidden-accessible')) {
-                    currentSelect.select2('destroy').select2({ theme: 'progga-theme', width: '100%' });
-                }
-            });
-        });
-    }
-
     function refreshShiftDropdowns() {
         $.get("{{ route('shift.index') }}?dropdown=1", function(data) {
             let selectors = $('select[name="shift_id"], #shiftFilter');
@@ -204,65 +176,8 @@
         });
     }
 
-
         // ==========================================
-        // 2. Zone Ajax Logic (Create, Update, Fetch)
-        // ==========================================
-        function loadZoneTable(page = 1) {
-            $.get("{{ route('zone.index') }}?page=" + page, function(data) {
-                $('#zoneTableBody').html(data);
-            });
-        }
-
-        $('#zoneModal').on('shown.bs.modal', function () { loadZoneTable(); });
-
-        $('#zoneForm').submit(function(e) {
-            e.preventDefault();
-            let id = $('#zone_id').val();
-            let url = id ? "{{ route('zone.update', ':id') }}".replace(':id', id) : "{{ route('zone.store') }}";
-            let method = id ? "PUT" : "POST";
-
-            $.ajax({
-                url: url,
-                type: method,
-                data: $(this).serialize(),
-                success: function(res) {
-                    if(res.success) {
-                        $('#zoneForm')[0].reset();
-                        $('#zone_id').val('');
-                        $('#zone_status').prop('checked', true); // নতুন ডাটা অ্যাড করার পর চেকবক্স অটো একটিভ হবে
-                        $('#zoneSubmitBtn').text('Save');
-                        refreshZoneDropdowns();
-                        loadZoneTable();
-                        if(typeof window.proggaToast === 'function') {
-                            window.proggaToast(res.message, 'success');
-                        } else {
-                            alert(res.message);
-                        }
-                    }
-                },
-                error: function(err) {
-                    alert("Something went wrong!");
-                }
-            });
-        });
-
-        window.editZoneAjax = function(id, name, status) {
-            $('#zone_id').val(id);
-            $('#zone_name').val(name);
-            $('#zone_status').prop('checked', status == 1); // এডিট করার সময় স্ট্যাটাস ঠিকমতো লোড হবে
-            $('#zoneSubmitBtn').text('Update');
-        }
-
-        $(document).on('click', '#zoneTableBody .pagination a', function(e) {
-            e.preventDefault();
-            let page = $(this).attr('href').split('page=')[1];
-            loadZoneTable(page);
-        });
-
-
-        // ==========================================
-        // 3. Shift Ajax Logic (Create, Update, Fetch)
+        // 2. Shift Ajax Logic (Create, Update, Fetch)
         // ==========================================
         function loadShiftTable(page = 1) {
             $.get("{{ route('shift.index') }}?page=" + page, function(data) {
@@ -314,6 +229,57 @@
             e.preventDefault();
             let page = $(this).attr('href').split('page=')[1];
             loadShiftTable(page);
+        });
+
+        // ==========================================
+        // Existing User -> Waiter Link Repair
+        // ==========================================
+        $(document).on('click', '.link-waiter-user-btn', function() {
+            const button = $(this);
+            const waiterId = String(button.data('waiter-id') || '');
+            const waiterName = String(button.data('waiter-name') || '').trim().toLowerCase();
+            const waiterEmail = String(button.data('waiter-email') || '').trim().toLowerCase();
+            const waiterPhone = String(button.data('waiter-phone') || '').replace(/\D/g, '');
+
+            $('#link_waiter_id').val(waiterId);
+            $('#link_waiter_name').text(button.data('waiter-name') || 'Selected waiter');
+
+            const select = $('#link_waiter_user_id');
+            select.val('');
+
+            // Safe auto-suggestion: email first, then phone, then exact name.
+            let matchedValue = '';
+            select.find('option[data-user-id]').each(function() {
+                const option = $(this);
+                const optionEmail = String(option.data('email') || '').trim().toLowerCase();
+                if (waiterEmail && optionEmail === waiterEmail) {
+                    matchedValue = option.val();
+                    return false;
+                }
+            });
+
+            if (!matchedValue && waiterPhone) {
+                select.find('option[data-user-id]').each(function() {
+                    const option = $(this);
+                    const optionPhone = String(option.data('phone') || '').replace(/\D/g, '');
+                    if (optionPhone && optionPhone === waiterPhone) {
+                        matchedValue = option.val();
+                        return false;
+                    }
+                });
+            }
+
+            if (!matchedValue && waiterName) {
+                const nameMatches = select.find('option[data-user-id]').filter(function() {
+                    return String($(this).data('name') || '').trim().toLowerCase() === waiterName;
+                });
+                if (nameMatches.length === 1) {
+                    matchedValue = nameMatches.first().val();
+                }
+            }
+
+            select.val(matchedValue).trigger('change');
+            $('#linkWaiterUserModal').modal('show');
         });
 
         // ==========================================

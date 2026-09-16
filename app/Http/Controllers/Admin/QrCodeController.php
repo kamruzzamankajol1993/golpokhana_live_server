@@ -53,7 +53,10 @@ class QrCodeController extends Controller
             'margin_left' => 10,
             'margin_right' => 10,
             'margin_top' => 12,
-            'margin_bottom' => 12
+            'margin_bottom' => 12,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            'default_font' => 'freesans'
         ]);
 
         $mpdf->SetTitle('Table QR Codes');

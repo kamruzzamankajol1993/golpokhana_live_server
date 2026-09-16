@@ -39,11 +39,16 @@ public function testExcel()
 }
     public function generatePDF()
     {
-        $mpdf = new Mpdf();
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            'default_font' => 'freesans',
+        ]);
 
         // PDF Content
         $html = '
-            <div style="text-align: center; font-family: sans-serif;">
+            <div style="text-align: center; font-family: freesans, sans-serif;">
                 <h1 style="color: #333;">Laravel mPDF Test</h1>
                 <p>Congratulations! mPDF is working perfectly in your project.</p>
                 <p>Current Date: ' . date('d-m-Y H:i:s') . '</p>

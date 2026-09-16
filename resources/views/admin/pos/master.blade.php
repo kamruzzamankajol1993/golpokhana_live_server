@@ -221,7 +221,7 @@
 
 $(document).ready(function() {
     let isPolling = true;
-let isMasterWaiter = @json(auth()->check() && auth()->user()->hasRole('waiter'));
+let isMasterWaiter = @json(auth()->check() && auth()->user()->getRoleNames()->contains(fn ($role) => strcasecmp((string) $role, 'waiter') === 0));
     $.ajaxSetup({
         headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
     });

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>Report</title>
     <style>
-        body { font-family: sans-serif; font-size: 13px; color: #333; }
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        body { font-family: freesans, sans-serif; font-size: 13px; color: #333; }
         .header { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #21352a; padding-bottom: 15px; }
         .header h2 { margin: 0 0 5px 0; color: #21352a; font-size: 26px; text-transform: uppercase; letter-spacing: 1px; }
         .header p { margin: 0; color: #666; font-size: 13px; }
@@ -67,23 +68,23 @@
                     <td>{{ $row['time'] ?? '—' }}</td>
                     <td>{{ $row['customer'] }}</td>
                     <td>{{ $row['table'] }}</td>
-                    <td class="text-right">৳{{ number_format($row['other_discount'] ?? 0, 2) }}</td>
-                    <td class="text-right">৳{{ number_format($row['product_discount'] ?? 0, 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row['other_discount'] ?? 0, 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row['product_discount'] ?? 0, 2) }}</td>
                     <td>{{ str_replace(['Mobile Banking / MFC', 'Mobile Banking / MFS', 'Mobile Banking'], 'MFS', $row['payment_type']) }}</td>
-                    <td class="text-right">৳{{ number_format($row['cash'], 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row['cash'], 2) }}</td>
                     <td class="text-right">
-                        ৳{{ number_format($row['card'], 2) }}
+                        <span class="taka-symbol">&#2547;</span>{{ number_format($row['card'], 2) }}
                         @if(($row['card'] ?? 0) > 0 && !empty($row['card_provider']))
                             <div style="font-size:8px;color:#555;">{{ $row['card_provider'] }}</div>
                         @endif
                     </td>
                     <td class="text-right">
-                        ৳{{ number_format($row['mfc'], 2) }}
+                        <span class="taka-symbol">&#2547;</span>{{ number_format($row['mfc'], 2) }}
                         @if(($row['mfc'] ?? 0) > 0 && !empty($row['mfs_provider']))
                             <div style="font-size:8px;color:#555;">{{ $row['mfs_provider'] }}</div>
                         @endif
                     </td>
-                    <td class="text-right"><strong>৳{{ number_format($row['total_paid'], 2) }}</strong></td>
+                    <td class="text-right"><strong><span class="taka-symbol">&#2547;</span>{{ number_format($row['total_paid'], 2) }}</strong></td>
                 </tr>
             @empty
                 <tr><td colspan="13" class="text-center">No payment data found.</td></tr>
@@ -92,13 +93,13 @@
             <tfoot>
                 <tr>
                     <th colspan="6" class="text-right">Total</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('other_discount'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('other_discount'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
                     <th></th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('cash'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('card'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('mfc'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($totalPaid, 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('cash'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('card'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('mfc'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalPaid, 2) }}</th>
                 </tr>
             </tfoot>
         </table>
@@ -112,9 +113,9 @@
                     <td>{{ $row->product_name }}</td>
                     <td class="text-center">{{ number_format($row->total_qty) }}</td>
                     <td class="text-center">{{ number_format($row->orders_count) }}</td>
-                    <td class="text-right">৳{{ number_format($row->total_sales, 2) }}</td>
-                    <td class="text-right">৳{{ number_format($row->product_discount ?? 0, 2) }}</td>
-                    <td class="text-right"><strong>৳{{ number_format($row->net_sales ?? (($row->total_sales ?? 0) - ($row->product_discount ?? 0)), 2) }}</strong></td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row->total_sales, 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row->product_discount ?? 0, 2) }}</td>
+                    <td class="text-right"><strong><span class="taka-symbol">&#2547;</span>{{ number_format($row->net_sales ?? (($row->total_sales ?? 0) - ($row->product_discount ?? 0)), 2) }}</strong></td>
                 </tr>
             @empty
                 <tr><td colspan="7" class="text-center">No food sales found.</td></tr>
@@ -126,9 +127,9 @@
                     <th colspan="2" class="text-right">Total</th>
                     <th class="text-center">{{ number_format($dataRows->sum('total_qty')) }}</th>
                     <th></th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('total_sales'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('net_sales'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('total_sales'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('product_discount'), 2) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('net_sales'), 2) }}</th>
                 </tr>
             </tfoot>
             @endif
@@ -193,9 +194,9 @@
                         @endforeach
                     </td>
                     <td class="text-center">{{ $complimentaryQty }}</td>
-                    <td class="text-right">৳{{ number_format($order->grand_total, 0) }}</td>
-                    <td class="text-right">৳{{ number_format($order->discount_amount ?? 0, 0) }}</td>
-                    <td class="text-right">৳{{ number_format($order->product_discount_amount ?? 0, 0) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($order->grand_total, 0) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($order->discount_amount ?? 0, 0) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($order->product_discount_amount ?? 0, 0) }}</td>
                     <td>{{ $paymentText }}</td>
                     <td>{{ $order->status }}</td>
                     <td>{{ optional($order->created_at)->format('d M Y') }}</td>
@@ -209,9 +210,9 @@
                 <tr>
                     <th colspan="5" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
                     <th class="text-center">{{ number_format($totalComplimentaryQty) }}</th>
-                    <th class="text-right">৳{{ number_format($periodTotalSale, 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($periodTotalSale, 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
                     <th colspan="4"></th>
                 </tr>
             </tfoot>
@@ -266,14 +267,14 @@
                         <strong>{{ optional($order->customer)->name ?? 'Walk-in' }}</strong><br>
                         <span style="font-size:8px; color:#555;">{{ $tableText }}</span>
                     </td>
-                    <td class="text-right">৳{{ number_format($order->subtotal, 0) }}</td>
-                    <td class="text-right" style="color: red;">৳{{ number_format($discountAmount, 0) }}</td>
-                    <td class="text-right" style="color: red;">৳{{ number_format($productDiscountAmount, 0) }}</td>
-                    <td class="text-right">৳{{ number_format($serviceCharge, 0) }}</td>
-                    <td class="text-right" style="color: green;">৳{{ number_format($tipsAmount, 0) }}</td>
-                    <td class="text-right">৳{{ number_format($givenMoney, 0) }}</td>
-                    <td class="text-right" style="color: green;">৳{{ number_format($changeAmount, 0) }}</td>
-                    <td class="text-right"><strong>৳{{ number_format($order->grand_total, 0) }}</strong></td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($order->subtotal, 0) }}</td>
+                    <td class="text-right" style="color: red;"><span class="taka-symbol">&#2547;</span>{{ number_format($discountAmount, 0) }}</td>
+                    <td class="text-right" style="color: red;"><span class="taka-symbol">&#2547;</span>{{ number_format($productDiscountAmount, 0) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($serviceCharge, 0) }}</td>
+                    <td class="text-right" style="color: green;"><span class="taka-symbol">&#2547;</span>{{ number_format($tipsAmount, 0) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($givenMoney, 0) }}</td>
+                    <td class="text-right" style="color: green;"><span class="taka-symbol">&#2547;</span>{{ number_format($changeAmount, 0) }}</td>
+                    <td class="text-right"><strong><span class="taka-symbol">&#2547;</span>{{ number_format($order->grand_total, 0) }}</strong></td>
                     <td>{!! $paymentText !!}</td>
                     <td>{{ $order->status }}</td>
                     <td>{{ optional($order->created_at)->format('d M Y') }}</td>
@@ -289,13 +290,13 @@
             <tfoot>
                 <tr>
                     <th colspan="3" class="text-right">Total ({{ $dataRows->count() }} Orders)</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('subtotal'), 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('service_charge'), 0) }}</th>
-                    <th class="text-right">৳{{ number_format($dataRows->sum('tips_amount'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('subtotal'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('discount_amount'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('product_discount_amount'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('service_charge'), 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($dataRows->sum('tips_amount'), 0) }}</th>
                     <th colspan="2"></th>
-                    <th class="text-right">৳{{ number_format($periodTotalSale, 0) }}</th>
+                    <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($periodTotalSale, 0) }}</th>
                     <th colspan="5"></th>
                 </tr>
             </tfoot>

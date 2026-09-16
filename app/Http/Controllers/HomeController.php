@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ArrayReportExport;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\OrderDetail;
@@ -11,6 +12,7 @@ use App\Support\OrderVisibility;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
 
 class HomeController extends Controller
@@ -400,8 +402,11 @@ class HomeController extends Controller
             return false;
         }
 
+        // Owner and Director use the same dashboard experience and dashboard reports as Super Admin.
+        // Role matching is case-insensitive, so Owner/owner and Director/director are both supported.
+        // This does not grant these roles Super Admin permissions outside HomeController.
         return $user->getRoleNames()->contains(function ($roleName) {
-            return strcasecmp((string) $roleName, 'Super Admin') === 0;
+            return in_array(strtolower(trim((string) $roleName)), ['super admin', 'owner', 'director'], true);
         });
     }
 
@@ -926,6 +931,7 @@ class HomeController extends Controller
             'tempDir' => $mpdfTempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
 
         $restaurant = RestaurantSetting::query()->first();
@@ -944,6 +950,45 @@ class HomeController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $fileName . '"',
         ]);
+    }
+
+    /**
+     * Export the complete Top Selling Items result set for the selected period.
+     * This intentionally ignores the page-size selector, matching the existing
+     * "Export All" PDF behaviour.
+     */
+    public function downloadTopSellingItemsExcel(Request $request)
+    {
+        abort_unless($this->isSuperAdminUser(), 403);
+
+        $context = $this->topSellingReportContext($request);
+        $items = $this->topSellingItemsQuery(
+            $context['periodRange'],
+            $context['visibleOrderIds']
+        )->get();
+
+        $rows = $items->values()->map(function ($item, $index) {
+            $hasSales = (int) $item->total_qty > 0;
+
+            return [
+                $index + 1,
+                $item->product_name,
+                (int) $item->total_qty,
+                (float) $item->total_amount,
+                $hasSales ? 'Sold' : 'No Sales',
+            ];
+        })->all();
+
+        $fileName = 'top-selling-items-' . $context['period'] . '-' . now()->format('Ymd-His') . '.xlsx';
+
+        return Excel::download(
+            new ArrayReportExport(
+                ['Rank', 'Item', 'Quantity Sold', 'Sales Value', 'Status'],
+                $rows,
+                'Top Selling Items'
+            ),
+            $fileName
+        );
     }
 
     public function index()

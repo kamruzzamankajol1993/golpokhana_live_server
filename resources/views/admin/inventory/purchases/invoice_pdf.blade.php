@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <title>Purchase Invoice {{ $purchase->purchase_no }}</title>
     <style>
-        body { font-family: dejavusans, sans-serif; color:#1f2933; font-size:11px; margin:0; }
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        body { font-family: freesans, sans-serif; color:#1f2933; font-size:11px; margin:0; }
         .header { border-bottom:2px solid #21352a; padding-bottom:14px; margin-bottom:18px; }
         .brand { font-size:22px; font-weight:700; color:#21352a; }
         .muted { color:#6b7280; }
@@ -82,22 +83,22 @@
                 <td>{{ rtrim(rtrim((string)$item->quantity, '0'), '.') }} {{ $item->packageConversion?->label ?: $item->unit?->symbol }}</td>
                 <td class="num">
                     @if($item->package_conversion_id || $item->unit?->dimension === 'PACKAGE')
-                        ৳{{ number_format((float)$item->unit_price, 2) }}<br><span class="muted">per package</span>
+                        <span class="taka-symbol">&#2547;</span>{{ number_format((float)$item->unit_price, 2) }}<br><span class="muted">per package</span>
                     @else
-                        ৳{{ number_format((float)$item->line_total, 2) }}<br><span class="muted">for entered qty</span>
+                        <span class="taka-symbol">&#2547;</span>{{ number_format((float)$item->line_total, 2) }}<br><span class="muted">for entered qty</span>
                     @endif
                 </td>
-                <td class="num">৳{{ number_format((float)$item->line_total, 2) }}</td>
+                <td class="num"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$item->line_total, 2) }}</td>
             </tr>
             @endforeach
         </tbody>
     </table>
 
     <table class="summary">
-        <tr><td>Subtotal</td><td style="text-align:right">৳{{ number_format((float)$purchase->subtotal, 2) }}</td></tr>
-        <tr><td>Discount</td><td style="text-align:right">৳{{ number_format((float)$purchase->discount, 2) }}</td></tr>
-        <tr><td>Tax</td><td style="text-align:right">৳{{ number_format((float)$purchase->tax, 2) }}</td></tr>
-        <tr class="total"><td>Total</td><td style="text-align:right">৳{{ number_format((float)$purchase->total, 2) }}</td></tr>
+        <tr><td>Subtotal</td><td style="text-align:right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$purchase->subtotal, 2) }}</td></tr>
+        <tr><td>Discount</td><td style="text-align:right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$purchase->discount, 2) }}</td></tr>
+        <tr><td>Tax</td><td style="text-align:right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$purchase->tax, 2) }}</td></tr>
+        <tr class="total"><td>Total</td><td style="text-align:right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$purchase->total, 2) }}</td></tr>
     </table>
 
     @if($purchase->notes)

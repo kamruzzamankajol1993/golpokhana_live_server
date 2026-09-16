@@ -47,7 +47,7 @@ class Employee extends Model
 
     public function zone()
     {
-        return $this->belongsTo(Zone::class);
+        return $this->belongsTo(FloorZone::class, 'zone_id');
     }
 
     public function waiter()

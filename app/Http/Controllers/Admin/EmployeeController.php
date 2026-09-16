@@ -15,7 +15,7 @@ use App\Models\LeaveType;
 use App\Models\Shift;
 use App\Models\User;
 use App\Models\Waiter;
-use App\Models\Zone;
+use App\Models\FloorZone;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -618,7 +618,7 @@ class EmployeeController extends Controller
             'designations' => Designation::with('department')->where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'employmentTypes' => EmploymentType::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'shifts' => Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
-            'zones' => Zone::where('status', true)->orderBy('name')->get(),
+            'zones' => FloorZone::where('status', true)->orderBy('name')->get(),
             'hrSetting' => HrSetting::first(),
             'leaveTypes' => LeaveType::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'salaryComponents' => SalaryComponent::where('status', true)->orderByRaw("CASE component_group WHEN 'salary' THEN 1 WHEN 'allowance' THEN 2 ELSE 3 END")->orderBy('sort_order')->orderBy('name')->get(),
@@ -694,7 +694,7 @@ class EmployeeController extends Controller
             'zone_id' => [
                 Rule::requiredIf($request->boolean('is_waiter')),
                 'nullable',
-                'exists:zones,id',
+                'exists:floor_zones,id',
             ],
             'gender' => ['nullable', Rule::in(['male', 'female', 'other'])],
             'date_of_birth' => ['nullable', 'date', 'before:today'],

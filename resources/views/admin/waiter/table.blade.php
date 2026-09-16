@@ -9,7 +9,7 @@
                 <th>Zone</th>
                 <th>Shift</th>
                 <th>Status</th>
-                <th style="width:120px;">Actions</th>
+                <th style="width:210px;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -47,6 +47,22 @@
                 <td>
     <div class="progga-table-actions">
         @can('waiter-edit')
+        @if($waiter->user_id)
+            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" title="Login user linked" disabled>
+                <i class="bi bi-person-check-fill"></i> Linked
+            </button>
+        @else
+            <button type="button"
+                    class="progga-btn progga-btn-info progga-btn-sm link-waiter-user-btn"
+                    title="Link existing Waiter user"
+                    data-waiter-id="{{ $waiter->id }}"
+                    data-waiter-name="{{ $waiter->name }}"
+                    data-waiter-email="{{ $waiter->email }}"
+                    data-waiter-phone="{{ $waiter->phone }}">
+                <i class="bi bi-person-add"></i> Link User
+            </button>
+        @endif
+
         <button class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" title="Edit"
                 onclick="editWaiterData({{ $waiter->id }}, '{{ $waiter->name }}', '{{ $waiter->phone }}', '{{ $waiter->email }}', '{{ $waiter->employee_id }}', '{{ $waiter->zone_id }}', '{{ $waiter->shift_id }}', '{{ $waiter->join_date }}', {{ $waiter->status }}, '{{ $waiter->notes }}')">
             <i class="bi bi-pencil"></i>

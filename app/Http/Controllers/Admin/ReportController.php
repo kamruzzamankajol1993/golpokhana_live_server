@@ -301,7 +301,8 @@ class ReportController extends Controller
             $deliveryPartner = '';
         }
 
-        $baseQuery = Order::with(['customer', 'table', 'waiter', 'user'])
+        // Eager-load the partner so stored partner IDs render as names in the Due Report without per-row queries.
+        $baseQuery = Order::with(['customer', 'table', 'waiter', 'user', 'deliveryPartner'])
             ->where('due', '>', 0);
 
         if ($filterType !== 'all') {
@@ -376,7 +377,8 @@ class ReportController extends Controller
             $deliveryPartner = '';
         }
 
-        $query = Order::with(['customer', 'table', 'waiter', 'user'])
+        // Eager-load the partner so stored partner IDs render as names in the Due Report PDF.
+        $query = Order::with(['customer', 'table', 'waiter', 'user', 'deliveryPartner'])
             ->where('due', '>', 0);
 
         if ($filterType !== 'all') {
@@ -445,6 +447,7 @@ class ReportController extends Controller
             'tempDir' => $tempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
 
         $fileName = 'Due_Report_' . ($filterType === 'all'
@@ -470,7 +473,8 @@ class ReportController extends Controller
         $deliveryPartner = strtolower(trim((string) $request->input('delivery_partner', '')));
         if (!in_array($deliveryPartner, $allowedPartners, true)) $deliveryPartner = '';
 
-        $query = Order::with(['customer', 'table', 'waiter', 'user'])->where('due', '>', 0);
+        // Eager-load the partner so stored partner IDs export as names in the Due Report Excel file.
+        $query = Order::with(['customer', 'table', 'waiter', 'user', 'deliveryPartner'])->where('due', '>', 0);
         if ($filterType !== 'all') $query->whereBetween('created_at', [$startDate, $endDate]);
         if ($deliveryPartner === 'inhouse') {
             $query->whereIn('order_type', ['Delivery', 'delivery'])->where(function ($q) {
@@ -542,6 +546,7 @@ class ReportController extends Controller
             'mode' => 'utf-8', 'format' => 'A4', 'orientation' => 'L',
             'margin_left' => 7, 'margin_right' => 7, 'margin_top' => 8, 'margin_bottom' => 8,
             'tempDir' => $tempDir, 'autoScriptToLang' => true, 'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
 
         $partnerSlug = $selectedDeliveryPartner ? Str::slug($selectedDeliveryPartner->name, '_') : 'ALL';
@@ -625,6 +630,7 @@ class ReportController extends Controller
             'mode' => 'utf-8', 'format' => $format, 'orientation' => $orientation,
             'margin_left' => 7, 'margin_right' => 7, 'margin_top' => 8, 'margin_bottom' => 8,
             'tempDir' => $tempDir, 'autoScriptToLang' => true, 'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
         $mpdf->SetTitle($fileName);
         $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO} of {nbpg}');
@@ -2057,6 +2063,7 @@ class ReportController extends Controller
             'tempDir' => $tempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
         $mpdf->SetTitle($fileName);
         $mpdf->WriteHTML($html);
@@ -2213,6 +2220,7 @@ class ReportController extends Controller
             'tempDir' => $tempDir,
             'autoScriptToLang' => true,
             'autoLangToFont' => true,
+            'default_font' => 'freesans',
         ]);
 
         $mpdf->SetTitle($fileName);

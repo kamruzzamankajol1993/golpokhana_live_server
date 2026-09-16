@@ -95,3 +95,21 @@
     </div>
   </div>
 </div>
+
+<script id="waiter-login-toggle-script">
+(function () {
+    const modal = document.getElementById('addWaiterModal');
+    if (!modal) return;
+
+    const toggle = modal.querySelector('#createAccountCheck');
+    const email = modal.querySelector('input[name="email"]');
+    if (!toggle || !email) return;
+
+    const syncEmailRequirement = function () {
+        email.required = toggle.checked;
+    };
+
+    toggle.addEventListener('change', syncEmailRequirement);
+    syncEmailRequirement();
+})();
+</script>

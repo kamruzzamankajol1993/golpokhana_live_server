@@ -67,14 +67,11 @@
               <div class="col-7">
                 <div class="pos-modal-label">Assign Waiter</div>
                 <select id="posWaiterSelect" class="progga-select w-100">
-                  @if(auth()->check() && auth()->user()->hasRole('waiter'))
-                      @php
-                          $loggedInWaiter = collect($waiters)->firstWhere('user_id', auth()->id());
-                      @endphp
+                  @if($isWaiterUser ?? false)
                       @if($loggedInWaiter)
                           <option value="{{ $loggedInWaiter->id }}" selected>{{ $loggedInWaiter->name }}</option>
                       @else
-                          <option value="">— Profile Not Found —</option>
+                          <option value="">— Linked Waiter Profile Not Found —</option>
                       @endif
                   @else
                       <option value="">— Unassigned —</option>

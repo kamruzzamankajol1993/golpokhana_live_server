@@ -22,6 +22,9 @@ Top Selling Items — {{ $restaurantSettingName }}
         </div>
       </div>
       <div class="top-selling-card-head-actions">
+        <a href="{{ route('dashboard.top_selling_items.excel', ['period' => $period]) }}" class="progga-btn progga-btn-secondary progga-btn-sm">
+          <i class="bi bi-file-earmark-excel"></i> Download Excel
+        </a>
         <a href="{{ route('dashboard.top_selling_items.pdf', ['period' => $period]) }}" target="_blank" rel="noopener" class="progga-btn progga-btn-primary progga-btn-sm">
           <i class="bi bi-file-earmark-pdf"></i> Download PDF
         </a>
@@ -69,8 +72,12 @@ Top Selling Items — {{ $restaurantSettingName }}
               </select>
             </form>
 
+            <a href="{{ route('dashboard.top_selling_items.excel', ['period' => $period]) }}" class="progga-btn progga-btn-outline progga-btn-sm" style="min-height:38px;">
+              <i class="bi bi-file-earmark-excel"></i> Export All to Excel
+            </a>
+
             <a href="{{ route('dashboard.top_selling_items.pdf', ['period' => $period]) }}" target="_blank" rel="noopener" class="progga-btn progga-btn-outline progga-btn-sm" style="min-height:38px;">
-              <i class="bi bi-download"></i> Export All to PDF
+              <i class="bi bi-file-earmark-pdf"></i> Export All to PDF
             </a>
           </div>
         </div>

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>Report</title>
     <style>
-        body { font-family: sans-serif; font-size: 13px; color: #333; }
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        body { font-family: freesans, sans-serif; font-size: 13px; color: #333; }
         .header { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #21352a; padding-bottom: 15px; }
         .header h2 { margin: 0 0 5px 0; color: #21352a; font-size: 26px; text-transform: uppercase; letter-spacing: 1px; }
         .header p { margin: 0; color: #666; font-size: 13px; }
@@ -40,17 +41,17 @@
             <thead><tr><th>Payment Type</th><th class="text-center">Order Count</th><th class="text-right">Amount</th><th class="text-right">Share</th></tr></thead>
             <tbody>
             @foreach($dataRows as $row)
-                <tr><td>{{ $row['label'] }}</td><td class="text-center">{{ $row['orders_count'] }}</td><td class="text-right">৳{{ number_format($row['amount'], 2) }}</td><td class="text-right">{{ number_format($row['percentage'], 2) }}%</td></tr>
+                <tr><td>{{ $row['label'] }}</td><td class="text-center">{{ $row['orders_count'] }}</td><td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row['amount'], 2) }}</td><td class="text-right">{{ number_format($row['percentage'], 2) }}%</td></tr>
             @endforeach
             </tbody>
-            <tfoot><tr><th colspan="2" class="text-right">Total</th><th class="text-right">৳{{ number_format($total, 2) }}</th><th></th></tr></tfoot>
+            <tfoot><tr><th colspan="2" class="text-right">Total</th><th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($total, 2) }}</th><th></th></tr></tfoot>
         </table>
     @elseif($report === 'food_sales')
         <table class="table">
             <thead><tr><th>SL</th><th>Food Item</th><th class="text-center">Qty Sold</th><th class="text-center">Order Count</th><th class="text-right">Total Sales</th></tr></thead>
             <tbody>
             @forelse($dataRows as $key => $row)
-                <tr><td>{{ $key + 1 }}</td><td>{{ $row->product_name }}</td><td class="text-center">{{ number_format($row->total_qty) }}</td><td class="text-center">{{ number_format($row->orders_count) }}</td><td class="text-right">৳{{ number_format($row->total_sales, 2) }}</td></tr>
+                <tr><td>{{ $key + 1 }}</td><td>{{ $row->product_name }}</td><td class="text-center">{{ number_format($row->total_qty) }}</td><td class="text-center">{{ number_format($row->orders_count) }}</td><td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($row->total_sales, 2) }}</td></tr>
             @empty
                 <tr><td colspan="5" class="text-center">No food sales found.</td></tr>
             @endforelse
@@ -62,12 +63,12 @@
             <thead><tr><th>SL</th><th>Order #</th><th>Date & Time</th><th>Customer</th><th>Table</th><th>Payment</th><th class="text-right">Total</th><th>Status</th></tr></thead>
             <tbody>
             @forelse($dataRows as $key => $order)
-                <tr><td>{{ $key + 1 }}</td><td>#{{ $order->order_number }}</td><td>{{ $order->created_at->format('d/m/Y h:i A') }}</td><td>{{ $order->customer->name ?? 'Walk-in' }}</td><td>{{ $order->table->table_number ?? 'Takeaway' }}</td><td>{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A') }}</td><td class="text-right">৳{{ number_format($order->grand_total, 2) }}</td><td>{{ $order->status }}</td></tr>
+                <tr><td>{{ $key + 1 }}</td><td>#{{ $order->order_number }}</td><td>{{ $order->created_at->format('d/m/Y h:i A') }}</td><td>{{ $order->customer->name ?? 'Walk-in' }}</td><td>{{ $order->table->table_number ?? 'Takeaway' }}</td><td>{{ ($order->payment_type ?? '') === 'Card' ? 'Bank / Card' : ($order->payment_type ?? 'N/A') }}</td><td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($order->grand_total, 2) }}</td><td>{{ $order->status }}</td></tr>
             @empty
                 <tr><td colspan="8" class="text-center">No orders found.</td></tr>
             @endforelse
             </tbody>
-            <tfoot><tr><th colspan="6" class="text-right">Total Revenue (Completed)</th><th class="text-right">৳{{ number_format($totalRevenue, 2) }}</th><th></th></tr></tfoot>
+            <tfoot><tr><th colspan="6" class="text-right">Total Revenue (Completed)</th><th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalRevenue, 2) }}</th><th></th></tr></tfoot>
         </table>
     @endif
 

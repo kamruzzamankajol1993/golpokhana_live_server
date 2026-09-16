@@ -23,15 +23,15 @@
     }
 @endphp
 
-<div class="progga-oc-header">
-    <div>
+<div class="progga-oc-header progga-oc-header-stacked">
+    <div class="progga-oc-header-top">
         @if($jsOrderType === 'dine_in')
-            <div class="progga-oc-chips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap; margin-bottom: 6px;">
+            <div class="progga-oc-chips progga-oc-header-order-chips">
                 <span class="progga-oc-chip"><i class="bi bi-receipt"></i> #{{ $order->order_number }}</span>
                 <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> Dine-In</span>
             </div>
         @else
-            <div class="progga-oc-chips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap; margin-bottom: 6px;">
+            <div class="progga-oc-chips progga-oc-header-order-chips">
                 <span class="progga-oc-chip"><i class="bi bi-bag-check"></i> {{ $jsOrderType === 'delivery' ? 'Delivery' : 'Takeaway' }}</span>
                 @if(!empty($deliveryPartnerName))
                     <span class="progga-oc-chip"><i class="bi bi-truck"></i> {{ $deliveryPartnerName }}</span>
@@ -39,40 +39,41 @@
             </div>
         @endif
 
-        @if($jsOrderType === 'dine_in')
-            <div style="display:flex; align-items:baseline; gap:8px; white-space:nowrap; margin-bottom:14px;">
-                <div class="progga-oc-table-num" id="ocTableNum" style="font-size:24px; margin-bottom:0;">{{ $orderDisplayName }}</div>
-                <div class="progga-oc-table-meta" id="ocTableMeta" style="margin-bottom:0;">{{ $orderDisplayMeta }}</div>
-            </div>
-        @else
-            <div class="progga-oc-table-num" id="ocTableNum" style="font-size:24px; margin-bottom:14px;">{{ $orderDisplayName }}</div>
-            <div class="progga-oc-table-meta" id="ocTableMeta" style="display:none;">{{ $orderDisplayMeta }}</div>
-        @endif
-        <div class="progga-oc-chips" id="ocChips" style="flex-direction: row; align-items: center; flex-wrap: nowrap; white-space: nowrap;">
-            @if(!empty($order->waiter_id) && !empty($order->waiter))
-                <span class="progga-oc-chip"><i class="bi bi-person"></i> <span id="ocWaiterName">{{ $order->waiter->name }}</span></span>
-            @endif
-
-            <span class="progga-oc-chip"><i class="bi bi-person-check"></i> <span id="ocCustomerName">{{ $order->customer->name ?? 'Walk-in' }}</span></span>
+        <div class="progga-oc-header-actions">
+            <button type="button"
+                    class="btn btn-sm btn-light fw-bold js-pos-print-preview"
+                    data-url="{{ route('kitchen.print_order_kot', ['id' => $order->id]) }}"
+                    data-title="KOT — Order #{{ $order->order_number }}"
+                    title="Print merged KOT"
+                    style="padding-left:10px;padding-right:10px;">
+                <i class="bi bi-printer me-1"></i> KOT
+            </button>
+            <button type="button"
+                    class="btn btn-sm btn-light fw-bold progga-oc-meta-trigger"
+                    data-bs-toggle="modal"
+                    data-bs-target="#activeOrderMetaModal"
+                    title="Update customer, waiter or delivery partner">
+                <i class="bi bi-pencil-square me-1"></i> Update
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
     </div>
-    <div class="progga-oc-header-actions">
-        <button type="button"
-                class="btn btn-sm btn-light fw-bold js-pos-print-preview"
-                data-url="{{ route('kitchen.print_order_kot', ['id' => $order->id]) }}"
-                data-title="KOT — Order #{{ $order->order_number }}"
-                title="Print merged KOT"
-                style="padding-left:10px;padding-right:10px;">
-            <i class="bi bi-printer me-1"></i> KOT
-        </button>
-        <button type="button"
-                class="btn btn-sm btn-light fw-bold progga-oc-meta-trigger"
-                data-bs-toggle="modal"
-                data-bs-target="#activeOrderMetaModal"
-                title="Update customer, waiter or delivery partner">
-            <i class="bi bi-pencil-square me-1"></i> Update
-        </button>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+
+    <div class="progga-oc-table-line">
+        <div class="progga-oc-table-num" id="ocTableNum">{{ $orderDisplayName }}</div>
+        @if($jsOrderType === 'dine_in')
+            <div class="progga-oc-table-meta" id="ocTableMeta">{{ $orderDisplayMeta }}</div>
+        @else
+            <div class="progga-oc-table-meta" id="ocTableMeta" style="display:none;">{{ $orderDisplayMeta }}</div>
+        @endif
+    </div>
+
+    <div class="progga-oc-chips progga-oc-assignment-chips" id="ocChips">
+        <span class="progga-oc-chip">
+            <i class="bi bi-person"></i>
+            <span id="ocWaiterName">{{ !empty($order->waiter_id) && !empty($order->waiter) ? $order->waiter->name : 'No Waiter' }}</span>
+        </span>
+        <span class="progga-oc-chip"><i class="bi bi-person-check"></i> <span id="ocCustomerName">{{ $order->customer->name ?? 'Walk-in' }}</span></span>
     </div>
 </div>
 
@@ -179,7 +180,7 @@
                         </button>
                     @endif
 
-                    @if(!$item->is_unavailable && !auth()->user()->hasRole('waiter'))
+                    @if(!$item->is_unavailable && !auth()->user()->getRoleNames()->contains(fn ($role) => strcasecmp((string) $role, 'waiter') === 0))
                         <button type="button"
                                 class="btn btn-sm btn-outline-danger progga-oc-item-delete"
                                 title="Delete item quantity"
@@ -396,7 +397,7 @@
                 <i class="bi bi-receipt"></i> Bill
             </button>
 
-            @if(auth()->user()->hasRole('waiter'))
+            @if(auth()->user()->getRoleNames()->contains(fn ($role) => strcasecmp((string) $role, 'waiter') === 0))
                 <button class="progga-btn progga-btn-secondary" disabled style="flex: 1; opacity: 0.6;">
                     <i class="bi bi-lock"></i> Payment at Desk
                 </button>
@@ -607,11 +608,85 @@
         padding-right: 5px;
     }
 
+    /* Keep the action buttons independent from long table names. */
+    .progga-oc-header.progga-oc-header-stacked {
+        display: block !important;
+    }
+
+    .progga-oc-header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+    }
+
+    .progga-oc-header-order-chips {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+        margin: 0;
+    }
+
+    .progga-oc-table-line {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        min-width: 0;
+        margin: 10px 0 12px;
+    }
+
+    .progga-oc-table-line .progga-oc-table-num {
+        min-width: 0;
+        max-width: 100%;
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.2;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .progga-oc-table-line .progga-oc-table-meta {
+        min-width: 0;
+        margin: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .progga-oc-assignment-chips {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+        margin: 0;
+    }
+
     .progga-oc-header-actions {
         display: flex;
         align-items: center;
         gap: 8px;
         flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .progga-oc-header-actions .btn {
+        flex: 0 0 auto;
+    }
+
+    @media (max-width: 520px) {
+        .progga-oc-header-top {
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .progga-oc-header-actions {
+            margin-left: auto;
+        }
     }
 
     .progga-oc-meta-trigger {

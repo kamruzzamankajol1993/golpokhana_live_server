@@ -1,12 +1,7 @@
 @forelse($orders as $order)
     @php
-        $partnerLabels = [
-            'foodpanda' => 'Foodpanda',
-            'foodi' => 'Foodi',
-            'pathao_food' => 'Pathao Food',
-        ];
-        $partnerKey = strtolower(trim((string) ($order->delivery_partner ?? '')));
-        $partnerLabel = $partnerKey !== '' ? ($partnerLabels[$partnerKey] ?? $order->delivery_partner) : '—';
+        // Due report should show the delivery partner name, even when an older order stores only the partner ID.
+        $partnerLabel = $order->delivery_partner_display_name ?: '—';
         $orderType = ucfirst(str_replace(['_', '-'], ' ', strtolower((string) $order->order_type)));
         $paidAmount = max(0, (float) ($order->total_paid_amount ?? 0));
     @endphp
@@ -22,7 +17,8 @@
         <td><strong class="text-danger">৳{{ number_format(max(0, (float) ($order->due ?? 0)), 0) }}</strong></td>
         <td>{{ $order->reportPaymentText(0, true) }}</td>
         <td><span class="progga-badge progga-badge-warning">{{ $order->status ?? 'N/A' }}</span></td>
-        <td><a href="{{ route('order.show', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-eye"></i> View</a></td>
+        {{-- Open the dedicated order details URL: /orders/{id}/details. --}}
+        <td><a href="{{ route('order.details', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-eye"></i> View</a></td>
     </tr>
 @empty
     <tr>

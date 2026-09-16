@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <style>
-        body{font-family:sans-serif;color:#17201c;font-size:7px}
+        body{font-family:freesans, sans-serif;color:#17201c;font-size:7px}
         .header{text-align:center;border-bottom:2px solid #21352a;padding-bottom:6px;margin-bottom:8px}
         .header h1{font-size:16px;color:#21352a;margin:0}.header p{margin:2px 0;color:#5f6f67}
         .report{width:100%;border-collapse:collapse;table-layout:fixed}

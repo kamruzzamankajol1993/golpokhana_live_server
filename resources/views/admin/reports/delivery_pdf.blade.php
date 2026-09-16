@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <title>Delivery Report</title>
     <style>
-        body { font-family: sans-serif; font-size: 10px; color: #2f3437; }
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        /* FreeSans includes U+09F3 (৳); DejaVu Sans used previously does not. */
+        body { font-family: freesans, sans-serif; font-size: 10px; color: #2f3437; }
         .header { text-align: center; margin-bottom: 12px; border-bottom: 2px solid #21352a; padding-bottom: 9px; }
         .header h2 { margin: 0 0 3px; color: #21352a; font-size: 20px; }
         .header .title { margin-top: 6px; font-size: 14px; font-weight: bold; }
@@ -34,8 +36,8 @@
         <tr>
             <td><span class="label">Delivery Orders</span><span class="value">{{ $totalOrders }}</span></td>
             <td><span class="label">Completed</span><span class="value">{{ $completedOrders }}</span></td>
-            <td><span class="label">Grand Total</span><span class="value">৳{{ number_format($totalValue, 2) }}</span></td>
-            <td><span class="label">Total Due</span><span class="value">৳{{ number_format($totalDue, 2) }}</span></td>
+            <td><span class="label">Grand Total</span><span class="value"><span class="taka-symbol">&#2547;</span>{{ number_format($totalValue, 2) }}</span></td>
+            <td><span class="label">Total Due</span><span class="value"><span class="taka-symbol">&#2547;</span>{{ number_format($totalDue, 2) }}</span></td>
         </tr>
     </table>
 
@@ -75,11 +77,11 @@
                     <td>{{ $partnerLabel }}</td>
                     <td>{{ optional($order->customer)->name ?? 'Walk-in' }}</td>
                     <td>{{ optional($order->customer)->phone ?? optional($order->customer)->mobile ?? '—' }}</td>
-                    <td class="text-right">৳{{ number_format((float)($order->subtotal ?? 0), 2) }}</td>
-                    <td class="text-right">৳{{ number_format((float)($order->vat_tax ?? 0), 2) }}</td>
-                    <td class="text-right">৳{{ number_format($discount, 2) }}</td>
-                    <td class="text-right"><strong>৳{{ number_format((float)($order->grand_total ?? 0), 2) }}</strong></td>
-                    <td class="text-right">৳{{ number_format((float)($order->due ?? 0), 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->subtotal ?? 0), 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->vat_tax ?? 0), 2) }}</td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($discount, 2) }}</td>
+                    <td class="text-right"><strong><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->grand_total ?? 0), 2) }}</strong></td>
+                    <td class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)($order->due ?? 0), 2) }}</td>
                     <td>{{ $payment }}</td>
                     <td>{{ $order->status ?? '—' }}</td>
                 </tr>
@@ -91,11 +93,11 @@
         <tfoot>
             <tr>
                 <th colspan="6" class="text-right">Total ({{ $orders->count() }} Orders)</th>
-                <th class="text-right">৳{{ number_format((float)$orders->sum('subtotal'), 2) }}</th>
-                <th class="text-right">৳{{ number_format((float)$orders->sum('vat_tax'), 2) }}</th>
-                <th class="text-right">৳{{ number_format((float)$orders->sum(function($order){ return max(0,(float)($order->discount_amount ?? 0)) + max(0,(float)($order->product_discount_amount ?? 0)); }), 2) }}</th>
-                <th class="text-right">৳{{ number_format($totalValue, 2) }}</th>
-                <th class="text-right">৳{{ number_format($totalDue, 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$orders->sum('subtotal'), 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$orders->sum('vat_tax'), 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format((float)$orders->sum(function($order){ return max(0,(float)($order->discount_amount ?? 0)) + max(0,(float)($order->product_discount_amount ?? 0)); }), 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalValue, 2) }}</th>
+                <th class="text-right"><span class="taka-symbol">&#2547;</span>{{ number_format($totalDue, 2) }}</th>
                 <th colspan="2"></th>
             </tr>
         </tfoot>

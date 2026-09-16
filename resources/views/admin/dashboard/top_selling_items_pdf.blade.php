@@ -3,7 +3,8 @@
 <head>
     <meta charset="utf-8">
     <style>
-        body{font-family:dejavusans,sans-serif;color:#223028;font-size:10px}
+        .taka-symbol{font-family:freesans,sans-serif!important;font-weight:normal!important;font-style:normal!important;}
+        body{font-family:freesans,sans-serif;color:#223028;font-size:10px}
         .header{border-bottom:2px solid #21352a;padding-bottom:10px;margin-bottom:14px}
         .brand{font-size:18px;font-weight:bold;color:#21352a;margin:0 0 3px}
         .subtitle{font-size:10px;color:#66736d;margin:0}
@@ -49,7 +50,7 @@
                     <td>#{{ $index + 1 }}</td>
                     <td class="sold">{{ $item->product_name }}</td>
                     <td class="right {{ $hasSales ? '' : 'muted' }}">{{ number_format((int) $item->total_qty) }}</td>
-                    <td class="right {{ $hasSales ? '' : 'muted' }}">৳{{ number_format((float) $item->total_amount, 0) }}</td>
+                    <td class="right {{ $hasSales ? '' : 'muted' }}"><span class="taka-symbol">&#2547;</span>{{ number_format((float) $item->total_amount, 0) }}</td>
                     <td class="center"><span class="status">{{ $hasSales ? 'Sold' : 'No Sales' }}</span></td>
                 </tr>
             @empty

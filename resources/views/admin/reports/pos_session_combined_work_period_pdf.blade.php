@@ -5,20 +5,20 @@
     <title>Combined Work Period Closing Report</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; color: #000; font-weight: 900; }
+        body { font-family: freesans, sans-serif; color: #000; font-weight: 900; }
         .receipt-card { width: 90mm; margin: 0 auto; padding: 1.2mm 1.5mm; font-weight: 900; }
         .text-center { text-align: center; }
         .header-title { font-size: 12.5px !important; font-weight: 900; color:#000; margin-bottom: .4px; line-height: 1.08; }
         .header-sub { font-size: 10px !important; font-weight: 900; color: #000; margin-bottom: .2px; line-height: 1.08; }
-        .meta-section { margin: 3px 0; font-family: 'Courier New', monospace; font-size: 9.5px; line-height: 1.12; font-weight: 900; }
+        .meta-section { margin: 3px 0; font-family: freesans, sans-serif; font-size: 9.5px; line-height: 1.12; font-weight: 900; }
         .section-title { font-size: 10.5px; font-weight: 900; text-align: center; margin: 3px 0 2px; line-height: 1.08; text-transform: uppercase; letter-spacing: .25px; }
         .dashed-line { border-top: 1px dashed #000; margin: 2.5px 0; }
-        .report-table { width: 100%; border-collapse: collapse; font-family: 'Courier New', monospace; font-size: 10px !important; line-height: 1.12; font-weight: 900; }
+        .report-table { width: 100%; border-collapse: collapse; font-family: freesans, sans-serif; font-size: 10px !important; line-height: 1.12; font-weight: 900; }
         .report-table tr, .report-table td, .report-table th { font-size: 10px !important; line-height: 1.12 !important; }
         .report-table td, .report-table th { padding: .9px 0; font-weight: 900; }
         .report-table th { text-align: left; border-bottom: 1px dotted #000; font-size: 9.5px !important; }
         .text-end { text-align: right; }
-        .footer { font-family: 'Courier New', monospace; font-size: 9px; color:#000; text-align: center; margin-top: 3px; line-height: 1.12; font-weight: 900; }
+        .footer { font-family: freesans, sans-serif; font-size: 9px; color:#000; text-align: center; margin-top: 3px; line-height: 1.12; font-weight: 900; }
         .report-table td[style*="padding-top:3px"] { padding-top: 1.4px !important; }
     </style>
 </head>
@@ -120,7 +120,7 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="text-center" style="font-family:'Courier New',monospace;font-size:10px;margin:2.5px 0;font-weight:900;line-height:1.1;">Cash &amp; Bank / Card Summary</div>
+    <div class="text-center" style="font-family:freesans,sans-serif;font-size:10px;margin:2.5px 0;font-weight:900;line-height:1.1;">Cash &amp; Bank / Card Summary</div>
     <div class="footer">
         <div>*** This is computer generated report and does not require any signature</div>
         <div style="margin-top:2px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
