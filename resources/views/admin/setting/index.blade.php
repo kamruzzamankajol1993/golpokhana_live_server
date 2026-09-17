@@ -185,6 +185,17 @@
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Auto-print Final Invoice</label><label class="progga-toggle" style="margin-top:8px;"><input type="checkbox" name="auto_print_invoice" {{ ($pos->auto_print_invoice ?? true) ? 'checked' : '' }} data-on="Enabled" data-off="Disabled"><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ ($pos->auto_print_invoice ?? true) ? 'Enabled' : 'Disabled' }}</span></label></div></div>
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Require Table Selection</label><label class="progga-toggle" style="margin-top:8px;"><input type="checkbox" name="require_table_selection" {{ ($pos->require_table_selection ?? true) ? 'checked' : '' }} data-on="Yes" data-off="No"><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ ($pos->require_table_selection ?? true) ? 'Yes' : 'No' }}</span></label></div></div>
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Show Out-of-Stock Items</label><label class="progga-toggle" style="margin-top:8px;"><input type="checkbox" name="show_out_of_stock" {{ ($pos->show_out_of_stock ?? true) ? 'checked' : '' }} data-on="Yes (grayed)" data-off="Hidden"><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ ($pos->show_out_of_stock ?? true) ? 'Yes (grayed)' : 'Hidden' }}</span></label></div></div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Opening Balance at Session Start</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" name="opening_balance_enabled" {{ ($pos->opening_balance_enabled ?? true) ? 'checked' : '' }} data-on="On" data-off="Off">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->opening_balance_enabled ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <div class="form-text">When On, starting a new POS session asks for Opening Balance. Blank or 0 is allowed. When Off, the popup and Opening Balance rows in Work Period print/PDF are hidden.</div>
+                            </div>
+                        </div>
                         <div class="col-md-6"><div class="progga-form-group"><label class="progga-form-label">Final Payment Depends on Kitchen Ready Status</label><label class="progga-toggle" style="margin-top:8px;"><input type="checkbox" name="final_payment_depends_on_kitchen_status" {{ ($pos->final_payment_depends_on_kitchen_status ?? false) ? 'checked' : '' }} data-on="Yes" data-off="No"><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span><span class="progga-toggle-label">{{ ($pos->final_payment_depends_on_kitchen_status ?? false) ? 'Yes—Ready required' : 'No—Pay anytime' }}</span></label>
 
                         </div></div>

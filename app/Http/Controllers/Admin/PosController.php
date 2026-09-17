@@ -956,7 +956,27 @@ public function startSession(Request $request)
     $this->closeTimedOutOpenSessionsForUser($managerId);
     $action = strtolower((string) $request->input('action', 'start'));
 
-    return DB::transaction(function () use ($actorId, $managerId, $action) {
+    if (!Schema::hasColumn('pos_sessions', 'opening_balance')) {
+        return response()->json([
+            'status' => 'error',
+            'code' => 'opening_balance_migration_required',
+            'message' => 'Opening Balance database field is missing. Please run php artisan migrate first.',
+        ], 422);
+    }
+
+    $posSetting = PosSetting::first();
+    $openingBalanceEnabled = !Schema::hasColumn('pos_settings', 'opening_balance_enabled')
+        ? true
+        : (bool) ($posSetting->opening_balance_enabled ?? true);
+
+    $validated = $request->validate([
+        'opening_balance' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+    ]);
+    $openingBalance = $openingBalanceEnabled
+        ? round((float) ($validated['opening_balance'] ?? 0), 2)
+        : 0.0;
+
+    return DB::transaction(function () use ($actorId, $managerId, $action, $openingBalance) {
         // Lock the Manager row, not the logged-in user. This guarantees that two
         // different users/browsers cannot create two shared work periods at once.
         DB::table('users')->where('id', $managerId)->lockForUpdate()->first();
@@ -988,6 +1008,7 @@ public function startSession(Request $request)
             'weekday' => $now->format('l'),
             'start_time' => $now,
             'status' => 'Open',
+            'opening_balance' => $openingBalance,
         ];
 
         if (Schema::hasColumn('pos_sessions', 'started_by_user_id')) {
@@ -1054,21 +1075,101 @@ public function printSessionReport($id)
     $session = PosSession::with('user')->findOrFail($id);
     $restaurant = \App\Models\RestaurantSetting::first();
     $taxSetting = DB::table('tax_settings')->first();
+    $sessionPosSetting = PosSetting::first();
+    $showOpeningBalance = !Schema::hasColumn('pos_settings', 'opening_balance_enabled')
+        ? true
+        : (bool) ($sessionPosSetting->opening_balance_enabled ?? true);
+    $openingBalance = Schema::hasColumn('pos_sessions', 'opening_balance')
+        ? (float) ($session->opening_balance ?? 0)
+        : 0.0;
 
     $sessionStart = Carbon::parse($session->start_time);
     $reportEnd = Carbon::parse($session->end_time ?: now());
 
     // Receivable Amount is money collected during THIS work period against
     // dues that came from orders created before this session started.
-    // We use the due-payment ledger transaction time (created_at), not the old
-    // order creation time, so a due collected today appears in today's session.
+    // Keep a separate method/provider breakdown for the session-wise Work Period print.
     $receivableAmountTotal = 0.0;
+    $receivableBreakdown = ['Cash' => 0.0, 'Card' => 0.0, 'MFC' => 0.0];
+    $receivableCardProviders = [];
+    $receivableMfsProviders = [];
+    $receivableUnallocated = 0.0;
+
     if (Schema::hasTable('order_due_payments')) {
-        $receivableAmountTotal = (float) DB::table('order_due_payments')
+        $duePaymentHasBreakdown = Schema::hasColumn('order_due_payments', 'paid_in_cash')
+            && Schema::hasColumn('order_due_payments', 'paid_in_card')
+            && Schema::hasColumn('order_due_payments', 'paid_in_mfc');
+        $duePaymentHasCardType = Schema::hasColumn('order_due_payments', 'card_type');
+        $duePaymentHasMfsProvider = Schema::hasColumn('order_due_payments', 'mfs_provider');
+
+        $receivableColumns = [
+            'order_due_payments.payment_type',
+            'order_due_payments.amount',
+        ];
+
+        if ($duePaymentHasBreakdown) {
+            $receivableColumns[] = 'order_due_payments.paid_in_cash';
+            $receivableColumns[] = 'order_due_payments.paid_in_card';
+            $receivableColumns[] = 'order_due_payments.paid_in_mfc';
+        }
+        if ($duePaymentHasCardType) {
+            $receivableColumns[] = 'order_due_payments.card_type';
+        }
+        if ($duePaymentHasMfsProvider) {
+            $receivableColumns[] = 'order_due_payments.mfs_provider';
+        }
+
+        $receivableRows = DB::table('order_due_payments')
             ->join('orders', 'order_due_payments.order_id', '=', 'orders.id')
-            ->whereBetween('order_due_payments.created_at', [$sessionStart, $reportEnd])
+            ->whereBetween('order_due_payments.paid_at', [$sessionStart, $reportEnd])
             ->where('orders.created_at', '<', $sessionStart)
-            ->sum('order_due_payments.amount');
+            ->get($receivableColumns);
+
+        foreach ($receivableRows as $duePayment) {
+            $amount = max(0, (float) ($duePayment->amount ?? 0));
+            $receivableAmountTotal += $amount;
+
+            $cashPart = $duePaymentHasBreakdown ? max(0, (float) ($duePayment->paid_in_cash ?? 0)) : 0.0;
+            $cardPart = $duePaymentHasBreakdown ? max(0, (float) ($duePayment->paid_in_card ?? 0)) : 0.0;
+            $mfsPart = $duePaymentHasBreakdown ? max(0, (float) ($duePayment->paid_in_mfc ?? 0)) : 0.0;
+            $recordedParts = $cashPart + $cardPart + $mfsPart;
+
+            // Backward compatibility for older due-payment rows that only stored payment_type + amount.
+            if ($recordedParts <= 0 && $amount > 0) {
+                $paymentType = strtolower(trim((string) ($duePayment->payment_type ?? '')));
+                if ($paymentType === 'cash') {
+                    $cashPart = $amount;
+                } elseif (in_array($paymentType, ['card', 'bank', 'bank / card', 'bank/card'], true)) {
+                    $cardPart = $amount;
+                } elseif (in_array($paymentType, ['mobile banking', 'mobile_banking', 'mfc', 'mfs'], true)) {
+                    $mfsPart = $amount;
+                } else {
+                    $receivableUnallocated += $amount;
+                }
+            } elseif ($recordedParts < $amount) {
+                // Do not silently lose a legacy/unclassified portion of a split payment.
+                $receivableUnallocated += max(0, $amount - $recordedParts);
+            }
+
+            $receivableBreakdown['Cash'] += $cashPart;
+            $receivableBreakdown['Card'] += $cardPart;
+            $receivableBreakdown['MFC'] += $mfsPart;
+
+            if ($cardPart > 0) {
+                $provider = $duePaymentHasCardType ? trim((string) ($duePayment->card_type ?? '')) : '';
+                $provider = $provider !== '' ? $provider : 'Unspecified';
+                $receivableCardProviders[$provider] = ($receivableCardProviders[$provider] ?? 0) + $cardPart;
+            }
+
+            if ($mfsPart > 0) {
+                $provider = $duePaymentHasMfsProvider ? trim((string) ($duePayment->mfs_provider ?? '')) : '';
+                $provider = $provider !== '' ? $provider : 'Unspecified';
+                $receivableMfsProviders[$provider] = ($receivableMfsProviders[$provider] ?? 0) + $mfsPart;
+            }
+        }
+
+        arsort($receivableCardProviders);
+        arsort($receivableMfsProviders);
     }
 
     // Only the order creation time decides whether an order belongs to this session.
@@ -1321,7 +1422,13 @@ public function printSessionReport($id)
         'customerAdvance',
         'deliveryPartnerDue',
         'deliveryPartnerIncome',
-        'receivableAmountTotal'
+        'receivableAmountTotal',
+        'receivableBreakdown',
+        'receivableCardProviders',
+        'receivableMfsProviders',
+        'receivableUnallocated',
+        'showOpeningBalance',
+        'openingBalance'
     ));
 }
 

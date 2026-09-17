@@ -101,7 +101,8 @@ Dashboard — {{ $restaurantSettingName }}
               <div class="progga-card-subtitle" id="revenueChartSubtitle">Dynamic revenue trend from completed orders</div>
             </div>
             <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
-              <button class="progga-chart-toggle-btn" data-revenue-period="1">1 Day</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="1">Today</button>
+              <button class="progga-chart-toggle-btn" data-revenue-period="yesterday">Yesterday</button>
               <button class="progga-chart-toggle-btn active" data-revenue-period="7">7 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="14">14 Days</button>
               <button class="progga-chart-toggle-btn" data-revenue-period="21">21 Days</button>
@@ -163,7 +164,8 @@ Dashboard — {{ $restaurantSettingName }}
                 <div class="progga-card-subtitle" id="incomeChartSubtitle">Daily income by payment method for the last 7 days</div>
               </div>
               <div class="progga-chart-toggle" style="flex-wrap:wrap;justify-content:flex-end;">
-                <button class="progga-chart-toggle-btn" data-income-period="1">1 Day</button>
+                <button class="progga-chart-toggle-btn" data-income-period="1">Today</button>
+                <button class="progga-chart-toggle-btn" data-income-period="yesterday">Yesterday</button>
                 <button class="progga-chart-toggle-btn active" data-income-period="7">7 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="14">14 Days</button>
                 <button class="progga-chart-toggle-btn" data-income-period="21">21 Days</button>
@@ -345,6 +347,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function revenueSubtitle(period) {
         if (period === '1') return 'Revenue for the current business day';
+        if (period === 'yesterday') return "Revenue for yesterday's business day";
         if (period === '12m') return 'Monthly revenue trend from the last 12 months';
         if (['7', '14', '21', '30', '60', '90', '180'].includes(period)) {
             return 'Daily revenue trend from the last ' + period + ' days';
@@ -354,6 +357,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function incomeSubtitle(period) {
         if (period === '1') return 'Income by payment method for the current business day';
+        if (period === 'yesterday') return "Income by payment method for yesterday's business day";
         if (period === '12m') return 'Monthly income by payment method for the last 12 months';
         if (['7', '14', '21', '30', '60', '90', '180'].includes(period)) {
             return 'Daily income by payment method for the last ' + period + ' days';

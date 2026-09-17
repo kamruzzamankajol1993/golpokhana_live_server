@@ -21,6 +21,7 @@ class PosSetting extends Model
         'show_honored_percentage_on_invoice' => 'boolean',
         'complimentary_note_required'          => 'boolean',
         'dine_in_waiter_required'              => 'boolean',
+        'opening_balance_enabled'                => 'boolean',
         'order_list_random_half_enabled'    => 'boolean',
         'random_half_order_button_visible'  => 'boolean',
         'random_order_hide_percentage'      => 'integer',

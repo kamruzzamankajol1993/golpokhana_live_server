@@ -247,11 +247,14 @@ class HomeController extends Controller
 
     private function emptyDashboardChartPayload(string $period = '7'): array
     {
-        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', 'yesterday', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $chartLabels = [];
         $chartData = [];
 
-        if ($period === '12m') {
+        if ($period === 'yesterday') {
+            $chartLabels[] = Carbon::today()->subDay()->format('d M');
+            $chartData[] = 0;
+        } elseif ($period === '12m') {
             $startMonth = Carbon::now()->subMonths(11)->startOfMonth();
 
             for ($i = 0; $i < 12; $i++) {
@@ -284,7 +287,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', 'yesterday', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
 
         $hours = $reportingWindow['hours'];
@@ -292,7 +295,17 @@ class HomeController extends Controller
         $chartLabels = [];
         $chartData = [];
 
-        if ($period === '12m') {
+        if ($period === 'yesterday') {
+            $businessDate = $currentBusinessDate->copy()->subDay();
+            $window = $this->businessWindowForDate($businessDate, $hours);
+            $revenue = OrderVisibility::constrain(Order::query(), $visibleOrderIds)
+                ->where('status', 'Completed')
+                ->whereBetween('created_at', [$window['start'], $window['end']])
+                ->sum('grand_total');
+
+            $chartLabels[] = $businessDate->format('d M');
+            $chartData[] = round((float) $revenue, 2);
+        } elseif ($period === '12m') {
             $startMonth = $currentBusinessDate->copy()->subMonths(11)->startOfMonth();
             $endMonthDate = $currentBusinessDate->copy()->endOfMonth();
             $overallStart = $this->businessWindowForDate($startMonth, $hours)['start'];
@@ -480,7 +493,7 @@ class HomeController extends Controller
         ?array $visibleOrderIds = null,
         ?array $reportingWindow = null
     ): array {
-        $period = in_array($period, ['1', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
+        $period = in_array($period, ['1', 'yesterday', '7', '14', '21', '30', '60', '90', '180', '12m'], true) ? $period : '7';
         $reportingWindow = $reportingWindow ?? $this->reportingBusinessWindow();
         $hours = $reportingWindow['hours'];
         $currentBusinessDate = $reportingWindow['business_date'];
@@ -499,6 +512,13 @@ class HomeController extends Controller
                 $bucketKeys[] = $date->format('Y-m');
                 $labels[] = $date->format('M y');
             }
+        } elseif ($period === 'yesterday') {
+            $date = $currentBusinessDate->copy()->subDay();
+            $window = $this->businessWindowForDate($date, $hours);
+            $overallStart = $window['start'];
+            $overallEnd = $window['end'];
+            $bucketKeys[] = $date->format('Y-m-d');
+            $labels[] = $date->format('d M');
         } else {
             $days = (int) $period;
             $firstBusinessDate = $currentBusinessDate->copy()->subDays($days - 1);
@@ -779,25 +799,37 @@ class HomeController extends Controller
 
     private function dashboardPeriodRange(string $period, array $reportingWindow): array
     {
-        $allowedPeriods = ['1', '7', '14', '21', '30', '60', '90', '180', '12m'];
+        $allowedPeriods = ['1', 'yesterday', '7', '14', '21', '30', '60', '90', '180', '12m'];
         $period = in_array($period, $allowedPeriods, true) ? $period : '7';
 
         $hours = $reportingWindow['hours'];
         $currentBusinessDate = $reportingWindow['business_date'];
 
-        if ($period === '12m') {
+        if ($period === 'yesterday') {
+            $firstBusinessDate = $currentBusinessDate->copy()->subDay();
+            $lastBusinessDate = $firstBusinessDate->copy();
+            $window = $this->businessWindowForDate($firstBusinessDate, $hours);
+            $rangeStart = $window['start'];
+            $rangeEnd = $window['end'];
+        } elseif ($period === '12m') {
             $firstBusinessDate = $currentBusinessDate->copy()->subMonths(11)->startOfMonth();
+            $lastBusinessDate = $currentBusinessDate;
+            $rangeStart = $this->businessWindowForDate($firstBusinessDate, $hours)['start'];
+            $rangeEnd = $reportingWindow['end'];
         } else {
             $days = (int) $period;
             $firstBusinessDate = $currentBusinessDate->copy()->subDays($days - 1);
+            $lastBusinessDate = $currentBusinessDate;
+            $rangeStart = $this->businessWindowForDate($firstBusinessDate, $hours)['start'];
+            $rangeEnd = $reportingWindow['end'];
         }
 
         return [
             'period' => $period,
-            'start' => $this->businessWindowForDate($firstBusinessDate, $hours)['start'],
-            'end' => $reportingWindow['end'],
+            'start' => $rangeStart,
+            'end' => $rangeEnd,
             'first_business_date' => $firstBusinessDate,
-            'last_business_date' => $currentBusinessDate,
+            'last_business_date' => $lastBusinessDate,
             'hours' => $hours,
         ];
     }
@@ -841,7 +873,8 @@ class HomeController extends Controller
     private function topSellingPeriodLabels(): array
     {
         return [
-            '1' => '1 Day',
+            '1' => 'Today',
+            'yesterday' => 'Yesterday',
             '7' => '7 Days',
             '14' => '14 Days',
             '21' => '21 Days',

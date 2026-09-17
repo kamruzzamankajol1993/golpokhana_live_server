@@ -629,12 +629,91 @@
         options = options || {};
         const tableIdAfterStart = options.tableId || null;
         const action = options.action || 'start';
+
+        const openingBalanceEnabled = @json((bool) ($posSetting->opening_balance_enabled ?? true));
+
+        if (openingBalanceEnabled && action !== 'continue' && typeof options.openingBalance === 'undefined') {
+            // Bootstrap modal/offcanvas focus traps can keep focus away from a SweetAlert input.
+            const activeOffcanvas = document.querySelector('.offcanvas.show');
+            const activeModal = document.querySelector('.modal.show');
+            const activeFocusTrap = activeOffcanvas || activeModal;
+
+            if (activeFocusTrap && window.bootstrap) {
+                const isOffcanvas = activeFocusTrap.classList.contains('offcanvas');
+                const hiddenEvent = isOffcanvas ? 'hidden.bs.offcanvas' : 'hidden.bs.modal';
+                const BootstrapComponent = isOffcanvas ? window.bootstrap.Offcanvas : window.bootstrap.Modal;
+
+                if (BootstrapComponent) {
+                    activeFocusTrap.addEventListener(hiddenEvent, function() {
+                        requestPosSessionStart({ action: action, tableId: tableIdAfterStart });
+                    }, { once: true });
+                    BootstrapComponent.getOrCreateInstance(activeFocusTrap).hide();
+                    return;
+                }
+            }
+
+            window.Swal.fire({
+                icon: 'question',
+                title: 'Opening Balance',
+                html: '<div class="text-start mb-2">Enter the cash opening balance for this work period. You may leave it blank or enter 0.</div>'
+                    + '<input id="swalOpeningBalance" type="text" class="swal2-input" '
+                    + 'inputmode="decimal" autocomplete="off" placeholder="0.00" '
+                    + 'style="width:100%;margin:0;">',
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-play-circle-fill"></i> Start Session',
+                cancelButtonText: 'Cancel',
+                reverseButtons: true,
+                focusConfirm: false,
+                didOpen: function() {
+                    const input = document.getElementById('swalOpeningBalance');
+                    if (!input) return;
+
+                    input.readOnly = false;
+                    input.disabled = false;
+                    ['keydown', 'keypress', 'keyup'].forEach(function(eventName) {
+                        input.addEventListener(eventName, function(event) {
+                            event.stopPropagation();
+                        });
+                    });
+                    window.setTimeout(function() { input.focus(); }, 0);
+                },
+                preConfirm: function() {
+                    const input = document.getElementById('swalOpeningBalance');
+                    const raw = String(input ? input.value : '').trim().replace(/,/g, '');
+                    if (raw === '') return 0;
+
+                    if (!/^\d+(?:\.\d{0,2})?$/.test(raw)) {
+                        window.Swal.showValidationMessage('Enter a valid amount with up to 2 decimal places.');
+                        return false;
+                    }
+
+                    const amount = Number(raw);
+                    if (!Number.isFinite(amount) || amount < 0 || amount > 9999999999.99) {
+                        window.Swal.showValidationMessage('Enter a valid Opening Balance of 0 or more.');
+                        return false;
+                    }
+                    return Math.round((amount + Number.EPSILON) * 100) / 100;
+                }
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+                requestPosSessionStart({
+                    action: action,
+                    tableId: tableIdAfterStart,
+                    openingBalance: result.value
+                });
+            });
+            return;
+        }
+
+        const openingBalance = openingBalanceEnabled
+            ? (typeof options.openingBalance === 'undefined' ? 0 : options.openingBalance)
+            : 0;
         const $buttons = $('.js-start-pos-session');
         const originalHtml = $buttons.first().html();
 
         $buttons.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Starting...');
 
-        $.post(@json(route('pos.session.start')), { action: action })
+        $.post(@json(route('pos.session.start')), { action: action, opening_balance: openingBalance })
             .done(function(res) {
                 if (res && res.status === 'unfinished') {
                     $buttons.prop('disabled', false).html(originalHtml);

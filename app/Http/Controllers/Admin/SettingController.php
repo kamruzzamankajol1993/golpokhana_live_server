@@ -105,6 +105,7 @@ class SettingController extends Controller
         $data['show_honored_percentage_on_invoice'] = $request->has('show_honored_percentage_on_invoice');
         $data['complimentary_note_required'] = $request->has('complimentary_note_required');
         $data['dine_in_waiter_required'] = $request->has('dine_in_waiter_required');
+        $data['opening_balance_enabled'] = $request->has('opening_balance_enabled');
         $data['final_payment_depends_on_kitchen_status'] = $request->has('final_payment_depends_on_kitchen_status');
 
         if ($this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {

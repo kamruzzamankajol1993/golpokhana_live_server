@@ -21,6 +21,7 @@ class PosSession extends Model
         'end_time',
         'duration',
         'status',
+        'opening_balance',
         'sales_total',
         'service_charge',
         'vat_total',
@@ -32,6 +33,7 @@ class PosSession extends Model
         'start_time' => 'datetime',
         'last_activity_at' => 'datetime',
         'end_time' => 'datetime',
+        'opening_balance' => 'decimal:2',
         'incomes_summary' => 'array', // JSON ডেটাকে অটোমেটিক Array-তে কনভার্ট করার জন্য
     ];
 

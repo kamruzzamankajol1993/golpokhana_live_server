@@ -146,6 +146,17 @@
         <div>Mushak: 6.3</div>
     </div>
 
+    @if($showOpeningBalance ?? true)
+    <div class="dashed-line"></div>
+    <div class="section-title">Opening Balance</div>
+    <table class="report-table">
+        <tr class="fw-bold" style="font-size: 14px;">
+            <td>Opening Balance</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($openingBalance ?? $session->opening_balance ?? 0) }}</td>
+        </tr>
+    </table>
+    @endif
+
     <div class="dashed-line"></div>
     <div class="section-title">Sales</div>
 
@@ -170,15 +181,15 @@
         </tr>
         <tr style="border-top: 1px dotted #000;">
             <td style="padding-top: 8px;">Item Discount</td>
-            <td class="text-end" style="padding-top: 8px;">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['product_discount'] ?? 0) }}</td>
+            <td class="text-end" style="padding-top: 8px;">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['product_discount'] ?? 0) }})</td>
         </tr>
         <tr>
             <td>Honored</td>
-            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['honored'] ?? 0) }}</td>
+            <td class="text-end">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['honored'] ?? 0) }})</td>
         </tr>
         <tr>
             <td>Discount Total</td>
-            <td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['discount_total'] ?? 0) }}</td>
+            <td class="text-end">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['discount_total'] ?? 0) }})</td>
         </tr>
         <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
             <td style="padding-top: 8px;">Total Sales</td>
@@ -207,7 +218,7 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Due</div>
+    <div class="section-title">Due Sales</div>
 
     <table class="report-table">
         <tr><td>Customer Due (Dine In)</td><td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($closingExtraSummary['due'] ?? 0) }}</td></tr>
@@ -218,17 +229,55 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Receivable Amount</div>
+    <div class="section-title">Receivables Payment against Due</div>
 
     <table class="report-table">
         <tr>
-            <td>Total Amount</td>
-            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableAmountTotal ?? 0) }}</td>
+            <td>Cash</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableBreakdown['Cash'] ?? 0) }}</td>
+        </tr>
+        <tr>
+            <td>Bank / Card</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableBreakdown['Card'] ?? 0) }}</td>
+        </tr>
+        @foreach(($receivableCardProviders ?? []) as $providerName => $providerAmount)
+            <tr>
+                <td style="padding-left:12px; font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                    <span>↳ {{ $providerName }}</span>
+                </td>
+                <td class="text-end" style="font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                    {{ \App\Support\CurrencyFormatter::bdAmount($providerAmount) }}
+                </td>
+            </tr>
+        @endforeach
+        @if(($receivableUnallocated ?? 0) > 0)
+            <tr>
+                <td>Other / Unspecified</td>
+                <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableUnallocated) }}</td>
+            </tr>
+        @endif
+        <tr>
+            <td>MFS</td>
+            <td class="text-end fw-bold">{{ \App\Support\CurrencyFormatter::bdAmount($receivableBreakdown['MFC'] ?? 0) }}</td>
+        </tr>
+        @foreach(($receivableMfsProviders ?? []) as $providerName => $providerAmount)
+            <tr>
+                <td style="padding-left:12px; font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                    <span>↳ {{ $providerName }}</span>
+                </td>
+                <td class="text-end" style="font-size:10px !important; font-weight:900 !important; color:#000 !important; line-height:1.12 !important;">
+                    {{ \App\Support\CurrencyFormatter::bdAmount($providerAmount) }}
+                </td>
+            </tr>
+        @endforeach
+        <tr class="fw-bold" style="font-size: 14px; border-top: 1px solid #000;">
+            <td style="padding-top: 7px;">Total Receivable</td>
+            <td class="text-end fw-bold" style="padding-top: 7px;">{{ \App\Support\CurrencyFormatter::bdAmount($receivableAmountTotal ?? 0) }}</td>
         </tr>
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Collection Methods</div>
+    <div class="section-title">Business Day collection</div>
 
     <table class="report-table">
         @foreach(['Cash' => 'Cash', 'Card' => 'Bank / Card', 'MFC' => 'MFS'] as $methodKey => $methodLabel)
@@ -280,7 +329,6 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="text-center fw-bold" style="font-family: var(--mono); font-size: 13px; margin: 10px 0;">Cash &amp; Bank / Card Summary</div>
 
     <div class="footer" style="font-weight: 900 !important;">
         <div>*** This is computer generated report and does not require any signature</div>

@@ -15,6 +15,7 @@ use App\Models\TableBooking;
 use App\Exports\ArrayReportExport;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
@@ -2017,6 +2018,23 @@ class ReportController extends Controller
         );
         $data['restaurant'] = RestaurantSetting::first();
         $data['taxSetting'] = DB::table('tax_settings')->first();
+
+        $posSetting = \App\Models\PosSetting::first();
+        $showOpeningBalance = !Schema::hasColumn('pos_settings', 'opening_balance_enabled')
+            ? true
+            : (bool) ($posSetting->opening_balance_enabled ?? true);
+        $openingBalanceTotal = 0.0;
+
+        if ($showOpeningBalance && Schema::hasColumn('pos_sessions', 'opening_balance')) {
+            $openingQuery = PosSession::query();
+            if ($filterType !== 'all') {
+                $openingQuery->whereBetween('start_time', [$startDate, $endDate]);
+            }
+            $openingBalanceTotal = (float) $openingQuery->sum('opening_balance');
+        }
+
+        $data['showOpeningBalance'] = $showOpeningBalance;
+        $data['openingBalanceTotal'] = $openingBalanceTotal;
 
         return $data;
     }

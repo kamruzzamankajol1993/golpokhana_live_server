@@ -105,6 +105,14 @@
         <div>Mushak: 6.3</div>
     </div>
 
+    @if($showOpeningBalance ?? true)
+    <div class="dashed-line"></div>
+    <div class="section-title">Opening Balance</div>
+    <table class="report-table">
+        <tr style="font-weight:900;"><td>Opening Balance</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($openingBalanceTotal ?? 0) }}</td></tr>
+    </table>
+    @endif
+
     <div class="dashed-line"></div>
     <div class="section-title">Sales</div>
     <table class="report-table">
@@ -114,9 +122,9 @@
         @endforeach
         <tr><td>Service Charge ({{ $serviceRate }}%)</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['service_charge'] ?? 0) }}</td></tr>
         <tr><td>{{ $vatLabel }} ({{ $vatRate }}%)</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['vat_total'] ?? 0) }}</td></tr>
-        <tr style="border-top:1px dotted #000;"><td style="padding-top:8px;">Item Discount</td><td class="text-end" style="padding-top:8px;">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['product_discount'] ?? 0) }}</td></tr>
-        <tr><td>Honored</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['honored'] ?? 0) }}</td></tr>
-        <tr><td>Discount Total</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['discount_total'] ?? 0) }}</td></tr>
+        <tr style="border-top:1px dotted #000;"><td style="padding-top:8px;">Item Discount</td><td class="text-end" style="padding-top:8px;">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['product_discount'] ?? 0) }})</td></tr>
+        <tr><td>Honored</td><td class="text-end">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['honored'] ?? 0) }})</td></tr>
+        <tr><td>Discount Total</td><td class="text-end">({{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['discount_total'] ?? 0) }})</td></tr>
         <tr style="font-size:14px;border-top:1px solid #000;"><td style="padding-top:8px;">Total Sales</td><td class="text-end" style="padding-top:8px;">{{ \App\Support\CurrencyFormatter::bdAmount($salesSummary['grand_total'] ?? 0) }}</td></tr>
     </table>
 
@@ -128,7 +136,7 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Due</div>
+    <div class="section-title">Due Sales</div>
     <table class="report-table">
         <tr><td>Customer Due (Dine In)</td><td class="text-end">{{ \App\Support\CurrencyFormatter::bdAmount($closingExtraSummary['due'] ?? 0) }}</td></tr>
         @foreach(($deliveryPartnerDue ?? []) as $partnerDue)
@@ -138,7 +146,7 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="section-title">Collection Methods</div>
+    <div class="section-title">Business Day collection</div>
     <table class="report-table">
         @foreach(['Cash' => 'Cash', 'Card' => 'Bank / Card', 'MFC' => 'MFS'] as $methodKey => $methodLabel)
             @php
@@ -175,7 +183,6 @@
     </table>
 
     <div class="dashed-line"></div>
-    <div class="text-center" style="font-family:'Courier New',monospace;font-size:13px;margin:10px 0;font-weight:900;">Cash &amp; Bank / Card Summary</div>
     <div class="footer">
         <div>*** This is computer generated report and does not require any signature</div>
         <div style="margin-top:5px;">Print Date Time: {{ now()->format('l, F d, Y H:i:s A') }}</div>
