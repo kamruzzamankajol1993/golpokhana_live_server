@@ -82,8 +82,8 @@ public function index(\Illuminate\Http\Request $request)
     $today = $bdNow->toDateString();
     $currentTime = $bdNow->format('H:i:s');
 
-    $currentBookingsByTable = TableBooking::with('customer')
-        ->whereIn('status', ['upcoming', 'confirmed'])
+    $currentBookingRows = TableBooking::with(['customer', 'tables'])
+        ->whereIn('status', ['upcoming', 'confirmed', 'seated'])
         ->whereDate('booking_date', $today)
         ->where(function ($query) use ($currentTime) {
             $query->whereNull('booking_start_time')
@@ -94,9 +94,25 @@ public function index(\Illuminate\Http\Request $request)
                 ->orWhereTime('booking_end_time', '>=', $currentTime);
         })
         ->orderBy('booking_start_time')
-        ->get()
-        ->groupBy('table_id')
-        ->map(fn ($bookings) => $bookings->first());
+        ->get();
+
+    // A booking may contain multiple tables. Keep table_id as the primary table
+    // for backward compatibility, while the pivot expands the same booking to all
+    // selected tables for live reservation state.
+    $currentBookingsByTable = collect();
+    foreach ($currentBookingRows as $booking) {
+        $bookingTableIds = collect([$booking->table_id])
+            ->merge($booking->tables?->pluck('id') ?? collect())
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique();
+
+        foreach ($bookingTableIds as $bookingTableId) {
+            if (!$currentBookingsByTable->has($bookingTableId)) {
+                $currentBookingsByTable->put($bookingTableId, $booking);
+            }
+        }
+    }
 
     foreach ($tables as $table) {
         if (strtolower((string) $table->initial_status) === 'occupied') {
@@ -1892,8 +1908,16 @@ private function resolveTableBookingForOrder(Request $request, $tableId, $custom
 
     // Booking association is automatic from the selected table and is valid only
     // while the reservation window is active. No visible Table Booking selector is needed.
-    $query = TableBooking::where('table_id', $tableId)
-        ->whereIn('status', ['upcoming', 'confirmed'])
+    $query = TableBooking::query()
+        ->where(function ($bookingQuery) use ($tableId) {
+            $bookingQuery->where('table_id', $tableId);
+            if (Schema::hasTable('table_booking_tables')) {
+                $bookingQuery->orWhereHas('tables', function ($tables) use ($tableId) {
+                    $tables->where('tables.id', $tableId);
+                });
+            }
+        })
+        ->whereIn('status', ['upcoming', 'confirmed', 'seated'])
         ->whereDate('booking_date', $bdNow->toDateString())
         ->where(function ($time) use ($currentTime) {
             $time->whereNull('booking_start_time')
@@ -2443,7 +2467,7 @@ public function tableReservationStatuses()
 
     $activeTableOrders = Order::query()
         ->whereNotNull('table_id')
-        ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
+        ->whereIn('status', ['Pending', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready'])
         ->orderByDesc('id')
         ->get(Schema::hasColumn('orders', 'pre_invoice_printed_at')
             ? ['table_id', 'pre_invoice_printed_at']
@@ -2455,8 +2479,8 @@ public function tableReservationStatuses()
         ->map(fn ($id) => (int) $id)
         ->flip();
 
-    $bookingsByTable = TableBooking::with('customer')
-        ->whereIn('status', ['upcoming', 'confirmed'])
+    $bookingRows = TableBooking::with(['customer', 'tables'])
+        ->whereIn('status', ['upcoming', 'confirmed', 'seated'])
         ->whereDate('booking_date', $today)
         ->where(function ($query) use ($currentTime) {
             $query->whereNull('booking_start_time')
@@ -2467,9 +2491,22 @@ public function tableReservationStatuses()
                 ->orWhereTime('booking_end_time', '>=', $currentTime);
         })
         ->orderBy('booking_start_time')
-        ->get()
-        ->groupBy('table_id')
-        ->map(fn ($bookings) => $bookings->first());
+        ->get();
+
+    $bookingsByTable = collect();
+    foreach ($bookingRows as $booking) {
+        $bookingTableIds = collect([$booking->table_id])
+            ->merge($booking->tables?->pluck('id') ?? collect())
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique();
+
+        foreach ($bookingTableIds as $bookingTableId) {
+            if (!$bookingsByTable->has($bookingTableId)) {
+                $bookingsByTable->put($bookingTableId, $booking);
+            }
+        }
+    }
 
     $states = Table::query()->get(['id'])->map(function ($table) use ($activeTableIds, $activeTableOrders, $bookingsByTable) {
         $tableId = (int) $table->id;

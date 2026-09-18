@@ -415,5 +415,6 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
     Route::post('/settings/tax', [SettingController::class, 'updateTax'])->name('settings.tax');
     Route::post('/settings/invoice', [SettingController::class, 'updateInvoice'])->name('settings.invoice');
     Route::post('/settings/pos', [SettingController::class, 'updatePos'])->name('settings.pos');
+    Route::post('/settings/offline-pos', [SettingController::class, 'updateOfflinePos'])->name('settings.offline-pos');
     Route::post('/settings/pos/clear-transactions', [SettingController::class, 'clearPosTransactionData'])->name('settings.pos.clear-transactions');
 });

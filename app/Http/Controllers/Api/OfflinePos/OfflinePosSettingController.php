@@ -3,30 +3,115 @@
 namespace App\Http\Controllers\Api\OfflinePos;
 
 use App\Http\Controllers\Controller;
-use App\Models\RestaurantSetting;
-use App\Models\TaxSetting;
 use App\Models\InvoiceSetting;
 use App\Models\PosSetting;
+use App\Models\RestaurantSetting;
+use App\Models\TaxSetting;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class OfflinePosSettingController extends Controller
 {
-    private function guard(Request $request)
-{
-    $validKey = config('offline_pos.sync_key') ?: config('services.offline_pos.sync_key') ?: env('OFFLINE_POS_SYNC_KEY');
-    $givenKey = $request->header('X-OFFLINE-POS-KEY');
+    public function ping(Request $request): JsonResponse
+    {
+        $pos = PosSetting::first();
+        $controls = $this->offlineControls($pos);
 
-    if (!$validKey || !$givenKey || !hash_equals($validKey, $givenKey)) {
         return response()->json([
-            'status' => false,
-            'message' => 'Unauthorized offline POS request.',
-        ], 401);
+            'status' => true,
+            'message' => 'Offline POS API is reachable.',
+            'server_time' => now()->toDateTimeString(),
+            'api_version' => config('offline_pos.api_version', 'v1'),
+            'api_prefix' => config('offline_pos.api_prefix', '/api/offline-pos/v1'),
+            'offline_pos_enabled' => $controls['enabled'],
+            'base_url' => $controls['base_url'],
+        ]);
     }
 
-    return null;
-}
+    public function settings(Request $request): JsonResponse
+    {
+        $restaurant = RestaurantSetting::first();
+        $pos = PosSetting::first();
+        $tax = TaxSetting::first();
+        $invoice = InvoiceSetting::first();
 
-    private function success(string $key, array $data)
+        $restaurantData = $this->modelData($restaurant, 'restaurant_settings', [
+            'id', 'name', 'phone', 'email', 'website', 'app_link', 'address', 'opening_time',
+            'closing_time', 'currency', 'icon_name', 'logo', 'created_at', 'updated_at',
+        ]);
+        if ($restaurant) {
+            $restaurantData['logo_url'] = $this->publicUrl($restaurant->logo ?? null);
+            $restaurantData['icon_url'] = $this->publicUrl($restaurant->icon_name ?? null);
+            $restaurantData['pos_action_password_configured'] = trim((string) ($restaurant->pos_action_password ?? '')) !== '';
+        }
+
+        $posData = $this->modelData($pos, 'pos_settings', [
+            'id', 'default_view', 'items_per_page', 'auto_print_kitchen', 'auto_print_invoice',
+            'require_table_selection', 'show_out_of_stock', 'final_payment_depends_on_kitchen_status',
+            'order_list_random_half_enabled', 'random_half_order_button_visible', 'random_order_hide_percentage',
+            'given_money_manual_toggle_enabled', 'allow_payment_with_insufficient_given_money',
+            'show_honored_percentage_on_invoice', 'complimentary_note_required', 'dine_in_waiter_required',
+            'opening_balance_enabled', 'offline_pos_enabled', 'offline_pos_base_url',
+            'offline_pos_show_pull_button', 'offline_pos_show_push_button', 'offline_pos_auto_pull_enabled',
+            'offline_pos_auto_push_enabled', 'offline_pos_sync_interval_seconds',
+            'offline_pos_retry_interval_seconds', 'created_at', 'updated_at',
+        ]);
+
+        $taxData = $this->modelData($tax, 'tax_settings', [
+            'id', 'vat_rate', 'tax_label', 'tax_registration_no', 'is_tax_included', 'service_charge',
+            'created_at', 'updated_at',
+        ]);
+
+        $invoiceData = $this->modelData($invoice, 'invoice_settings', [
+            'id', 'prefix', 'starting_number', 'footer_note', 'paper_size', 'show_logo',
+            'order_prefix', 'order_starting_number', 'order_padding', 'invoice_padding',
+            'kot_prefix', 'kot_starting_number', 'kot_padding', 'created_at', 'updated_at',
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'server_time' => now()->toDateTimeString(),
+            'sync_token' => now()->toIso8601String(),
+            'offline_controls' => $this->offlineControls($pos),
+            'restaurant_settings' => $restaurantData,
+            'pos_settings' => $posData,
+            'tax_settings' => $taxData,
+            'invoice_settings' => $invoiceData,
+        ]);
+    }
+
+    public function restaurantSettings(Request $request): JsonResponse
+    {
+        $data = $this->settings($request)->getData(true);
+        return $this->single('restaurant_settings', $data['restaurant_settings'] ?? []);
+    }
+
+    public function posSettings(Request $request): JsonResponse
+    {
+        $data = $this->settings($request)->getData(true);
+        return response()->json([
+            'status' => true,
+            'server_time' => now()->toDateTimeString(),
+            'offline_controls' => $data['offline_controls'] ?? [],
+            'pos_settings' => $data['pos_settings'] ?? [],
+        ]);
+    }
+
+    public function taxSettings(Request $request): JsonResponse
+    {
+        $data = $this->settings($request)->getData(true);
+        return $this->single('tax_settings', $data['tax_settings'] ?? []);
+    }
+
+    public function invoiceSettings(Request $request): JsonResponse
+    {
+        $data = $this->settings($request)->getData(true);
+        return $this->single('invoice_settings', $data['invoice_settings'] ?? []);
+    }
+
+    private function single(string $key, array $data): JsonResponse
     {
         return response()->json([
             'status' => true,
@@ -35,70 +120,65 @@ class OfflinePosSettingController extends Controller
         ]);
     }
 
-    public function restaurantSettings(Request $request)
+    private function offlineControls(?PosSetting $pos): array
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        $storedBaseUrl = trim((string) ($pos?->offline_pos_base_url ?? ''));
+        $fallbackBaseUrl = trim((string) config('app.url', ''));
+        $baseUrl = $storedBaseUrl !== '' ? $storedBaseUrl : $fallbackBaseUrl;
+
+        if ($baseUrl === '') {
+            $baseUrl = url('/');
         }
 
-        $restaurant = RestaurantSetting::first();
-
-        $data = $restaurant ? $restaurant->toArray() : [];
-
-        $data['server_id'] = $restaurant->id ?? null;
-        $data['logo_url'] = !empty($restaurant?->logo)
-            ? asset('public/' . $restaurant->logo)
-            : null;
-
-        $data['icon_url'] = !empty($restaurant?->icon_name)
-            ? asset('public/' . $restaurant->icon_name)
-            : null;
-
-        return $this->success('restaurant_settings', $data);
+        return [
+            'enabled' => (bool) ($pos?->offline_pos_enabled ?? true),
+            'base_url' => rtrim($baseUrl, '/'),
+            'api_prefix' => config('offline_pos.api_prefix', '/api/offline-pos/v1'),
+            'show_pull_button' => (bool) ($pos?->offline_pos_show_pull_button ?? true),
+            'show_push_button' => (bool) ($pos?->offline_pos_show_push_button ?? true),
+            'auto_pull_enabled' => (bool) ($pos?->offline_pos_auto_pull_enabled ?? true),
+            'auto_push_enabled' => (bool) ($pos?->offline_pos_auto_push_enabled ?? true),
+            'sync_interval_seconds' => max(5, (int) ($pos?->offline_pos_sync_interval_seconds ?? 30)),
+            'retry_interval_seconds' => max(5, (int) ($pos?->offline_pos_retry_interval_seconds ?? 15)),
+        ];
     }
 
-    public function posSettings(Request $request)
+    private function modelData($model, string $table, array $wanted): array
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$model || !Schema::hasTable($table)) {
+            return [];
         }
 
-        $pos = PosSetting::first();
+        $existing = Schema::getColumnListing($table);
+        $allowed = array_values(array_intersect($wanted, $existing));
+        $source = $model->toArray();
+        $data = [];
 
-        $data = $pos ? $pos->toArray() : [];
+        foreach ($allowed as $column) {
+            if (array_key_exists($column, $source)) {
+                $data[$column] = $source[$column];
+            }
+        }
 
-        $data['server_id'] = $pos->id ?? null;
+        if (array_key_exists('id', $data)) {
+            $data['server_id'] = $data['id'];
+        }
 
-        return $this->success('pos_settings', $data);
+        return $data;
     }
 
-    public function taxSettings(Request $request)
+    private function publicUrl(?string $path): ?string
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        $path = trim((string) $path);
+        if ($path === '') {
+            return null;
         }
 
-        $tax = TaxSetting::first();
-
-        $data = $tax ? $tax->toArray() : [];
-
-        $data['server_id'] = $tax->id ?? null;
-
-        return $this->success('tax_settings', $data);
-    }
-
-    public function invoiceSettings(Request $request)
-    {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (Str::startsWith($path, ['http://', 'https://'])) {
+            return $path;
         }
 
-        $invoice = InvoiceSetting::first();
-
-        $data = $invoice ? $invoice->toArray() : [];
-
-        $data['server_id'] = $invoice->id ?? null;
-
-        return $this->success('invoice_settings', $data);
+        $path = preg_replace('#^/?public/#', '', ltrim($path, '/'));
+        return asset('public/' . $path);
     }
 }

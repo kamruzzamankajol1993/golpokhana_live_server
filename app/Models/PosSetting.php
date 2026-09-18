@@ -26,5 +26,12 @@ class PosSetting extends Model
         'random_half_order_button_visible'  => 'boolean',
         'random_order_hide_percentage'      => 'integer',
         'items_per_page'                    => 'integer',
+        'offline_pos_enabled'                => 'boolean',
+        'offline_pos_show_pull_button'       => 'boolean',
+        'offline_pos_show_push_button'       => 'boolean',
+        'offline_pos_auto_pull_enabled'      => 'boolean',
+        'offline_pos_auto_push_enabled'      => 'boolean',
+        'offline_pos_sync_interval_seconds'  => 'integer',
+        'offline_pos_retry_interval_seconds' => 'integer',
     ];
 }

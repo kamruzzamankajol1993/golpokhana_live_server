@@ -126,6 +126,30 @@ class SettingController extends Controller
         return back()->with('success', 'POS preferences updated!');
     }
 
+    public function updateOfflinePos(Request $request)
+    {
+        $validated = $request->validate([
+            'offline_pos_base_url' => ['nullable', 'url', 'max:255'],
+            'offline_pos_sync_interval_seconds' => ['required', 'integer', 'min:5', 'max:3600'],
+            'offline_pos_retry_interval_seconds' => ['required', 'integer', 'min:5', 'max:3600'],
+        ]);
+
+        $pos = PosSetting::first() ?? new PosSetting();
+
+        $baseUrl = trim((string) ($validated['offline_pos_base_url'] ?? ''));
+        $pos->offline_pos_base_url = $baseUrl !== '' ? rtrim($baseUrl, '/') : null;
+        $pos->offline_pos_enabled = $request->boolean('offline_pos_enabled');
+        $pos->offline_pos_show_pull_button = $request->boolean('offline_pos_show_pull_button');
+        $pos->offline_pos_show_push_button = $request->boolean('offline_pos_show_push_button');
+        $pos->offline_pos_auto_pull_enabled = $request->boolean('offline_pos_auto_pull_enabled');
+        $pos->offline_pos_auto_push_enabled = $request->boolean('offline_pos_auto_push_enabled');
+        $pos->offline_pos_sync_interval_seconds = (int) $validated['offline_pos_sync_interval_seconds'];
+        $pos->offline_pos_retry_interval_seconds = (int) $validated['offline_pos_retry_interval_seconds'];
+        $pos->save();
+
+        return back()->with('success', 'Offline POS settings updated!');
+    }
+
     public function clearPosTransactionData(Request $request)
     {
         if (!$this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {

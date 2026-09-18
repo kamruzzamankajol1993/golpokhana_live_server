@@ -128,7 +128,6 @@ class RequireSpecificBranch
             'table-booking.*',
             'occasion.*',
             'reward-points.*',
-            'offline-pos-devices.*',
             'settings.*',
             'user.*',
             'users.*',

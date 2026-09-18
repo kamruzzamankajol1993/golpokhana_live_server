@@ -36,12 +36,10 @@ return new class extends Migration
         $this->convertOrderAndKotUniqueness();
         $this->createBranchNumberSequences();
         $this->seedBranchSequences();
-        $this->createOfflinePosDevices();
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('offline_pos_devices');
         Schema::dropIfExists('branch_number_sequences');
 
         if (Schema::hasTable('order_kots') && Schema::hasColumn('order_kots', 'branch_id')) {
@@ -384,26 +382,6 @@ return new class extends Migration
                 );
             }
         }
-    }
-
-    private function createOfflinePosDevices(): void
-    {
-        if (Schema::hasTable('offline_pos_devices')) {
-            return;
-        }
-
-        Schema::create('offline_pos_devices', function (Blueprint $table) {
-            $table->id();
-            $table->uuid('device_uuid')->unique();
-            $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
-            $table->string('name', 120)->nullable();
-            $table->boolean('is_active')->default(true)->index();
-            $table->timestamp('last_seen_at')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->json('meta')->nullable();
-            $table->timestamps();
-            $table->index(['branch_id', 'is_active'], 'offline_pos_devices_branch_active_idx');
-        });
     }
 
     private function maxNumericTail(string $table, string $column, int $branchId, bool $skipQr): int

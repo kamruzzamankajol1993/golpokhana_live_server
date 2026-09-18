@@ -3,372 +3,414 @@
 namespace App\Http\Controllers\Api\OfflinePos;
 
 use App\Http\Controllers\Controller;
-use App\Models\Customer;
-use App\Models\FoodCategory;
-use App\Models\FoodItem;
-use App\Models\Table as RestaurantTable;
 use App\Models\User;
-use App\Models\Waiter;
-use App\Models\Zone;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class OfflinePosMasterDataController extends Controller
 {
-    private function guard(Request $request)
-    {
-        $validKey = config('offline_pos.sync_key') ?: config('services.offline_pos.sync_key') ?: env('OFFLINE_POS_SYNC_KEY');
-        $givenKey = $request->header('X-OFFLINE-POS-KEY');
+    private array $columnsCache = [];
 
-        if (!$validKey || !$givenKey || !hash_equals($validKey, $givenKey)) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized offline POS request.',
-            ], 401);
+    public function users(Request $request): JsonResponse
+    {
+        if (!$this->tableExists('users')) {
+            return $this->success('users', []);
         }
 
-        return null;
-    }
-
-    private function success(string $key, $data)
-    {
-        return response()->json([
-            'status' => true,
-            'server_time' => now()->toDateTimeString(),
-            $key => $data,
-        ]);
-    }
-
-    private function tableName(string $modelClass): string
-    {
-        return (new $modelClass)->getTable();
-    }
-
-    private function hasColumn(string $modelClass, string $column): bool
-    {
-        return Schema::hasColumn($this->tableName($modelClass), $column);
-    }
-
-    private function existingColumns(string $modelClass, array $columns): array
-    {
-        $tableColumns = Schema::getColumnListing($this->tableName($modelClass));
-
-        return array_values(array_intersect($columns, $tableColumns));
-    }
-
-    private function applyLastSyncedAt($query, string $modelClass, Request $request)
-    {
-        $lastSyncedAt = $request->query('last_synced_at');
-
-        if ($lastSyncedAt && $this->hasColumn($modelClass, 'updated_at')) {
-            $query->where('updated_at', '>', $lastSyncedAt);
-        }
-
-        return $query;
-    }
-
-    private function applyStatusFilter($query, string $modelClass, Request $request)
-    {
-        if ((string) $request->query('include_inactive', '0') === '1') {
-            return $query;
-        }
-
-        if ($this->hasColumn($modelClass, 'status')) {
-            $query->where(function ($statusQuery) {
-                $statusQuery->where('status', 1)
-                    ->orWhere('status', '1')
-                    ->orWhere('status', 'active')
-                    ->orWhere('status', 'Active');
-            });
-        }
-
-        return $query;
-    }
-
-    private function modelArray($model): array
-    {
-        $data = $model->toArray();
-        $data['server_id'] = $model->getKey();
-
-        return $data;
-    }
-
-    private function publicUrl(?string $path, ?string $prefix = null): ?string
-    {
-        if (!$path) {
-            return null;
-        }
-
-        if (Str::startsWith($path, ['http://', 'https://'])) {
-            return $path;
-        }
-
-        $path = ltrim($path, '/');
-
-        if ($prefix && !Str::contains($path, '/')) {
-            $path = trim($prefix, '/') . '/' . $path;
-        }
-
-        return asset('public/' . $path);
-    }
-
-    public function users(Request $request)
-    {
-        if ($response = $this->guard($request)) {
-            return $response;
-        }
-
-        $columns = $this->existingColumns(User::class, [
-            'id', 'name', 'email', 'phone', 'password', 'status', 'created_at', 'updated_at'
+        $columns = $this->availableColumns('users', [
+            'id', 'user_id', 'name', 'first_name', 'last_name', 'email', 'phone', 'image',
+            'password', 'status', 'created_at', 'updated_at',
         ]);
 
         $query = User::query()->select($columns);
-        $query = $this->applyLastSyncedAt($query, User::class, $request);
-        $query = $this->applyStatusFilter($query, User::class, $request);
+        if ($this->since($request) && $this->hasColumn('users', 'updated_at')) {
+            $query->where('updated_at', '>', $this->since($request));
+        }
 
-        $users = $query->orderBy('id', 'asc')->get()->map(function ($user) {
-            $roles = method_exists($user, 'getRoleNames') ? $user->getRoleNames()->values() : [];
-            $permissions = method_exists($user, 'getAllPermissions')
-                ? $user->getAllPermissions()->pluck('name')->values()
-                : [];
-
+        $users = $query->orderBy('id')->get()->map(function (User $user) {
             return [
                 'server_id' => $user->id,
-                'name' => $user->name ?? null,
+                'user_id' => $user->user_id ?? null,
+                'name' => $user->name ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+                'first_name' => $user->first_name ?? null,
+                'last_name' => $user->last_name ?? null,
                 'email' => $user->email ?? null,
                 'phone' => $user->phone ?? null,
+                'image' => $user->image ?? null,
+                'image_url' => $this->publicUrl($user->image ?? null, 'uploads/users'),
                 'password_hash' => $user->password ?? null,
                 'status' => $user->status ?? 'active',
-                'roles' => $roles,
-                'permissions' => $permissions,
-                'created_at' => optional($user->created_at)->toDateTimeString(),
-                'updated_at' => optional($user->updated_at)->toDateTimeString(),
+                'roles' => method_exists($user, 'getRoleNames') ? $user->getRoleNames()->values()->all() : [],
+                'permissions' => method_exists($user, 'getAllPermissions')
+                    ? $user->getAllPermissions()->pluck('name')->values()->all()
+                    : [],
+                'created_at' => $user->created_at?->toDateTimeString(),
+                'updated_at' => $user->updated_at?->toDateTimeString(),
             ];
-        });
+        })->values()->all();
 
         return $this->success('users', $users);
     }
 
-    public function zones(Request $request)
+    public function floorZones(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        $table = $this->tableExists('floor_zones') ? 'floor_zones' : ($this->tableExists('zones') ? 'zones' : null);
+        if (!$table) {
+            return $this->success('floor_zones', []);
         }
 
-        $columns = $this->existingColumns(Zone::class, [
-            'id', 'name', 'status', 'created_at', 'updated_at'
-        ]);
+        $query = DB::table($table)->select($this->availableColumns($table, [
+            'id', 'name', 'description', 'status', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, $table, $request);
 
-        $query = Zone::query()->select($columns);
-        $query = $this->applyLastSyncedAt($query, Zone::class, $request);
-        $query = $this->applyStatusFilter($query, Zone::class, $request);
+        $rows = $query->orderBy($this->hasColumn($table, 'name') ? 'name' : 'id')
+            ->get()
+            ->map(fn ($row) => $this->row($row))
+            ->values()
+            ->all();
 
-        $zones = $query->orderBy('id', 'asc')->get()->map(fn ($zone) => $this->modelArray($zone));
-
-        return $this->success('zones', $zones);
+        return $this->success('floor_zones', $rows);
     }
 
-    public function tables(Request $request)
+    public function zones(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
-        }
-
-        $columns = $this->existingColumns(RestaurantTable::class, [
-            'id', 'zone_id', 'table_number', 'name', 'seating_capacity', 'initial_status', 'status', 'created_at', 'updated_at'
-        ]);
-
-        $query = RestaurantTable::query()
-            ->select($columns)
-            ->with('zone');
-
-        $query = $this->applyLastSyncedAt($query, RestaurantTable::class, $request);
-        $query = $this->applyStatusFilter($query, RestaurantTable::class, $request);
-
-        $tables = $query->orderBy('id', 'asc')->get()->map(function ($table) {
-            $data = $this->modelArray($table);
-            $data['zone_server_id'] = $table->zone_id ?? null;
-            $data['zone_name'] = $table->zone->name ?? null;
-
-            return $data;
-        });
-
-        return $this->success('tables', $tables);
+        $data = $this->floorZones($request)->getData(true);
+        return $this->success('zones', $data['floor_zones'] ?? []);
     }
 
-    public function waiters(Request $request)
+    public function tables(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('tables')) {
+            return $this->success('tables', []);
         }
 
-        $columns = $this->existingColumns(Waiter::class, [
-            'id', 'user_id', 'name', 'phone', 'email', 'address', 'status', 'created_at', 'updated_at'
-        ]);
+        $zoneTable = $this->tableExists('floor_zones') ? 'floor_zones' : ($this->tableExists('zones') ? 'zones' : null);
+        $zoneNames = $zoneTable ? DB::table($zoneTable)->pluck('name', 'id') : collect();
 
-        $query = Waiter::query()->select($columns);
-        $query = $this->applyLastSyncedAt($query, Waiter::class, $request);
-        $query = $this->applyStatusFilter($query, Waiter::class, $request);
+        $query = DB::table('tables')->select($this->availableColumns('tables', [
+            'id', 'table_number', 'qr_token', 'seating_capacity', 'zone_id', 'floor_zone_id',
+            'initial_status', 'notes', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'tables', $request);
 
-        $waiters = $query->orderBy('name', 'asc')->get()->map(function ($waiter) {
-            $data = $this->modelArray($waiter);
-            $data['user_server_id'] = $waiter->user_id ?? null;
+        $rows = $query->orderBy($this->hasColumn('tables', 'table_number') ? 'table_number' : 'id')
+            ->get()
+            ->map(function ($row) use ($zoneNames) {
+                $data = $this->row($row);
+                $zoneId = $data['floor_zone_id'] ?? $data['zone_id'] ?? null;
+                $data['zone_server_id'] = $zoneId;
+                $data['zone_name'] = $zoneId ? ($zoneNames[$zoneId] ?? null) : null;
+                return $data;
+            })
+            ->values()
+            ->all();
 
-            return $data;
-        });
-
-        return $this->success('waiters', $waiters);
+        return $this->success('tables', $rows);
     }
 
-    public function customers(Request $request)
+    public function waiters(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('waiters')) {
+            return $this->success('waiters', []);
         }
 
-        $columns = $this->existingColumns(Customer::class, [
-            'id', 'name', 'phone', 'email', 'address', 'customer_type', 'total_points', 'status', 'created_at', 'updated_at'
-        ]);
+        $zoneTable = $this->tableExists('floor_zones') ? 'floor_zones' : ($this->tableExists('zones') ? 'zones' : null);
+        $zoneNames = $zoneTable ? DB::table($zoneTable)->pluck('name', 'id') : collect();
+        $shiftNames = $this->tableExists('shifts') ? DB::table('shifts')->pluck('name', 'id') : collect();
 
-        $query = Customer::query()->select($columns);
-        $query = $this->applyLastSyncedAt($query, Customer::class, $request);
-        $query = $this->applyStatusFilter($query, Customer::class, $request);
+        $query = DB::table('waiters')->select($this->availableColumns('waiters', [
+            'id', 'user_id', 'hr_employee_id', 'zone_id', 'shift_id', 'employee_id', 'name',
+            'phone', 'email', 'image', 'join_date', 'notes', 'status', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'waiters', $request);
 
-        $customers = $query->orderBy('name', 'asc')->get()->map(fn ($customer) => $this->modelArray($customer));
+        $rows = $query->orderBy($this->hasColumn('waiters', 'name') ? 'name' : 'id')
+            ->get()
+            ->map(function ($row) use ($zoneNames, $shiftNames) {
+                $data = $this->row($row);
+                $zoneId = $data['zone_id'] ?? null;
+                $data['zone_name'] = $zoneId ? ($zoneNames[$zoneId] ?? null) : null;
+                $data['shift_name'] = isset($data['shift_id']) ? ($shiftNames[$data['shift_id']] ?? null) : null;
+                $data['image_url'] = $this->publicUrl($data['image'] ?? null, 'uploads/waiters');
+                return $data;
+            })
+            ->values()
+            ->all();
 
-        return $this->success('customers', $customers);
+        return $this->success('waiters', $rows);
     }
 
-    public function foodCategories(Request $request)
+    public function customers(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('customers')) {
+            return $this->success('customers', []);
         }
 
-        $columns = $this->existingColumns(FoodCategory::class, [
-            'id', 'parent_category_id', 'name', 'slug', 'image', 'icon', 'sort_order', 'status', 'created_at', 'updated_at'
-        ]);
+        $query = DB::table('customers')->select($this->availableColumns('customers', [
+            'id', 'offline_uuid', 'name', 'phone', 'email', 'dob', 'address', 'points', 'total_orders',
+            'synced_at', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'customers', $request);
 
-        $query = FoodCategory::query()->select($columns);
-        $query = $this->applyLastSyncedAt($query, FoodCategory::class, $request);
-        $query = $this->applyStatusFilter($query, FoodCategory::class, $request);
+        $rows = $query->orderBy($this->hasColumn('customers', 'name') ? 'name' : 'id')
+            ->get()
+            ->map(fn ($row) => $this->row($row))
+            ->values()
+            ->all();
 
-        if ($this->hasColumn(FoodCategory::class, 'sort_order')) {
-            $query->orderBy('sort_order', 'asc');
-        }
-
-        $categories = $query->orderBy('id', 'asc')->get()->map(function ($category) {
-            $data = $this->modelArray($category);
-            $data['parent_category_server_id'] = $category->parent_category_id ?? null;
-            $data['image_url'] = $this->publicUrl($category->image ?? null, 'uploads/food-categories');
-            $data['icon_url'] = $this->publicUrl($category->icon ?? null, 'uploads/food-categories');
-
-            return $data;
-        });
-
-        return $this->success('food_categories', $categories);
+        return $this->success('customers', $rows);
     }
 
-    public function foodItems(Request $request)
+    public function foodCategories(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('food_categories')) {
+            return $this->success('food_categories', []);
         }
 
-        $columns = $this->existingColumns(FoodItem::class, [
-            'id', 'food_category_id', 'category_id', 'sub_category_id', 'name', 'slug', 'sku', 'base_price', 'discount_price', 'price',
-            'main_image', 'image', 'description', 'is_available', 'status', 'sort_order', 'preparation_time', 'created_at', 'updated_at'
-        ]);
+        $names = DB::table('food_categories')->pluck('name', 'id');
+        $query = DB::table('food_categories')->select($this->availableColumns('food_categories', [
+            'id', 'name', 'parent_category_id', 'image', 'slug', 'status', 'sort_order', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'food_categories', $request);
 
-        $query = FoodItem::query()
-            ->select($columns)
-            ->with('addons');
+        $rows = $query
+            ->orderBy($this->hasColumn('food_categories', 'sort_order') ? 'sort_order' : 'id')
+            ->get()
+            ->map(function ($row) use ($names) {
+                $data = $this->row($row);
+                $data['parent_name'] = isset($data['parent_category_id'])
+                    ? ($names[$data['parent_category_id']] ?? null)
+                    : null;
+                $data['image_url'] = $this->publicUrl($data['image'] ?? null, 'uploads/categories');
+                return $data;
+            })
+            ->values()
+            ->all();
 
-        $query = $this->applyLastSyncedAt($query, FoodItem::class, $request);
-
-        if ((string) $request->query('include_unavailable', '0') !== '1') {
-            if ($this->hasColumn(FoodItem::class, 'is_available')) {
-                $query->where('is_available', 1);
-            }
-            $query = $this->applyStatusFilter($query, FoodItem::class, $request);
-        }
-
-        if ($this->hasColumn(FoodItem::class, 'sort_order')) {
-            $query->orderBy('sort_order', 'asc');
-        }
-
-        $foods = $query->orderBy('id', 'asc')->get()->map(function ($food) {
-            $data = $this->modelArray($food);
-            $data['category_server_id'] = $food->food_category_id ?? $food->category_id ?? null;
-            $data['sub_category_server_id'] = $food->sub_category_id ?? null;
-            $data['main_image_url'] = $this->publicUrl($food->main_image ?? null, 'uploads/foods');
-            $data['image_url'] = $this->publicUrl($food->image ?? null, 'uploads/foods');
-            $data['addons'] = $food->addons->map(function ($addon) {
-                $addonData = $addon->toArray();
-                $addonData['server_id'] = $addon->id;
-                $addonData['pivot'] = $addon->pivot ? $addon->pivot->toArray() : null;
-
-                return $addonData;
-            })->values();
-
-            return $data;
-        });
-
-        return $this->success('food_items', $foods);
+        return $this->success('food_categories', $rows);
     }
 
-    public function foodAddons(Request $request)
+    public function foodItems(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('food_items')) {
+            return $this->success('food_items', []);
         }
 
-        $query = FoodItem::query()
-            ->select($this->existingColumns(FoodItem::class, ['id', 'name', 'updated_at']))
-            ->with('addons');
+        $categoryNames = $this->tableExists('food_categories') ? DB::table('food_categories')->pluck('name', 'id') : collect();
+        $cuisineNames = $this->tableExists('cuisine_types') ? DB::table('cuisine_types')->pluck('name', 'id') : collect();
+        $courseNames = $this->tableExists('course_types') ? DB::table('course_types')->pluck('name', 'id') : collect();
 
-        $query = $this->applyLastSyncedAt($query, FoodItem::class, $request);
+        $addons = $this->tableExists('food_addons')
+            ? DB::table('food_addons')
+                ->select($this->availableColumns('food_addons', ['id', 'food_item_id', 'name', 'price', 'created_at', 'updated_at']))
+                ->orderBy('id')->get()->map(fn ($row) => $this->row($row))->groupBy('food_item_id')
+            : collect();
 
-        $addons = $query->get()->flatMap(function ($food) {
-            return $food->addons->map(function ($addon) use ($food) {
-                $addonData = $addon->toArray();
+        $gallery = $this->tableExists('food_images')
+            ? DB::table('food_images')
+                ->select($this->availableColumns('food_images', ['id', 'food_item_id', 'image', 'created_at', 'updated_at']))
+                ->orderBy('id')->get()->map(function ($row) {
+                    $data = $this->row($row);
+                    $data['image_url'] = $this->publicUrl($data['image'] ?? null, 'uploads/foods');
+                    return $data;
+                })->groupBy('food_item_id')
+            : collect();
 
-                return [
-                    'food_item_server_id' => $food->id,
-                    'addon_server_id' => $addon->id,
-                    'server_id' => $addon->id,
-                    'name' => $addon->name ?? null,
-                    'price' => $addon->price ?? ($addon->pivot->price ?? 0),
-                    'status' => $addon->status ?? 'active',
-                    'pivot' => $addon->pivot ? $addon->pivot->toArray() : null,
-                    'data' => $addonData,
-                    'created_at' => isset($addon->created_at) ? optional($addon->created_at)->toDateTimeString() : null,
-                    'updated_at' => isset($addon->updated_at) ? optional($addon->updated_at)->toDateTimeString() : null,
-                ];
-            });
-        })->values();
+        $query = DB::table('food_items')->select($this->availableColumns('food_items', [
+            'id', 'name', 'bengali_name', 'slug', 'short_description', 'description',
+            'food_category_id', 'sub_category_id', 'cuisine_type_id', 'course_type_id',
+            'spice_level', 'serving_size', 'base_price', 'discount_price', 'tax_rate',
+            'preparation_time', 'calories', 'allergens', 'allergen_notes', 'main_image',
+            'is_available', 'is_featured', 'is_chefs_special', 'is_dine_in', 'is_takeaway',
+            'is_draft', 'inventory_tracking', 'point', 'active_days', 'start_time', 'end_time',
+            'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'food_items', $request);
 
-        return $this->success('food_addons', $addons);
+        $rows = $query->orderBy($this->hasColumn('food_items', 'name') ? 'name' : 'id')
+            ->get()
+            ->map(function ($row) use ($categoryNames, $cuisineNames, $courseNames, $addons, $gallery) {
+                $data = $this->row($row);
+                $foodId = $data['server_id'] ?? null;
+                $data['category_name'] = isset($data['food_category_id']) ? ($categoryNames[$data['food_category_id']] ?? null) : null;
+                $data['sub_category_name'] = isset($data['sub_category_id']) ? ($categoryNames[$data['sub_category_id']] ?? null) : null;
+                $data['cuisine_type_name'] = isset($data['cuisine_type_id']) ? ($cuisineNames[$data['cuisine_type_id']] ?? null) : null;
+                $data['course_type_name'] = isset($data['course_type_id']) ? ($courseNames[$data['course_type_id']] ?? null) : null;
+                $data['main_image_url'] = $this->publicUrl($data['main_image'] ?? null, 'uploads/foods');
+                $data['addons'] = isset($addons[$foodId]) ? $addons[$foodId]->values()->all() : [];
+                $data['gallery_images'] = isset($gallery[$foodId]) ? $gallery[$foodId]->values()->all() : [];
+                return $data;
+            })
+            ->values()
+            ->all();
+
+        return $this->success('food_items', $rows);
     }
 
-    public function masterData(Request $request)
+    public function foodAddons(Request $request): JsonResponse
     {
-        if ($response = $this->guard($request)) {
-            return $response;
+        if (!$this->tableExists('food_addons')) {
+            return $this->success('food_addons', []);
         }
+
+        $query = DB::table('food_addons')->select($this->availableColumns('food_addons', [
+            'id', 'food_item_id', 'name', 'price', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'food_addons', $request);
+
+        $rows = $query->orderBy('id')
+            ->get()
+            ->map(function ($row) {
+                $data = $this->row($row);
+                $data['food_item_server_id'] = $data['food_item_id'] ?? null;
+                return $data;
+            })
+            ->values()
+            ->all();
+
+        return $this->success('food_addons', $rows);
+    }
+
+    public function occasions(Request $request): JsonResponse
+    {
+        if (!$this->tableExists('occasions')) {
+            return $this->success('occasions', []);
+        }
+
+        $query = DB::table('occasions')->select($this->availableColumns('occasions', [
+            'id', 'name', 'status', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'occasions', $request);
+
+        $rows = $query->orderBy($this->hasColumn('occasions', 'name') ? 'name' : 'id')
+            ->get()->map(fn ($row) => $this->row($row))->values()->all();
+
+        return $this->success('occasions', $rows);
+    }
+
+    public function deliveryPartners(Request $request): JsonResponse
+    {
+        if (!$this->tableExists('delivery_partners')) {
+            return $this->success('delivery_partners', []);
+        }
+
+        $query = DB::table('delivery_partners')->select($this->availableColumns('delivery_partners', [
+            'id', 'name', 'status', 'created_at', 'updated_at',
+        ]));
+        $this->applySince($query, 'delivery_partners', $request);
+
+        $rows = $query->orderBy($this->hasColumn('delivery_partners', 'name') ? 'name' : 'id')
+            ->get()
+            ->map(fn ($row) => $this->row($row))
+            ->values()
+            ->all();
+
+        return $this->success('delivery_partners', $rows);
+    }
+
+    public function masterData(Request $request): JsonResponse
+    {
+        $floorZones = $this->floorZones($request)->getData(true)['floor_zones'] ?? [];
 
         return response()->json([
             'status' => true,
             'server_time' => now()->toDateTimeString(),
-            'users' => $this->users($request)->getData(true)['users'],
-            'zones' => $this->zones($request)->getData(true)['zones'],
-            'tables' => $this->tables($request)->getData(true)['tables'],
-            'waiters' => $this->waiters($request)->getData(true)['waiters'],
-            'customers' => $this->customers($request)->getData(true)['customers'],
-            'food_categories' => $this->foodCategories($request)->getData(true)['food_categories'],
-            'food_items' => $this->foodItems($request)->getData(true)['food_items'],
-            'food_addons' => $this->foodAddons($request)->getData(true)['food_addons'],
+            'sync_token' => now()->toIso8601String(),
+            'requested_last_synced_at' => $this->since($request),
+            'users' => $this->users($request)->getData(true)['users'] ?? [],
+            'floor_zones' => $floorZones,
+            'zones' => $floorZones,
+            'tables' => $this->tables($request)->getData(true)['tables'] ?? [],
+            'waiters' => $this->waiters($request)->getData(true)['waiters'] ?? [],
+            'customers' => $this->customers($request)->getData(true)['customers'] ?? [],
+            'food_categories' => $this->foodCategories($request)->getData(true)['food_categories'] ?? [],
+            'food_items' => $this->foodItems($request)->getData(true)['food_items'] ?? [],
+            'food_addons' => $this->foodAddons($request)->getData(true)['food_addons'] ?? [],
+            'delivery_partners' => $this->deliveryPartners($request)->getData(true)['delivery_partners'] ?? [],
+            'occasions' => $this->occasions($request)->getData(true)['occasions'] ?? [],
         ]);
+    }
+
+    private function success(string $key, array $data): JsonResponse
+    {
+        return response()->json([
+            'status' => true,
+            'server_time' => now()->toDateTimeString(),
+            'sync_token' => now()->toIso8601String(),
+            $key => $data,
+            'meta' => ['count' => count($data)],
+        ]);
+    }
+
+    private function since(Request $request): ?string
+    {
+        $value = trim((string) $request->query('last_synced_at', ''));
+        return $value !== '' ? $value : null;
+    }
+
+    private function applySince(Builder $query, string $table, Request $request): void
+    {
+        $since = $this->since($request);
+        if ($since && $this->hasColumn($table, 'updated_at')) {
+            $query->where($table . '.updated_at', '>', $since);
+        }
+    }
+
+    private function tableExists(string $table): bool
+    {
+        try {
+            return Schema::hasTable($table);
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function columns(string $table): array
+    {
+        if (!isset($this->columnsCache[$table])) {
+            $this->columnsCache[$table] = $this->tableExists($table) ? Schema::getColumnListing($table) : [];
+        }
+        return $this->columnsCache[$table];
+    }
+
+    private function availableColumns(string $table, array $wanted): array
+    {
+        $columns = array_values(array_intersect($wanted, $this->columns($table)));
+        return $columns ?: ['id'];
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        return in_array($column, $this->columns($table), true);
+    }
+
+    private function row(object|array $row): array
+    {
+        $data = (array) $row;
+        if (array_key_exists('id', $data)) {
+            $data['server_id'] = $data['id'];
+        }
+        return $data;
+    }
+
+    private function publicUrl(?string $path, ?string $folder = null): ?string
+    {
+        $path = trim((string) $path);
+        if ($path === '') {
+            return null;
+        }
+        if (Str::startsWith($path, ['http://', 'https://'])) {
+            return $path;
+        }
+        $path = preg_replace('#^/?public/#', '', ltrim($path, '/'));
+        if ($folder && !Str::contains($path, '/')) {
+            $path = trim($folder, '/') . '/' . $path;
+        }
+        return asset('public/' . $path);
     }
 }

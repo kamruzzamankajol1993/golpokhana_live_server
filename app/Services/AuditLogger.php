@@ -21,7 +21,7 @@ class AuditLogger
         'restaurant_settings', 'tax_settings', 'invoice_settings', 'pos_settings',
         'hr_settings', 'attendance_settings', 'payroll_settings', 'reward_point_settings',
         'zones', 'tables', 'table_bookings', 'waiters', 'food_categories', 'food_items',
-        'orders', 'order_kots', 'order_due_payments', 'pos_sessions', 'pos_deleted_item_histories', 'offline_pos_devices',
+        'orders', 'order_kots', 'order_due_payments', 'pos_sessions', 'pos_deleted_item_histories',
         'employees', 'shift_rosters', 'attendances', 'leave_requests',
         'employee_salary_structures', 'payroll_runs', 'payroll_items', 'payroll_payments',
         'employee_branch_transfers',

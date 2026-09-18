@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class TableBookingController extends Controller
 {
@@ -31,7 +32,7 @@ class TableBookingController extends Controller
         $cancelledBookings = TableBooking::where('status', 'cancelled')->count();
 
         // Query for Table
-        $query = TableBooking::with(['customer', 'table.zone', 'occasion']);
+        $query = TableBooking::with(['customer', 'table.zone', 'tables', 'occasion']);
 
         // Search Logic
         if ($request->search) {
@@ -78,7 +79,7 @@ class TableBookingController extends Controller
 
     public function edit($id)
     {
-        $booking = TableBooking::with(['customer','table'])->findOrFail($id);
+        $booking = TableBooking::with(['customer','table','tables'])->findOrFail($id);
         $customers = Customer::orderBy('name')->get();
         $occasions = Occasion::where('status','Active')->get();
         $zonesWithTables = Zone::with('tables')->get();
@@ -87,14 +88,16 @@ class TableBookingController extends Controller
 
     public function show($id)
     {
-        $booking = TableBooking::with(['customer','table.zone','occasion'])->findOrFail($id);
+        $booking = TableBooking::with(['customer','table.zone','tables','occasion'])->findOrFail($id);
         return view('admin.table_booking.pages.show', compact('booking'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'table_id' => 'required|exists:tables,id',
+            'table_id' => 'nullable|required_without:table_ids|exists:tables,id',
+            'table_ids' => 'nullable|array|min:1',
+            'table_ids.*' => 'integer|exists:tables,id',
             'number_of_guests' => 'required|integer|min:1',
             'booking_date' => 'required|date',
             'booking_start_time' => 'required|date_format:H:i',
@@ -135,10 +138,14 @@ class TableBookingController extends Controller
                 $customerId = $request->customer_id;
             }
 
+            $tableIds = collect($request->input('table_ids', []))->map(fn ($id) => (int) $id)->filter()->unique()->values();
+            if ($tableIds->isEmpty() && $request->table_id) $tableIds->push((int) $request->table_id);
+            $primaryTableId = (int) $tableIds->first();
+
             // বুকিং সেভ করা
             $booking =TableBooking::create([
                 'customer_id' => $customerId,
-                'table_id' => $request->table_id,
+                'table_id' => $primaryTableId,
                 'is_new_customer' => $request->is_new_customer ? 1 : 0,
                 'number_of_guests' => $request->number_of_guests,
                 'booking_date' => $request->booking_date,
@@ -158,6 +165,9 @@ class TableBookingController extends Controller
             $booking->update([
                 'booking_id' => '#BK-' . (1000 + $booking->id)
             ]);
+            if (Schema::hasTable('table_booking_tables')) {
+                $booking->tables()->sync($tableIds->all());
+            }
 
             DB::commit();
             return back()->with('success', 'Booking created successfully!');
@@ -171,7 +181,9 @@ class TableBookingController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'table_id' => 'required|exists:tables,id',
+            'table_id' => 'nullable|required_without:table_ids|exists:tables,id',
+            'table_ids' => 'nullable|array|min:1',
+            'table_ids.*' => 'integer|exists:tables,id',
             'number_of_guests' => 'required|integer|min:1',
             'booking_date' => 'required|date',
             'booking_start_time' => 'required|date_format:H:i',
@@ -201,9 +213,13 @@ class TableBookingController extends Controller
                 $customerId = $request->customer_id;
             }
 
+            $tableIds = collect($request->input('table_ids', []))->map(fn ($tableId) => (int) $tableId)->filter()->unique()->values();
+            if ($tableIds->isEmpty() && $request->table_id) $tableIds->push((int) $request->table_id);
+            $primaryTableId = (int) $tableIds->first();
+
             $booking->update([
                 'customer_id' => $customerId,
-                'table_id' => $request->table_id,
+                'table_id' => $primaryTableId,
                 'is_new_customer' => $request->is_new_customer ? 1 : 0,
                 'number_of_guests' => $request->number_of_guests,
                 'booking_date' => $request->booking_date,
@@ -219,7 +235,10 @@ class TableBookingController extends Controller
                 'status' => $request->status,
             ]);
 
-            $this->releaseTableIfCompletedOrCancelled($booking->fresh());
+            if (Schema::hasTable('table_booking_tables')) {
+                $booking->tables()->sync($tableIds->all());
+            }
+            $this->releaseTableIfCompletedOrCancelled($booking->fresh('tables'));
 
             DB::commit();
             return back()->with('success', 'Booking updated successfully!');
@@ -232,8 +251,12 @@ class TableBookingController extends Controller
 
     private function releaseTableIfCompletedOrCancelled($booking)
     {
-        if (in_array(strtolower((string) $booking->status), ['completed', 'cancelled'])) {
-            Table::where('id', $booking->table_id)->update(['initial_status' => 'Available']);
+        if (in_array(strtolower((string) $booking->status), ['completed', 'cancelled', 'no-show'])) {
+            $tableIds = collect([$booking->table_id]);
+            if (Schema::hasTable('table_booking_tables')) {
+                $tableIds = $tableIds->merge($booking->tables->pluck('id'));
+            }
+            Table::whereIn('id', $tableIds->filter()->unique()->all())->update(['initial_status' => 'Available']);
         }
     }
 
@@ -241,7 +264,17 @@ class TableBookingController extends Controller
     {
         DB::beginTransaction();
         try {
-            TableBooking::findOrFail($id)->delete();
+            $booking = TableBooking::with('tables')->findOrFail($id);
+            $tableIds = $booking->tables->pluck('id')->push($booking->table_id)->filter()->unique()->values()->all();
+            $booking->delete();
+            foreach ($tableIds as $tableId) {
+                $hasActiveOrder = \App\Models\Order::where('table_id', $tableId)
+                    ->whereIn('status', ['Pending', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready'])
+                    ->exists();
+                if (!$hasActiveOrder) {
+                    Table::whereKey($tableId)->update(['initial_status' => 'Available']);
+                }
+            }
             DB::commit();
             return back()->with('success', 'Booking deleted successfully!');
         } catch (Exception $e) {

@@ -30,6 +30,7 @@
         <div class="progga-tab-item" data-settings-tab="tax">Vat &amp; Billing</div>
         <div class="progga-tab-item" data-settings-tab="invoice">Invoice Settings</div>
         <div class="progga-tab-item" data-settings-tab="pos">POS Preferences</div>
+        <div class="progga-tab-item" data-settings-tab="offline">Offline POS</div>
         <div class="progga-tab-item" data-settings-tab="roles">User Roles</div>
     </div>
 
@@ -355,6 +356,114 @@
         @endif
     </div>
 
+    <div id="settingsOfflinePos" style="display:none;">
+        <div class="progga-card">
+            <div class="progga-card-header">
+                <div class="progga-card-title"><i class="bi bi-cloud-arrow-down-up me-2"></i>Offline POS Control</div>
+            </div>
+            <div class="progga-card-body">
+                <form action="{{ route('settings.offline-pos') }}" method="POST">
+                    @csrf
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="alert alert-info mb-0" style="font-size:13px;">
+                                These settings are returned to the NativePHP Offline POS through the Offline POS API. The offline application must honor these switches for manual Pull/Push buttons and automatic background synchronization.
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Offline POS</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" id="offlinePosEnabled" name="offline_pos_enabled" value="1" {{ ($pos->offline_pos_enabled ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="offlinePosEnabledLabel">{{ ($pos->offline_pos_enabled ?? true) ? 'Enabled' : 'Disabled' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Master switch used by the offline application.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Main Server Base URL</label>
+                                <input type="url" name="offline_pos_base_url" class="progga-form-control" value="{{ old('offline_pos_base_url', $pos->offline_pos_base_url ?? '') }}" placeholder="https://pos.example.com">
+                                <small class="d-block text-muted mt-2">Save the main project URL only. Offline POS API path: <code>/api/offline-pos/v1</code>.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Show Pull Button</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" id="offlinePosShowPullButton" name="offline_pos_show_pull_button" value="1" {{ ($pos->offline_pos_show_pull_button ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="offlinePosShowPullButtonLabel">{{ ($pos->offline_pos_show_pull_button ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">When On, the manual Pull button will be visible in Offline POS.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Show Push Button</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" id="offlinePosShowPushButton" name="offline_pos_show_push_button" value="1" {{ ($pos->offline_pos_show_push_button ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="offlinePosShowPushButtonLabel">{{ ($pos->offline_pos_show_push_button ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">When On, the manual Push button will be visible in Offline POS.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Automatic Pull</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" id="offlinePosAutoPull" name="offline_pos_auto_pull_enabled" value="1" {{ ($pos->offline_pos_auto_pull_enabled ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="offlinePosAutoPullLabel">{{ ($pos->offline_pos_auto_pull_enabled ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Keeps food, client, table and other required master data updated while the main server is reachable.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Automatic Push</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" id="offlinePosAutoPush" name="offline_pos_auto_push_enabled" value="1" {{ ($pos->offline_pos_auto_push_enabled ?? true) ? 'checked' : '' }}>
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label" id="offlinePosAutoPushLabel">{{ ($pos->offline_pos_auto_push_enabled ?? true) ? 'On' : 'Off' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Pushes pending offline clients first, then pending offline orders, while the main server is reachable.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Background Sync Interval (seconds)</label>
+                                <input type="number" min="5" max="3600" name="offline_pos_sync_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_sync_interval_seconds', (int) ($pos->offline_pos_sync_interval_seconds ?? 30)) }}" required>
+                                <small class="d-block text-muted mt-2">How often the Offline POS background worker checks for normal pull/push work while online.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Retry Interval After Failure (seconds)</label>
+                                <input type="number" min="5" max="3600" name="offline_pos_retry_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_retry_interval_seconds', (int) ($pos->offline_pos_retry_interval_seconds ?? 15)) }}" required>
+                                <small class="d-block text-muted mt-2">Used after a failed request or when the server becomes unreachable.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Offline POS Settings</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="settingsRoles" style="display:none;">
         <div class="progga-card">
           <div class="progga-card-header"><div class="progga-card-title"><i class="bi bi-shield-lock me-2"></i>User Roles &amp; Permissions</div></div>
@@ -406,7 +515,7 @@
 @section('script')
 <script>
     // Tab Map and Logic
-    var tabMap = { restaurant:'settingsRestaurant', tax:'settingsTax', invoice:'settingsInvoice', pos:'settingsPos', roles:'settingsRoles' };
+    var tabMap = { restaurant:'settingsRestaurant', tax:'settingsTax', invoice:'settingsInvoice', pos:'settingsPos', offline:'settingsOfflinePos', roles:'settingsRoles' };
     document.querySelectorAll('[data-settings-tab]').forEach(function(tab){
         tab.addEventListener('click', function(){
             document.querySelectorAll('[data-settings-tab]').forEach(t=>t.classList.remove('active'));
@@ -520,6 +629,23 @@
             if (label) label.textContent = allowPaymentWithInsufficientGivenMoneySetting.checked ? 'On' : 'Off';
         });
     }
+
+    var offlinePosToggleMap = [
+        ['offlinePosEnabled', 'offlinePosEnabledLabel', 'Enabled', 'Disabled'],
+        ['offlinePosShowPullButton', 'offlinePosShowPullButtonLabel', 'On', 'Off'],
+        ['offlinePosShowPushButton', 'offlinePosShowPushButtonLabel', 'On', 'Off'],
+        ['offlinePosAutoPull', 'offlinePosAutoPullLabel', 'On', 'Off'],
+        ['offlinePosAutoPush', 'offlinePosAutoPushLabel', 'On', 'Off']
+    ];
+
+    offlinePosToggleMap.forEach(function (item) {
+        var input = document.getElementById(item[0]);
+        var label = document.getElementById(item[1]);
+        if (!input || !label) return;
+        input.addEventListener('change', function () {
+            label.textContent = input.checked ? item[2] : item[3];
+        });
+    });
 
     // POS Action Password show/hide toggle
     var posActionPasswordInput = document.getElementById('posActionPassword');

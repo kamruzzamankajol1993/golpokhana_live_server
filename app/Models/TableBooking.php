@@ -27,6 +27,12 @@ class TableBooking extends Model
         return $this->belongsTo(Table::class);
     }
 
+    /** Multiple tables selected by the Offline POS booking design. table_id remains the primary table for compatibility. */
+    public function tables()
+    {
+        return $this->belongsToMany(Table::class, 'table_booking_tables', 'table_booking_id', 'table_id')->withTimestamps();
+    }
+
     public function occasion()
     {
         return $this->belongsTo(Occasion::class);

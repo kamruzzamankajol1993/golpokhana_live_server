@@ -15,7 +15,7 @@ class BranchModeManager
         'users',
         'zones', 'shifts', 'waiters', 'tables', 'occasions', 'table_bookings',
         'food_categories', 'cuisine_types', 'allergens', 'course_types', 'food_items', 'food_addons',
-        'orders', 'order_kots', 'order_due_payments', 'pos_sessions', 'pos_deleted_item_histories', 'offline_pos_devices',
+        'orders', 'order_kots', 'order_due_payments', 'pos_sessions', 'pos_deleted_item_histories',
         'departments', 'designations', 'employment_types', 'leave_types', 'salary_components', 'holidays',
         'employees', 'shift_rosters', 'attendances', 'leave_requests', 'employee_leave_balances',
         'employee_salary_structures', 'employee_salary_components', 'payroll_runs', 'payroll_items',
