@@ -147,7 +147,8 @@ class SettingController extends Controller
         $pos->offline_pos_retry_interval_seconds = (int) $validated['offline_pos_retry_interval_seconds'];
         $pos->save();
 
-        return back()->with('success', 'Offline POS settings updated!');
+        return redirect()->route('settings.index', ['tab' => 'offline'])
+            ->with('success', 'Offline POS settings updated!');
     }
 
     public function clearPosTransactionData(Request $request)

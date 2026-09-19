@@ -357,20 +357,26 @@
     </div>
 
     <div id="settingsOfflinePos" style="display:none;">
-        <div class="progga-card">
+        <div class="progga-card mb-3">
             <div class="progga-card-header">
-                <div class="progga-card-title"><i class="bi bi-cloud-arrow-down-up me-2"></i>Offline POS Control</div>
+                <div class="progga-card-title"><i class="bi bi-hdd-network me-2"></i>Offline POS</div>
             </div>
             <div class="progga-card-body">
-                <form action="{{ route('settings.offline-pos') }}" method="POST">
-                    @csrf
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <div class="alert alert-info mb-0" style="font-size:13px;">
-                                These settings are returned to the NativePHP Offline POS through the Offline POS API. The offline application must honor these switches for manual Pull/Push buttons and automatic background synchronization.
-                            </div>
-                        </div>
+                <div class="alert alert-info mb-0" style="font-size:13px;">
+                    All Offline POS related controls are managed from this tab. The NativePHP Offline POS reads these settings from the main RMS API and applies them to manual Pull/Push buttons and automatic background synchronization.
+                </div>
+            </div>
+        </div>
 
+        <form action="{{ route('settings.offline-pos') }}?tab=offline" method="POST">
+            @csrf
+
+            <div class="progga-card mb-3">
+                <div class="progga-card-header">
+                    <div class="progga-card-title"><i class="bi bi-sliders me-2"></i>General &amp; Server Connection</div>
+                </div>
+                <div class="progga-card-body">
+                    <div class="row g-3">
                         <div class="col-md-6">
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Offline POS</label>
@@ -379,7 +385,7 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label" id="offlinePosEnabledLabel">{{ ($pos->offline_pos_enabled ?? true) ? 'Enabled' : 'Disabled' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">Master switch used by the offline application.</small>
+                                <small class="d-block text-muted mt-2">Master switch. When disabled, operational Offline POS APIs are blocked by the main RMS.</small>
                             </div>
                         </div>
 
@@ -387,10 +393,42 @@
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Main Server Base URL</label>
                                 <input type="url" name="offline_pos_base_url" class="progga-form-control" value="{{ old('offline_pos_base_url', $pos->offline_pos_base_url ?? '') }}" placeholder="https://pos.example.com">
-                                <small class="d-block text-muted mt-2">Save the main project URL only. Offline POS API path: <code>/api/offline-pos/v1</code>.</small>
+                                <small class="d-block text-muted mt-2">Save only the main RMS base URL, without the Offline POS API path.</small>
                             </div>
                         </div>
 
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Offline POS API Base Path</label>
+                                <input type="text" class="progga-form-control" value="/api/offline-pos/v1" readonly>
+                                <small class="d-block text-muted mt-2">The Offline POS app combines this path with the saved Main Server Base URL.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
+                                <label class="progga-form-label">Sync Coverage</label>
+                                <div class="d-flex flex-wrap gap-2" style="margin-top:8px;">
+                                    <span class="badge bg-light text-dark border">Food &amp; Menu</span>
+                                    <span class="badge bg-light text-dark border">Clients</span>
+                                    <span class="badge bg-light text-dark border">Orders &amp; KOT</span>
+                                    <span class="badge bg-light text-dark border">Kitchen Status</span>
+                                    <span class="badge bg-light text-dark border">Tables &amp; Booking</span>
+                                    <span class="badge bg-light text-dark border">POS Sessions</span>
+                                </div>
+                                <small class="d-block text-muted mt-2">Kitchen Display uses the same Offline POS sync flow; kitchen status values remain the same as the main POS.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="progga-card mb-3">
+                <div class="progga-card-header">
+                    <div class="progga-card-title"><i class="bi bi-hand-index-thumb me-2"></i>Manual Sync Controls</div>
+                </div>
+                <div class="progga-card-body">
+                    <div class="row g-3">
                         <div class="col-md-6">
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Show Pull Button</label>
@@ -399,7 +437,7 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label" id="offlinePosShowPullButtonLabel">{{ ($pos->offline_pos_show_pull_button ?? true) ? 'On' : 'Off' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">When On, the manual Pull button will be visible in Offline POS.</small>
+                                <small class="d-block text-muted mt-2">Controls the manual Pull button in Offline POS.</small>
                             </div>
                         </div>
 
@@ -411,10 +449,19 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label" id="offlinePosShowPushButtonLabel">{{ ($pos->offline_pos_show_push_button ?? true) ? 'On' : 'Off' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">When On, the manual Push button will be visible in Offline POS.</small>
+                                <small class="d-block text-muted mt-2">Controls the manual Push button in Offline POS.</small>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
 
+            <div class="progga-card mb-3">
+                <div class="progga-card-header">
+                    <div class="progga-card-title"><i class="bi bi-arrow-repeat me-2"></i>Automatic Background Sync</div>
+                </div>
+                <div class="progga-card-body">
+                    <div class="row g-3">
                         <div class="col-md-6">
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Automatic Pull</label>
@@ -423,7 +470,7 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label" id="offlinePosAutoPullLabel">{{ ($pos->offline_pos_auto_pull_enabled ?? true) ? 'On' : 'Off' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">Keeps food, client, table and other required master data updated while the main server is reachable.</small>
+                                <small class="d-block text-muted mt-2">While the server is reachable, automatically pulls food/menu, clients, table state, bookings, sessions, order changes and kitchen data.</small>
                             </div>
                         </div>
 
@@ -435,7 +482,7 @@
                                     <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                                     <span class="progga-toggle-label" id="offlinePosAutoPushLabel">{{ ($pos->offline_pos_auto_push_enabled ?? true) ? 'On' : 'Off' }}</span>
                                 </label>
-                                <small class="d-block text-muted mt-2">Pushes pending offline clients first, then pending offline orders, while the main server is reachable.</small>
+                                <small class="d-block text-muted mt-2">Automatically pushes pending clients first, then bookings/sessions/orders/KOT and queued kitchen status updates.</small>
                             </div>
                         </div>
 
@@ -443,7 +490,7 @@
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Background Sync Interval (seconds)</label>
                                 <input type="number" min="5" max="3600" name="offline_pos_sync_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_sync_interval_seconds', (int) ($pos->offline_pos_sync_interval_seconds ?? 30)) }}" required>
-                                <small class="d-block text-muted mt-2">How often the Offline POS background worker checks for normal pull/push work while online.</small>
+                                <small class="d-block text-muted mt-2">Normal interval used while internet and the main RMS are reachable.</small>
                             </div>
                         </div>
 
@@ -451,17 +498,17 @@
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Retry Interval After Failure (seconds)</label>
                                 <input type="number" min="5" max="3600" name="offline_pos_retry_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_retry_interval_seconds', (int) ($pos->offline_pos_retry_interval_seconds ?? 15)) }}" required>
-                                <small class="d-block text-muted mt-2">Used after a failed request or when the server becomes unreachable.</small>
+                                <small class="d-block text-muted mt-2">Retry delay after a failed API request or when the main RMS becomes unreachable.</small>
                             </div>
                         </div>
-
-                        <div class="col-12">
-                            <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Offline POS Settings</button>
-                        </div>
                     </div>
-                </form>
+                </div>
             </div>
-        </div>
+
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Offline POS Settings</button>
+            </div>
+        </form>
     </div>
 
     <div id="settingsRoles" style="display:none;">
@@ -516,15 +563,37 @@
 <script>
     // Tab Map and Logic
     var tabMap = { restaurant:'settingsRestaurant', tax:'settingsTax', invoice:'settingsInvoice', pos:'settingsPos', offline:'settingsOfflinePos', roles:'settingsRoles' };
-    document.querySelectorAll('[data-settings-tab]').forEach(function(tab){
-        tab.addEventListener('click', function(){
-            document.querySelectorAll('[data-settings-tab]').forEach(t=>t.classList.remove('active'));
-            tab.classList.add('active');
-            Object.values(tabMap).forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
-            var target = tabMap[tab.dataset.settingsTab];
-            if(target){ var el=document.getElementById(target); if(el) el.style.display=''; }
+
+    function activateSettingsTab(tabName, updateUrl) {
+        if (!tabMap[tabName]) tabName = 'restaurant';
+
+        document.querySelectorAll('[data-settings-tab]').forEach(function (tab) {
+            tab.classList.toggle('active', tab.dataset.settingsTab === tabName);
+        });
+
+        Object.values(tabMap).forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        var target = document.getElementById(tabMap[tabName]);
+        if (target) target.style.display = '';
+
+        if (updateUrl && window.history && window.history.replaceState) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('tab', tabName);
+            window.history.replaceState({}, '', url.toString());
+        }
+    }
+
+    document.querySelectorAll('[data-settings-tab]').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            activateSettingsTab(tab.dataset.settingsTab, true);
         });
     });
+
+    var requestedSettingsTab = new URLSearchParams(window.location.search).get('tab') || 'restaurant';
+    activateSettingsTab(requestedSettingsTab, false);
 
     var randomHalfToggle = document.getElementById('orderListRandomHalfEnabled');
     var randomHideInput = document.getElementById('randomOrderHidePercentage');
