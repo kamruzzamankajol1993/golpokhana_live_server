@@ -2,28 +2,23 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 
 class OfflinePosDevice extends Model
 {
-    use BelongsToBranch;
-
     protected $guarded = [];
 
-    protected $casts = [
-        'is_active' => 'boolean',
-        'last_seen_at' => 'datetime',
-        'meta' => 'array',
+    protected $fillable = [
+        'device_name',
+        'device_uuid',
+        'device_key',
+        'status',
+        'last_seen_at',
     ];
 
-    public function branch()
-    {
-        return $this->belongsTo(Branch::class);
-    }
+    protected $casts = [
+        'status' => 'boolean',
+        'last_seen_at' => 'datetime',
+    ];
 
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
 }

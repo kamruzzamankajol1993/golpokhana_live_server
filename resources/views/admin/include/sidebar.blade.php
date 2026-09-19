@@ -312,7 +312,16 @@
         </a>
     </div>
     @endcan
-  </nav>
+  
+    <div class="progga-nav-section"><div class="progga-nav-section-label">System</div></div>
+    @can('offline-pos-device-view')
+    <div class="progga-nav-item">
+        <a class="progga-nav-link {{ request()->routeIs('offline-pos-devices.*') ? 'active' : '' }}" href="{{ route('offline-pos-devices.index') }}">
+            <i class="bi bi-device-ssd progga-nav-icon"></i><span>Offline POS Devices</span>
+        </a>
+    </div>
+    @endcan
+</nav>
   <div class="progga-sidebar-footer">
     <div class="progga-sidebar-user" onclick="window.location='{{ route('profile.edit') }}'">
       <img src="{{ auth()->user()->image ? asset('public/' . auth()->user()->image) : 'https://ui-avatars.com/api/?name=' . urlencode(auth()->user()->name) . '&background=21352a&color=d5aa65&size=68' }}" class="progga-user-avatar" alt="User">

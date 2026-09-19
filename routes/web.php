@@ -417,4 +417,10 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
     Route::post('/settings/pos', [SettingController::class, 'updatePos'])->name('settings.pos');
     Route::post('/settings/offline-pos', [SettingController::class, 'updateOfflinePos'])->name('settings.offline-pos');
     Route::post('/settings/pos/clear-transactions', [SettingController::class, 'clearPosTransactionData'])->name('settings.pos.clear-transactions');
+
+    // Offline POS Device Management
+    Route::get('/offline-pos-devices', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'index'])->name('offline-pos-devices.index');
+    Route::post('/offline-pos-devices', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'store'])->name('offline-pos-devices.store');
+    Route::patch('/offline-pos-devices/{device}/toggle', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'toggle'])->name('offline-pos-devices.toggle');
+    Route::delete('/offline-pos-devices/{device}', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'destroy'])->name('offline-pos-devices.destroy');
 });

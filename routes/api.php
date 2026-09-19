@@ -13,10 +13,16 @@ use App\Http\Middleware\EnsureOfflinePosEnabled;
 use App\Http\Middleware\VerifyOfflinePosKey;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\OfflinePos\OfflinePosInitializeController;
+use App\Http\Controllers\Api\OfflinePos\OfflinePosDeviceApiController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+Route::post('/offline-pos/v1/initialize', [OfflinePosInitializeController::class, 'initialize']);
+Route::post('/offline-pos/v1/device/verify', [OfflinePosDeviceApiController::class, 'verify']);
+Route::post('/offline-pos/v1/device/heartbeat', [OfflinePosDeviceApiController::class, 'heartbeat']);
 
 Route::prefix('offline-pos/v1')
     ->middleware([VerifyOfflinePosKey::class])

@@ -61,4 +61,22 @@ class User extends Authenticatable
     {
         return $this->hasOne(Waiter::class);
     }
+
+
+    /**
+     * Check access for Offline POS Device Management.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('Super Admin');
+    }
+
+    /**
+     * Check access for Offline POS Device Management.
+     */
+    public function canManageOfflinePosDevices(): bool
+    {
+        return $this->isSuperAdmin() || $this->can('offline-pos-device-view');
+    }
+
 }
