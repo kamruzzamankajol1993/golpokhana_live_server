@@ -47,6 +47,7 @@ Route::prefix('offline-pos/v1')
             Route::get('/pull/waiters', [OfflinePosMasterDataController::class, 'waiters']);
             Route::get('/pull/customers', [OfflinePosMasterDataController::class, 'customers']);
             Route::get('/pull/food-categories', [OfflinePosMasterDataController::class, 'foodCategories']);
+            Route::get('/pull/food-subcategories', [OfflinePosMasterDataController::class, 'foodSubCategories']);
             Route::get('/pull/foods', [OfflinePosMasterDataController::class, 'foodItems']);
             Route::get('/pull/food-addons', [OfflinePosMasterDataController::class, 'foodAddons']);
             Route::get('/pull/delivery-partners', [OfflinePosMasterDataController::class, 'deliveryPartners']);

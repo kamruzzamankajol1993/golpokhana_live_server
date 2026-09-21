@@ -195,6 +195,37 @@ class OfflinePosMasterDataController extends Controller
         return $this->success('food_categories', $rows);
     }
 
+    public function foodSubCategories(Request $request): JsonResponse
+    {
+        if (!$this->tableExists('food_categories')) {
+            return $this->success('food_subcategories', []);
+        }
+
+        $query = DB::table('food_categories')
+            ->whereNotNull('parent_category_id')
+            ->select($this->availableColumns('food_categories', [
+                'id', 'name', 'parent_category_id', 'image', 'slug', 'status', 'sort_order', 'created_at', 'updated_at',
+            ]));
+
+        if ($request->filled('category_id')) {
+            $query->where('parent_category_id', $request->category_id);
+        }
+
+        $this->applySince($query, 'food_categories', $request);
+
+        $rows = $query->orderBy($this->hasColumn('food_categories', 'sort_order') ? 'sort_order' : 'id')
+            ->get()
+            ->map(function ($row) {
+                $data = $this->row($row);
+                $data['image_url'] = $this->publicUrl($data['image'] ?? null, 'uploads/categories');
+                return $data;
+            })
+            ->values()
+            ->all();
+
+        return $this->success('food_subcategories', $rows);
+    }
+
     public function foodItems(Request $request): JsonResponse
     {
         if (!$this->tableExists('food_items')) {
