@@ -397,5 +397,36 @@ window.deleteOccasion = function(id) {
         }
     });
 }
+
+// ==========================================
+// Payment Provider + Reference Validation (Add/Edit)
+// ==========================================
+function toggleAdvancePayment(prefix='') {
+    let method = document.getElementById(prefix+'advance_payment_method');
+    let ref = document.getElementById(prefix+'advance_payment_reference');
+    let card = document.getElementById(prefix+'advance_card_provider');
+    let mfs = document.getElementById(prefix+'advance_mfs_provider');
+    if(!method) return;
+
+    let isCard = method.value === 'Card';
+    let isMfs = method.value === 'MFS';
+    if(ref) ref.required = isCard || isMfs;
+    if(card) card.style.display = isCard ? 'block' : 'none';
+    if(mfs) mfs.style.display = isMfs ? 'block' : 'none';
+}
+
+$(document).on('change','#advance_payment_method,#edit_advance_payment_method',function(){
+    toggleAdvancePayment(this.id.startsWith('edit_') ? 'edit_' : '');
+});
+
+toggleAdvancePayment();
+toggleAdvancePayment('edit_');
+
+// New customer add in edit modal
+$(document).on('change','#edit_is_new_customer',function(){
+    $('#edit_new_customer_fields').toggle(this.checked);
+    $('#edit_existing_customer_field').toggle(!this.checked);
+});
+
 </script>
 @endsection

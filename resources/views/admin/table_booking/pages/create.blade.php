@@ -11,160 +11,214 @@
     <div class="progga-card">
         <div class="progga-card-header"><h5 class="mb-0"><i class="bi bi-calendar-plus-fill me-2"></i>New Table Booking</h5></div>
         <div class="progga-card-body">
-          <form action="{{ route('table-booking.store') }}" method="POST">
-        @csrf
+            <form action="{{ route('table-booking.store') }}" method="POST">
+                @csrf
 
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
-              Customer Information
-              <div class="form-check form-switch" style="margin: 0;">
-                <input class="form-check-input" type="checkbox" name="is_new_customer" id="is_new_customer" value="1" style="cursor:pointer;">
-                <label class="form-check-label text-primary" for="is_new_customer" style="cursor:pointer;text-transform:none;">New Customer?</label>
-              </div>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-12" id="existing_customer_field">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Search Customer <span class="progga-required">*</span></label>
-                <select name="customer_id" id="customer_id_select" class="progga-select js-select2" required>
-                    <option value="">Select a customer</option>
-                    @foreach($customers as $customer)
-                        <option value="{{ $customer->id }}">{{ $customer->name }} ({{ $customer->phone }})</option>
-                    @endforeach
-                </select>
-              </div>
-            </div>
-
-            <div class="col-12" id="new_customer_fields" style="display:none;">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                      <div class="progga-form-group">
-                        <label class="progga-form-label">Name <span class="progga-required">*</span></label>
-                        <input type="text" name="name" id="new_c_name" class="progga-form-control" placeholder="Full name">
-                      </div>
+                @if ($errors->any())
+                    <div class="alert alert-danger mb-3">
+                        <ul class="mb-0">
+                            @foreach ($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
                     </div>
-                    <div class="col-md-4">
-                      <div class="progga-form-group">
-                        <label class="progga-form-label">Phone <span class="progga-required">*</span></label>
-                        <input type="tel" name="phone" id="new_c_phone" class="progga-form-control" placeholder="017...">
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div class="progga-form-group">
-                        <label class="progga-form-label">Email Address</label>
-                        <input type="email" name="email" class="progga-form-control" placeholder="Optional">
-                      </div>
+                @endif
+
+                @if(session('error'))
+                    <div class="alert alert-danger mb-3">{{ session('error') }}</div>
+                @endif
+
+                @if(session('success'))
+                    <div class="alert alert-success mb-3">{{ session('success') }}</div>
+                @endif
+
+
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                    Customer Information
+                    <div class="form-check form-switch" style="margin: 0;">
+                        <input class="form-check-input" type="checkbox" name="is_new_customer" id="is_new_customer" value="1" style="cursor:pointer;">
+                        <label class="form-check-label text-primary" for="is_new_customer" style="cursor:pointer;text-transform:none;">New Customer?</label>
                     </div>
                 </div>
-            </div>
-          </div>
 
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin:20px 0 12px;">Reservation Details</div>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Table <span class="progga-required">*</span></label>
-                <select name="table_id" class="progga-select js-select2" required>
-                  <option value="">Select a table</option>
-                  @foreach($zonesWithTables as $zone)
-                      <optgroup label="{{ $zone->name }}">
-                          @foreach($zone->tables as $table)
-                              <option value="{{ $table->id }}">{{ $table->table_number }} — ({{ $table->seating_capacity }} seats)</option>
-                          @endforeach
-                      </optgroup>
-                  @endforeach
-                </select>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Number of Guests <span class="progga-required">*</span></label>
-                <input type="number" name="number_of_guests" class="progga-form-control" placeholder="e.g. 4" min="1" max="50" required>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Booking Date <span class="progga-required">*</span></label>
-                <input type="date" name="booking_date" class="progga-form-control progga-datepicker" required>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Booking Start Time <span class="progga-required">*</span></label>
-                <input type="time" name="booking_start_time" class="progga-form-control" required>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Booking End Time <span class="progga-required">*</span></label>
-                <input type="time" name="booking_end_time" class="progga-form-control" required>
-              </div>
-            </div>
-          </div>
+                <div class="row g-3">
+                    <div class="col-12" id="existing_customer_field_wrapper">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Search Customer <span class="progga-required">*</span></label>
+                            <select name="customer_id" id="customer_id_select" class="progga-select js-select2" required data-placeholder="Select option">
+                                <option value="">Select a customer</option>
+                                @foreach($customers as $customer)
+                                    <option value="{{ $customer->id }}">{{ $customer->name }} ({{ $customer->phone }})</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
 
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin:20px 0 12px;">Additional Information</div>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="progga-form-group">
-                <label class="progga-form-label">
-                    Occasion
-                </label>
-                <select name="occasion_id" class="progga-select js-select2">
-                  <option value="">Select occasion (optional)</option>
-                  @foreach($occasions as $occasion)
-                      <option value="{{ $occasion->id }}">{{ $occasion->name }}</option>
-                  @endforeach
-                </select>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Status</label>
-                <select name="status" class="progga-select js-select2">
-                  <option value="upcoming">Upcoming</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Advance Amount</label>
-                <input type="number" step="0.01" name="advance_amount" class="progga-form-control" id="advance_amount" placeholder="0.00">
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Payment Method</label>
-                <select name="advance_payment_method" class="progga-select js-select2">
-                  <option value="">Select</option>
-                  <option value="Cash">Cash</option>
-                  <option value="Card">Bank / Card</option>
-                  <option value="MFS">MFS</option>
-                </select>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Reference Number</label>
-                <input type="text" name="advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
-              </div>
-            </div>
-            <div class="col-12">
-              <div class="progga-form-group">
-                <label class="progga-form-label">Special Requests</label>
-                <textarea name="special_request" class="progga-form-control progga-form-textarea" rows="3" placeholder="Dietary restrictions, accessibility needs, special arrangements…"></textarea>
-              </div>
-            </div>
-          </div>
+                    <div class="col-12 d-none" id="new_customer_fields_wrapper">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="progga-form-group">
+                                    <label class="progga-form-label">Name <span class="progga-required">*</span></label>
+                                    <input type="text" name="name" id="new_c_name" class="progga-form-control" placeholder="Full name">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="progga-form-group">
+                                    <label class="progga-form-label">Phone <span class="progga-required">*</span></label>
+                                    <input type="tel" name="phone" id="new_c_phone" class="progga-form-control" placeholder="017...">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="progga-form-group">
+                                    <label class="progga-form-label">Email Address</label>
+                                    <input type="email" name="email" id="new_c_email" class="progga-form-control" placeholder="Optional">
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="progga-form-group">
+                                    <label class="progga-form-label">Address</label>
+                                    <textarea name="address" id="new_c_address" class="progga-form-control progga-form-textarea" rows="2" placeholder="Customer address"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-          <div class="d-flex justify-content-end gap-2 mt-3">
-          <button type="button" class="progga-btn progga-btn-outline" >Cancel</button>
-          <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Confirm Booking</button>
-          </div>
-      </form>
-      </div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin:20px 0 12px;">Reservation Details</div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Table <span class="progga-required">*</span></label>
+                            <select name="table_id" class="progga-select js-select2" required data-placeholder="Select option">
+                                <option value="">Select a table</option>
+                                @foreach($zonesWithTables as $zone)
+                                    <optgroup label="{{ $zone->name }}">
+                                        @foreach($zone->tables as $table)
+                                            <option value="{{ $table->id }}">{{ $table->table_number }} — ({{ $table->seating_capacity }} seats)</option>
+                                        @endforeach
+                                    </optgroup>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Number of Guests <span class="progga-required">*</span></label>
+                            <input type="number" name="number_of_guests" class="progga-form-control" placeholder="e.g. 4" min="1" max="50" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Booking Date <span class="progga-required">*</span></label>
+                            <input type="date" name="booking_date" class="progga-form-control progga-datepicker" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Booking Start Time <span class="progga-required">*</span></label>
+                            <input type="time" name="booking_start_time" class="progga-form-control" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Booking End Time <span class="progga-required">*</span></label>
+                            <input type="time" name="booking_end_time" class="progga-form-control" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--progga-text-muted);margin:20px 0 12px;">Additional Information</div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Occasion</label>
+                            <select name="occasion_id" class="progga-select js-select2" data-placeholder="Select option">
+                                <option value="">Select occasion (optional)</option>
+                                @foreach($occasions as $occasion)
+                                    <option value="{{ $occasion->id }}">{{ $occasion->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Status</label>
+                            <select name="status" class="progga-select js-select2" data-placeholder="Select option">
+                                <option value="upcoming">Upcoming</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Advance Amount</label>
+                            <input type="number" step="0.01" name="advance_amount" class="progga-form-control" id="advance_amount" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Payment Method</label>
+                            <select name="advance_payment_method" id="advance_payment_method" class="progga-select js-select2" data-placeholder="Select option">
+                                <option value="">Select</option>
+                                <option value="Cash">Cash</option>
+                                <option value="Card">Bank / Card</option>
+                                <option value="MFS">MFS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" id="card_provider_wrapper">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Card Provider</label>
+                            <select name="advance_card_provider" id="advance_card_provider" class="progga-select js-select2" data-placeholder="Select option">
+                                <option value="">Select Card Provider</option>
+                                <option value="Visa">Visa</option>
+                                <option value="Mastercard">Mastercard</option>
+                                <option value="American Express">American Express</option>
+                                <option value="UnionPay">UnionPay</option>
+                                <option value="JCB">JCB</option>
+                                <option value="Nexus">Nexus</option>
+                                <option value="Diners Club">Diners Club</option>
+                                <option value="GPay">GPay</option>
+                                <option value="Bangla QR Card">Bangla QR Card</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-none" id="mfs_provider_wrapper">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">MFS Provider</label>
+                            <select name="advance_mfs_provider" id="advance_mfs_provider" class="progga-select js-select2" data-placeholder="Select option">
+                                <option value="">Select MFS Provider</option>
+                                <option value="bKash">bKash</option>
+                                <option value="Nagad">Nagad</option>
+                                <option value="Rocket">Rocket</option>
+                                <option value="Bangla QR">Bangla QR</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4" id="reference_wrapper">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Reference Number</label>
+                            <input type="text" name="advance_payment_reference" id="advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="progga-form-group">
+                            <label class="progga-form-label">Special Requests</label>
+                            <textarea name="special_request" class="progga-form-control progga-form-textarea" rows="3" placeholder="Dietary restrictions, accessibility needs, special arrangements…"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <a href="{{ route('table-booking.index') }}" class="progga-btn progga-btn-outline">Cancel</a>
+                    <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Confirm Booking</button>
+                </div>
+            </form>
+        </div>
     </div>
 </main>
 @endsection
@@ -172,9 +226,10 @@
 @section('script')
 <script>
 $(document).ready(function(){
-    if ($.fn.select2) {
-        $('.js-select2').each(function(){
-            let el = $(this);
+    function initSelect2(scope) {
+        if (!$.fn.select2) return;
+        $(scope).find('.js-select2').each(function(){
+            const el = $(this);
             if (el.hasClass('select2-hidden-accessible')) {
                 el.select2('destroy');
             }
@@ -186,6 +241,49 @@ $(document).ready(function(){
             });
         });
     }
+
+    function toggleNewCustomerFields() {
+        const enabled = $('#is_new_customer').is(':checked');
+        $('#existing_customer_field_wrapper').toggleClass('d-none', enabled);
+        $('#new_customer_fields_wrapper').toggleClass('d-none', !enabled);
+
+        $('#customer_id_select').prop('required', !enabled);
+        $('#new_c_name, #new_c_phone').prop('required', enabled);
+
+        if (enabled) {
+            $('#customer_id_select').val(null).trigger('change');
+        } else {
+            $('#new_customer_fields_wrapper').find('input, textarea').val('');
+        }
+    }
+
+    function togglePaymentProvider() {
+        const method = $('#advance_payment_method').val();
+        const showCard = method === 'Card';
+        const showMfs = method === 'MFS';
+        const needsReference = showCard || showMfs;
+
+        $('#card_provider_wrapper').toggleClass('d-none', !showCard);
+        $('#mfs_provider_wrapper').toggleClass('d-none', !showMfs);
+
+        $('#advance_card_provider').prop('required', showCard);
+        $('#advance_mfs_provider').prop('required', showMfs);
+        $('#advance_payment_reference').prop('required', needsReference);
+
+        if (!showCard) {
+            $('#advance_card_provider').val('').trigger('change');
+        }
+        if (!showMfs) {
+            $('#advance_mfs_provider').val('').trigger('change');
+        }
+    }
+
+    initSelect2(document);
+    toggleNewCustomerFields();
+    togglePaymentProvider();
+
+    $('#is_new_customer').on('change', toggleNewCustomerFields);
+    $('#advance_payment_method').on('change', togglePaymentProvider);
 });
 </script>
 @endsection

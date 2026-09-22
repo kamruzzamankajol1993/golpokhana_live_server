@@ -130,7 +130,7 @@
             <div class="col-md-4">
               <div class="progga-form-group">
                 <label class="progga-form-label">Payment Method</label>
-                <select name="advance_payment_method" class="progga-select">
+                <select name="advance_payment_method" id="edit_advance_payment_method" class="progga-select">
                   <option value="">Select</option>
                   <option value="Cash">Cash</option>
                   <option value="Card">Bank / Card</option>
@@ -140,8 +140,30 @@
             </div>
             <div class="col-md-4">
               <div class="progga-form-group">
+                <label class="progga-form-label">Card Provider</label>
+                <select name="advance_card_provider" id="edit_advance_card_provider" class="progga-select" style="display:none;">
+                  <option value="">Select Card Provider</option>
+                  <option value="Visa">Visa</option>
+                  <option value="Mastercard">Mastercard</option>
+                  <option value="American Express">American Express</option>
+                  <option value="UnionPay">UnionPay</option>
+                  <option value="JCB">JCB</option>
+                  <option value="Other">Other</option>
+                </select>
+                <select name="advance_mfs_provider" id="edit_advance_mfs_provider" class="progga-select" style="display:none;">
+                  <option value="">Select MFS Provider</option>
+                  <option value="bKash">bKash</option>
+                  <option value="Nagad">Nagad</option>
+                  <option value="Rocket">Rocket</option>
+                  <option value="Bangla QR">Bangla QR</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="progga-form-group">
                 <label class="progga-form-label">Reference Number</label>
-                <input type="text" name="advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
+                <input type="text" name="advance_payment_reference" id="edit_advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
               </div>
             </div>
             <div class="col-12">

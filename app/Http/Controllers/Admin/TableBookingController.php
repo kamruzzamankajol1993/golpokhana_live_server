@@ -104,7 +104,9 @@ class TableBookingController extends Controller
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
             'advance_amount' => 'nullable|numeric|min:0',
             'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
-            'advance_payment_reference' => 'nullable|string|max:255',
+            'advance_payment_reference' => 'nullable|required_if:advance_payment_method,Card|required_if:advance_payment_method,MFS|string|max:255',
+            'advance_card_provider' => 'nullable|required_if:advance_payment_method,Card|string|max:100',
+            'advance_mfs_provider' => 'nullable|required_if:advance_payment_method,MFS|string|max:100',
         ]);
 
         if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
@@ -120,6 +122,7 @@ class TableBookingController extends Controller
                 $request->validate([
                     'name' => 'required|string|max:255',
                     'phone' => 'required|string|max:20',
+                    'address' => 'nullable|string|max:1000',
                 ]);
 
                 // ফোন নম্বর দিয়ে চেক করা, থাকলে সেটা নিবে, না থাকলে ক্রিয়েট করবে
@@ -128,6 +131,7 @@ class TableBookingController extends Controller
                     [
                         'name' => $request->name,
                         'email' => $request->email,
+                        'address' => $request->address,
                         'points' => 0
                     ]
                 );
@@ -158,6 +162,8 @@ class TableBookingController extends Controller
                 'advance_amount' => $request->advance_amount ?? 0,
                 'advance_payment_method' => $request->advance_payment_method,
                 'advance_payment_reference' => $request->advance_payment_reference,
+                'advance_card_provider' => $request->advance_card_provider,
+                'advance_mfs_provider' => $request->advance_mfs_provider,
                 'status' => $request->status ?? 'upcoming',
             ]);
 
@@ -178,6 +184,34 @@ class TableBookingController extends Controller
         }
     }
 
+    public function createCustomerAjax(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
+            'email' => 'nullable|email',
+            'address' => 'nullable|string|max:1000',
+        ]);
+
+        $customer = Customer::firstOrCreate(
+            ['phone' => $request->phone],
+            [
+                'name' => $request->name,
+                'email' => $request->email,
+                'address' => $request->address,
+                'points' => 0
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'customer' => [
+                'id' => $customer->id,
+                'text' => $customer->name.' ('.$customer->phone.')'
+            ]
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -190,7 +224,9 @@ class TableBookingController extends Controller
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
             'advance_amount' => 'nullable|numeric|min:0',
             'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
-            'advance_payment_reference' => 'nullable|string|max:255',
+            'advance_payment_reference' => 'nullable|required_if:advance_payment_method,Card|required_if:advance_payment_method,MFS|string|max:255',
+            'advance_card_provider' => 'nullable|required_if:advance_payment_method,Card|string|max:100',
+            'advance_mfs_provider' => 'nullable|required_if:advance_payment_method,MFS|string|max:100',
         ]);
 
         if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
@@ -204,9 +240,17 @@ class TableBookingController extends Controller
 
             // এডিট করার সময়ও যদি নতুন কাস্টমার হিসেবে ডাটা দেয়
             if ($request->is_new_customer == 1) {
+                $request->validate([
+                    'name' => 'required|string|max:255',
+                    'phone' => 'required|string|max:20',
+                    'email' => 'nullable|email',
+                    'address' => 'nullable|string|max:1000',
+                ]);
+
                 $customer = Customer::firstOrCreate(
                     ['phone' => $request->phone],
-                    ['name' => $request->name, 'email' => $request->email, 'points' => 0]
+                    ['name' => $request->name, 'email' => $request->email,
+                        'address' => $request->address, 'points' => 0]
                 );
                 $customerId = $customer->id;
             } elseif ($request->has('customer_id') && $request->customer_id != null) {
@@ -232,6 +276,8 @@ class TableBookingController extends Controller
                 'advance_amount' => $request->advance_amount ?? 0,
                 'advance_payment_method' => $request->advance_payment_method,
                 'advance_payment_reference' => $request->advance_payment_reference,
+                'advance_card_provider' => $request->advance_card_provider,
+                'advance_mfs_provider' => $request->advance_mfs_provider,
                 'status' => $request->status,
             ]);
 

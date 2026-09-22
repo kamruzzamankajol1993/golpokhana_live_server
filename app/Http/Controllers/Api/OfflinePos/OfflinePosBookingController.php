@@ -214,6 +214,8 @@ class OfflinePosBookingController extends Controller
             'advance_amount' => max(0, (float) ($payload['advance_amount'] ?? 0)),
             'advance_payment_method' => $advancePaymentMethod,
             'advance_payment_reference' => $advancePaymentReference !== '' ? $advancePaymentReference : null,
+            'advance_card_provider' => $payload['advance_card_provider'] ?? null,
+            'advance_mfs_provider' => $payload['advance_mfs_provider'] ?? null,
             'status' => $status,
         ];
 
@@ -294,6 +296,11 @@ class OfflinePosBookingController extends Controller
         $tableIds = $booking->relationLoaded('tables') ? $booking->tables->pluck('id') : collect();
         $tableIds = $tableIds->push($booking->table_id)->filter()->unique()->map(fn ($id) => (int) $id)->values()->all();
         $data['table_server_ids'] = $tableIds;
+        $data['customer_server_id'] = $booking->customer_id;
+        $data['occasion_server_id'] = $booking->occasion_id;
+        $data['advance_card_provider'] = $booking->advance_card_provider ?? null;
+        $data['advance_mfs_provider'] = $booking->advance_mfs_provider ?? null;
+        $data['advance_payment_reference'] = $booking->advance_payment_reference ?? null;
         return $data;
     }
 

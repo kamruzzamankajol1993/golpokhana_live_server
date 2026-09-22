@@ -233,6 +233,7 @@ Route::post('food-category-status/{id}', [FoodCategoryController::class, 'update
     // Table Booking Routes
     // ==========================================
     Route::resource('table-booking', TableBookingController::class);
+    Route::post('table-booking/create-customer-ajax', [TableBookingController::class, 'createCustomerAjax'])->name('table-booking.create-customer-ajax');
 
     // ==========================================
     // Occasion Management Routes (AJAX Based)
