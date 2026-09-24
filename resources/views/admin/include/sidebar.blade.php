@@ -312,7 +312,7 @@
         </a>
     </div>
     @endcan
-  
+
     <div class="progga-nav-section"><div class="progga-nav-section-label">System</div></div>
     @can('offline-pos-device-view')
     <div class="progga-nav-item">

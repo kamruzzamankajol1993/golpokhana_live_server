@@ -5,21 +5,28 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-
+use App\Models\OfflinePosDevice;
 class VerifyOfflinePosKey
 {
-    public function handle(Request $request, Closure $next): Response
-    {
-        $validKey = config('offline_pos.sync_key') ?: config('services.offline_pos.sync_key') ?: env('OFFLINE_POS_SYNC_KEY');
-        $givenKey = $request->header('X-OFFLINE-POS-KEY');
 
-        if (!$validKey || !$givenKey || !hash_equals((string) $validKey, (string) $givenKey)) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized offline POS request.',
-            ], 401);
-        }
 
-        return $next($request);
+
+public function handle(Request $request, Closure $next): Response
+{
+    $givenKey = $request->header('X-OFFLINE-POS-KEY');
+
+    $validKey = OfflinePosDevice::where('device_key',$givenKey)
+        ->where('status',1)
+        ->exists();
+
+
+    if(!$validKey){
+        return response()->json([
+            'status'=>false,
+            'message'=>'Unauthorized offline POS request.',
+        ],401);
     }
+
+    return $next($request);
+}
 }
