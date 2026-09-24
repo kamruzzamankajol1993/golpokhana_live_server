@@ -21,6 +21,9 @@
 
                 @if(auth()->user()->can('permission-edit') || auth()->user()->can('permission-delete'))
                 <td class="text-end">
+                    @if($loop->first)
+                    <a href="{{ route('permission.group.edit', urlencode($item->group_name)) }}" class="progga-btn progga-btn-warning progga-btn-sm" title="Edit Group"><i class="bi bi-people"></i></a>
+                    @endif
 
                     @can('permission-edit')
                     <a href="{{ route('permission.edit', $item->id) }}" class="progga-btn progga-btn-info progga-btn-sm" title="Edit">

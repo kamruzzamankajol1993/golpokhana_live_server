@@ -22,7 +22,17 @@ class PermissionController extends Controller
     public function index(Request $request)
     {
         try {
-            $permissions = Permission::orderBy('group_name')->orderBy('id', 'desc')->paginate(10);
+            $query = Permission::query();
+
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                      ->orWhere('group_name', 'like', '%' . $search . '%');
+                });
+            }
+
+            $permissions = $query->orderBy('group_name')->orderBy('id', 'desc')->paginate(10)->withQueryString();
 
             if ($request->ajax()) {
                 return view('admin.permission.table', compact('permissions'))->render();
@@ -108,6 +118,36 @@ class PermissionController extends Controller
             Log::error('Permission Update Error: ' . $e->getMessage());
 
             return back()->with('error', 'Failed to update permission. Try again!');
+        }
+    }
+
+    public function editGroup($groupName)
+    {
+        $permissions = Permission::where('group_name', $groupName)->get();
+        return view('admin.permission.edit_group', compact('permissions', 'groupName'));
+    }
+
+    public function updateGroup(Request $request, $groupName)
+    {
+        $request->validate([
+            'group_name' => 'required|string|max:255',
+            'permissions' => 'required|array',
+            'permissions.*.name' => 'required|string|max:255',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            foreach ($request->permissions as $id => $data) {
+                Permission::where('id', $id)->update([
+                    'name' => $data['name'],
+                    'group_name' => $request->group_name,
+                ]);
+            }
+            DB::commit();
+            return redirect()->route('permission.index')->with('success', 'Permission group updated successfully!');
+        } catch (Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to update permission group!');
         }
     }
 

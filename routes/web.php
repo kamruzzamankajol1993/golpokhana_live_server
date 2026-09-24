@@ -283,6 +283,8 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
 
 
     Route::resource('permission', PermissionController::class);
+    Route::get('permission-group/{groupName}/edit', [PermissionController::class, 'editGroup'])->name('permission.group.edit');
+    Route::put('permission-group/{groupName}', [PermissionController::class, 'updateGroup'])->name('permission.group.update');
     Route::resource('role', RoleController::class);
     Route::resource('user', UserController::class);
 
