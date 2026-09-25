@@ -1,8 +1,9 @@
-<div class="progga-table-wrapper" style="border:none;border-radius:0;">
+<div class="progga-table-wrapper due-list-table-scroll" style="border:none;border-radius:0; overflow-x:auto; overflow-y:visible;">
   <table class="progga-table" id="ordersTable">
     <thead>
       <tr>
         <th>Order #</th>
+        <th>Branch</th>
         <th>Customer</th>
         <th>Subtotal</th>
         <th>Honored</th>
@@ -38,6 +39,7 @@
           @endphp
           <tr class="status-{{ $statusClass }}">
             <td><strong>#{{ $order->order_number }}</strong></td>
+            <td><span class="progga-badge progga-badge-neutral">{{ $order->branch->name ?? 'N/A' }}</span></td>
             <td>
               <div class="progga-order-customer">
                 <span class="progga-order-customer-name">{{ $order->customer->name ?? 'Walk-in Customer' }}</span>
@@ -108,25 +110,15 @@
             <td><span class="progga-order-time">{{ $order->created_at ? $order->created_at->format('h:i A') : '—' }}</span></td>
             <td><span class="progga-order-time">{{ is_null($order->kitchen_to_payment_minutes) ? '—' : $order->kitchen_to_payment_minutes . ' min' }}</span></td>
             <td>
-              @if(!empty($dueListPage))
-              <div class="d-flex gap-1">
-                <a href="{{ route('order.details', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm">
-                  <i class="bi bi-card-list"></i> Full Detail
-                </a>
-                <a href="{{ route('order.due_settlement', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm">
-                  <i class="bi bi-cash-coin"></i> Due Settlement
-                </a>
-              </div>
-              @else
-              <div class="dropdown progga-order-action-menu">
+              <div class="dropdown progga-order-action-menu" style="position:static;">
                 <button type="button"
                         class="progga-btn progga-btn-outline progga-btn-sm dropdown-toggle"
                         data-bs-toggle="dropdown"
-                        data-bs-boundary="viewport"
+                        data-bs-boundary="viewport" data-bs-popper-config="{"strategy":"fixed"}"
                         aria-expanded="false">
                   <i class="bi bi-three-dots-vertical"></i> Actions
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="z-index:9999;">
                   <li>
                     <button type="button" class="dropdown-item" onclick="viewOrder({{ $order->id }})">
                       <i class="bi bi-eye"></i><span>View Order</span>
@@ -169,77 +161,32 @@
                   @endcan
                 </ul>
               </div>
-              @endif
             </td>
           </tr>
       @empty
-          <tr><td colspan="18" class="text-center py-4">No orders found.</td></tr>
+          <tr><td colspan="19" class="text-center py-4">No orders found.</td></tr>
       @endforelse
     </tbody>
   </table>
 </div>
 
-@php
-    $currentPage = $orders->currentPage();
-    $lastPage = $orders->lastPage();
-    $startPage = max(1, $currentPage - 2);
-    $endPage = min($lastPage, $currentPage + 2);
-@endphp
+@if($showPagination ?? true)
+    @include('admin.inventory.partials.pagination', [
+        'paginator' => $orders,
+        'label' => 'orders'
+    ])
+@endif
 
-<div class="progga-card-footer progga-order-pagination-footer">
-  <span class="progga-page-info">
-    Showing {{ $orders->firstItem() ?? 0 }}–{{ $orders->lastItem() ?? 0 }} of {{ $orders->total() }} orders
-  </span>
-
-  @if($lastPage > 1)
-    <nav class="progga-pagination-wrap" aria-label="Order pagination">
-      <div class="progga-pagination">
-        <a href="{{ $orders->url(1) }}"
-           class="progga-page-btn {{ $orders->onFirstPage() ? 'disabled' : '' }}"
-           aria-label="First page">
-          <i class="bi bi-chevron-double-left"></i> First
-        </a>
-
-        <a href="{{ $orders->previousPageUrl() ?: '#' }}"
-           class="progga-page-btn {{ $orders->onFirstPage() ? 'disabled' : '' }}"
-           aria-label="Previous page">
-          <i class="bi bi-chevron-left"></i> Prev
-        </a>
-
-        @if($startPage > 1)
-          <a href="{{ $orders->url(1) }}" class="progga-page-num">1</a>
-          @if($startPage > 2)
-            <span class="progga-page-ellipsis">...</span>
-          @endif
-        @endif
-
-        @for($page = $startPage; $page <= $endPage; $page++)
-          @if($page == $currentPage)
-            <span class="progga-page-num active">{{ $page }}</span>
-          @else
-            <a href="{{ $orders->url($page) }}" class="progga-page-num">{{ $page }}</a>
-          @endif
-        @endfor
-
-        @if($endPage < $lastPage)
-          @if($endPage < $lastPage - 1)
-            <span class="progga-page-ellipsis">...</span>
-          @endif
-          <a href="{{ $orders->url($lastPage) }}" class="progga-page-num">{{ $lastPage }}</a>
-        @endif
-
-        <a href="{{ $orders->nextPageUrl() ?: '#' }}"
-           class="progga-page-btn {{ !$orders->hasMorePages() ? 'disabled' : '' }}"
-           aria-label="Next page">
-          Next <i class="bi bi-chevron-right"></i>
-        </a>
-
-        <a href="{{ $orders->url($lastPage) }}"
-           class="progga-page-btn {{ $currentPage == $lastPage ? 'disabled' : '' }}"
-           aria-label="Last page">
-          Last <i class="bi bi-chevron-double-right"></i>
-        </a>
-      </div>
-    </nav>
-  @endif
-</div>
+<style>
+.due-list-table-scroll {
+    width:100%;
+    overflow-x:auto !important;
+    overflow-y:visible !important;
+}
+.due-list-table-scroll .progga-table {
+    min-width:1900px;
+}
+.progga-order-action-menu .dropdown-menu {
+    position:fixed !important;
+}
+</style>

@@ -768,6 +768,73 @@ class HomeController extends Controller
         return compact('paymentRows', 'totalCollected');
     }
 
+    private function salesCalendarChartPayload(Request $request, array $reportingWindow): array
+    {
+        $filter = (string) $request->get('sales_filter', 'this_month');
+        $allowed = ['this_month', 'previous_month', 'custom'];
+        if (!in_array($filter, $allowed, true)) {
+            $filter = 'this_month';
+        }
+
+        $hours = $reportingWindow['hours'];
+        $businessDate = $reportingWindow['business_date']->copy();
+
+        if ($filter === 'previous_month') {
+            $startDate = $businessDate->copy()->subMonthNoOverflow()->startOfMonth();
+            $endDate = $businessDate->copy()->subMonthNoOverflow()->endOfMonth();
+        } elseif ($filter === 'custom') {
+            $from = $request->get('from_date');
+            $to = $request->get('to_date');
+
+            if (!$from || !$to) {
+                $startDate = $businessDate->copy()->startOfMonth();
+                $endDate = $businessDate->copy()->endOfMonth();
+            } else {
+                $startDate = Carbon::parse($from)->startOfDay();
+                $endDate = Carbon::parse($to)->endOfDay();
+
+                if ($startDate->gt($endDate)) {
+                    $tmp = $startDate;
+                    $startDate = $endDate;
+                    $endDate = $tmp;
+                }
+            }
+        } else {
+            $startDate = $businessDate->copy()->startOfMonth();
+            $endDate = $businessDate->copy()->endOfMonth();
+        }
+
+        $start = $this->businessWindowForDate($startDate, $hours)['start'];
+        $end = $this->businessWindowForDate($endDate, $hours)['end'];
+
+        $orders = OrderVisibility::constrain(Order::query(), $this->dashboardVisibleOrderIds())
+            ->where('status', 'Completed')
+            ->whereBetween('created_at', [$start, $end])
+            ->get(['created_at', 'grand_total']);
+
+        $days = [];
+        $cursor = $startDate->copy()->startOfDay();
+        while ($cursor->lte($endDate)) {
+            $key = $cursor->format('Y-m-d');
+            $days[$key] = 0;
+            $cursor->addDay();
+        }
+
+        foreach ($orders as $order) {
+            $key = Carbon::parse($order->created_at)->format('Y-m-d');
+            if (array_key_exists($key, $days)) {
+                $days[$key] += (float) $order->grand_total;
+            }
+        }
+
+        return [
+            'salesCalendarFilter' => $filter,
+            'salesCalendarLabels' => array_map(fn($d) => Carbon::parse($d)->format('d M'), array_keys($days)),
+            'salesCalendarData' => array_values(array_map(fn($v) => round($v, 2), $days)),
+            'salesCalendarTotal' => round(array_sum($days), 2),
+        ];
+    }
+
     public function chartData(Request $request)
     {
         if (!$this->isSuperAdminUser()) {
@@ -793,7 +860,8 @@ class HomeController extends Controller
 
         return response()->json(array_merge(
             $this->dashboardChartPayload($period, $visibleOrderIds, $reportingWindow),
-            $this->dashboardIncomeChartPayload($period, $visibleOrderIds, $reportingWindow)
+            $this->dashboardIncomeChartPayload($period, $visibleOrderIds, $reportingWindow),
+            $this->salesCalendarChartPayload($request, $reportingWindow)
         ));
     }
 
@@ -1024,7 +1092,7 @@ class HomeController extends Controller
         );
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $isSuperAdmin = $this->isSuperAdminUser();
         $activeWindow = $this->currentBusinessWindow();
@@ -1240,6 +1308,8 @@ class HomeController extends Controller
                 ->get();
         }
 
+        $salesCalendarPayload = $this->salesCalendarChartPayload($request, $reportingWindow);
+
         return view('admin.dashboard.index', compact(
             'isSuperAdmin',
             'todaySales',
@@ -1267,7 +1337,7 @@ class HomeController extends Controller
             'topSellingItems',
             'kitchenQueue',
             'recentOrders',
-        ));
+        ) + $salesCalendarPayload);
     }
 
 }

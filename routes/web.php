@@ -204,6 +204,8 @@ Route::get('get-subcategories/{id}', [App\Http\Controllers\Admin\FoodCategoryCon
     Route::resource('course-type', App\Http\Controllers\Admin\CourseTypeController::class);
     Route::post('course-type-status/{id}', [App\Http\Controllers\Admin\CourseTypeController::class, 'updateStatus'])->name('course-type.status');
 Route::get('orders-export-pdf', [App\Http\Controllers\Admin\OrderController::class, 'exportPDF'])->name('order.export_pdf');
+Route::get('due-orders-export-pdf', [App\Http\Controllers\Admin\OrderController::class, 'exportPDF'])->name('due_orders.export_pdf');
+Route::get('due-orders-export-excel', [App\Http\Controllers\Admin\OrderController::class, 'exportExcel'])->name('due_orders.export_excel');
 Route::get('orders-export-excel', [App\Http\Controllers\Admin\OrderController::class, 'exportExcel'])->name('order.export_excel');
 Route::get('orders-print', [App\Http\Controllers\Admin\OrderController::class, 'printReport'])->name('order.print_report');
 
@@ -217,6 +219,7 @@ Route::post('food-category-status/{id}', [FoodCategoryController::class, 'update
     // Order Management Routes
     // ==========================================
     Route::get('orders', [App\Http\Controllers\Admin\OrderController::class, 'index'])->name('order.index');
+    Route::get('orders/due-list', [App\Http\Controllers\Admin\OrderController::class, 'dueList'])->name('order.due_list');
     // Order edit page: existing quantity/payment summary and complimentary conversion can be changed.
     Route::get('orders/{id}/edit', [App\Http\Controllers\Admin\OrderController::class, 'edit'])->name('order.edit');
     Route::put('orders/{id}', [App\Http\Controllers\Admin\OrderController::class, 'update'])->name('order.update');

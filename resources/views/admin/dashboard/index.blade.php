@@ -54,6 +54,16 @@ Dashboard — {{ $restaurantSettingName }}
 
       <div class="col-xl col-md-6">
         <div class="progga-stat-card">
+          <div class="progga-stat-icon success"><i class="bi bi-calendar3"></i></div>
+          <div class="progga-stat-info">
+            <div class="progga-stat-label">Last Month Revenue</div>
+            <div class="progga-stat-value">৳{{ number_format($lastMonthSales ?? 0) }}</div>
+            <div class="progga-stat-change neutral"><i class="bi bi-calendar-day"></i> Previous calendar month</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl col-md-6">
+        <div class="progga-stat-card">
           <div class="progga-stat-icon primary"><i class="bi bi-receipt"></i></div>
           <div class="progga-stat-info">
             <div class="progga-stat-label">TOTAL ORDER (BUSINESS DAY)</div>
@@ -188,6 +198,39 @@ Dashboard — {{ $restaurantSettingName }}
         </div>
       </div>
     @endif
+
+    @if($isSuperAdmin)
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <div class="progga-card">
+            <div class="progga-card-header">
+              <div>
+                <div class="progga-card-title">Sales Calendar Overview</div>
+                <div class="progga-card-subtitle" id="salesCalendarSubtitle">Sales by calendar day</div>
+                
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <select id="salesCalendarFilter" class="progga-select" onchange="toggleSalesCalendarCustomDates(); if(this.value !== 'custom' && window.refreshSalesCalendarChartNow){window.refreshSalesCalendarChartNow();}">
+                  <option value="this_month">This Month</option>
+                  <option value="previous_month">Previous Month</option>
+                  <option value="custom">Date Range</option>
+                </select>
+                <div id="salesCalendarCustomDates" style="display:none;gap:8px;">
+                  <input type="text" id="salesCalendarFrom" class="progga-input sales-calendar-datepicker" placeholder="From Date" autocomplete="off" onchange="if(window.refreshSalesCalendarCustomNow){window.refreshSalesCalendarCustomNow();}">
+                  <input type="text" id="salesCalendarTo" class="progga-input sales-calendar-datepicker" placeholder="To Date" autocomplete="off" onchange="if(window.refreshSalesCalendarCustomNow){window.refreshSalesCalendarCustomNow();}">
+                </div>
+              </div>
+            </div>
+            <div class="progga-card-body">
+              <div class="progga-chart-container" style="height:320px;">
+                <canvas id="salesCalendarChart" data-dashboard-dynamic="true"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    @endif
+
 
     @if($isSuperAdmin)
       <div class="row g-3 mb-4">
@@ -344,6 +387,7 @@ document.addEventListener("DOMContentLoaded", function() {
     let orderStatusChart;
     let paymentCollectionChart;
     let incomeChart;
+    let salesCalendarChart;
 
     function revenueSubtitle(period) {
         if (period === '1') return 'Revenue for the current business day';
@@ -612,6 +656,110 @@ document.addEventListener("DOMContentLoaded", function() {
         .catch(error => console.error('Dashboard income chart data loading failed.', error));
     }
 
+    function updateSalesCalendarTotal(total) {
+        const el = document.getElementById('salesCalendarTotal');
+        if (el) {
+            el.textContent = '৳' + Number(total || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' Total Sales';
+        }
+    }
+
+    function buildSalesCalendarChart(labels, data, total = 0) {
+        const canvas = document.getElementById('salesCalendarChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+        const old = Chart.getChart(canvas);
+        if (old) old.destroy();
+        updateSalesCalendarTotal(total);
+        const totalLabel = '৳' + Number(total || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' Total Sales';
+        salesCalendarChart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: totalLabel, data: data, backgroundColor: '#1e7a4a', borderColor: '#1e7a4a', borderWidth: 1, borderRadius: 6 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, x: { grid: { display:false } } } }
+        });
+    }
+
+    window.toggleSalesCalendarCustomDates = function() {
+        const filter = document.getElementById('salesCalendarFilter');
+        const box = document.getElementById('salesCalendarCustomDates');
+        if (filter && box) {
+            box.style.display = filter.value === 'custom' ? 'flex' : 'none';
+        }
+    }
+
+    window.refreshSalesCalendarCustomNow = function(){
+        const from = document.getElementById('salesCalendarFrom').value;
+        const to = document.getElementById('salesCalendarTo').value;
+        if(from && to){
+            refreshSalesCalendarChart();
+        }
+    };
+
+    window.refreshSalesCalendarChartNow = function(){ refreshSalesCalendarChart(); };
+
+    function refreshSalesCalendarChart() {
+        const filter = document.getElementById('salesCalendarFilter').value;
+        let url = chartDataUrl + '?sales_filter=' + encodeURIComponent(filter);
+        if (filter === 'custom') {
+            url += '&from_date=' + document.getElementById('salesCalendarFrom').value + '&to_date=' + document.getElementById('salesCalendarTo').value;
+        }
+        fetch(url + '&t=' + Date.now(), {
+            headers:{
+                'X-Requested-With':'XMLHttpRequest',
+                'Accept':'application/json'
+            }
+        })
+        .then(async r => {
+            if(!r.ok){
+                throw new Error(await r.text());
+            }
+            return r.json();
+        })
+        .then(payload=>{
+            if(!payload.salesCalendarLabels){
+                console.error('Invalid Sales Calendar response', payload);
+                return;
+            }
+            if (!salesCalendarChart) {
+                buildSalesCalendarChart(payload.salesCalendarLabels, payload.salesCalendarData, payload.salesCalendarTotal);
+            } else {
+                updateSalesCalendarTotal(payload.salesCalendarTotal);
+                salesCalendarChart.data.datasets[0].label = '৳' + Number(payload.salesCalendarTotal || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' Total Sales';
+                salesCalendarChart.data.labels = payload.salesCalendarLabels;
+                salesCalendarChart.data.datasets[0].data = payload.salesCalendarData;
+                salesCalendarChart.update();
+            }
+        })
+        .catch(error=>console.error('Sales Calendar loading failed:', error));
+    }
+
+    function refreshIncomeChart(period) {
+        fetch(chartDataUrl + '?period=' + encodeURIComponent(period), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(payload => {
+            if (!incomeChart) {
+                buildIncomeChart(
+                    payload.incomeChartLabels,
+                    payload.incomeCashData,
+                    payload.incomeCardData,
+                    payload.incomeMfsData
+                );
+            } else {
+                incomeChart.data.labels = payload.incomeChartLabels;
+                incomeChart.data.datasets[0].data = payload.incomeCashData;
+                incomeChart.data.datasets[1].data = payload.incomeCardData;
+                incomeChart.data.datasets[2].data = payload.incomeMfsData;
+                incomeChart.options.scales.x.ticks.maxRotation = payload.incomeChartLabels.length > 12 ? 45 : 0;
+                incomeChart.options.scales.x.ticks.minRotation = payload.incomeChartLabels.length > 12 ? 45 : 0;
+                incomeChart.update();
+            }
+
+            const subtitle = document.getElementById('incomeChartSubtitle');
+            if (subtitle) subtitle.textContent = incomeSubtitle(payload.incomePeriod || period);
+        })
+        .catch(error => console.error('Dashboard income chart data loading failed.', error));
+    }
+
     function refreshDashboardCharts(period) {
         fetch(chartDataUrl + '?period=' + encodeURIComponent(period), {
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -645,6 +793,7 @@ document.addEventListener("DOMContentLoaded", function() {
     buildOrderStatusChart(@json($statusLabels), @json($statusData));
     @if($isSuperAdmin)
       buildIncomeChart(@json($incomeChartLabels), @json($incomeCashData), @json($incomeCardData), @json($incomeMfsData));
+      buildSalesCalendarChart(@json($salesCalendarLabels), @json($salesCalendarData), @json(array_sum($salesCalendarData)));
     @endif
 
     document.querySelectorAll('[data-revenue-period]').forEach(button => {
@@ -652,6 +801,37 @@ document.addEventListener("DOMContentLoaded", function() {
             document.querySelectorAll('[data-revenue-period]').forEach(item => item.classList.remove('active'));
             this.classList.add('active');
             refreshDashboardCharts(this.getAttribute('data-revenue-period'));
+        });
+    });
+
+    if (window.flatpickr) {
+        flatpickr('#salesCalendarFrom, #salesCalendarTo', {
+            dateFormat: 'Y-m-d',
+            allowInput: true,
+            onChange: function(){
+                if(window.refreshSalesCalendarCustomNow){
+                    window.refreshSalesCalendarCustomNow();
+                }
+            }
+        });
+    }
+
+    const salesFilter = document.getElementById('salesCalendarFilter');
+    if (salesFilter) {
+        salesFilter.addEventListener('change', function(){
+            document.getElementById('salesCalendarCustomDates').style.display = this.value === 'custom' ? 'flex' : 'none';
+            refreshSalesCalendarChart();
+        });
+    }
+    ['salesCalendarFrom','salesCalendarTo'].forEach(id => {
+        const el=document.getElementById(id);
+        if(el) el.addEventListener('change', function(){
+            const filter=document.getElementById('salesCalendarFilter').value;
+            if(filter === 'custom'){
+                const from=document.getElementById('salesCalendarFrom').value;
+                const to=document.getElementById('salesCalendarTo').value;
+                if(from && to) refreshSalesCalendarChart();
+            }
         });
     });
 

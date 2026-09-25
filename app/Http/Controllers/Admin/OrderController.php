@@ -57,6 +57,19 @@ class OrderController extends Controller
         return view('admin.order.index', compact('orders', 'stats'));
     }
 
+    public function dueList(Request $request)
+    {
+        $query = $this->buildOrderReportQuery($request);
+        $query->where('due', '>', 0);
+        $orders = $query->orderBy('id', 'desc')->paginate(10)->appends($request->query());
+        if ($request->ajax()) {
+            return view('admin.order.partials._due_list_table', ['orders' => $orders, 'showPagination' => true])->render();
+        }
+        $totalDue = (clone $query)->sum('due');
+        return view('admin.order.due_list', compact('orders', 'totalDue'));
+    }
+
+
     public function show($id)
     {
         $order = Order::with(['customer', 'table', 'waiter', 'orderDetails', 'user', 'deliveryPartner'])->findOrFail($id);

@@ -54,8 +54,8 @@
                 <div class="col-6">
                     <label style="font-size: 11px; font-weight: 700; color: #777; margin-bottom: 4px;">Discount Type</label>
                     <select name="discount_type" id="modal_discount_type" class="form-control" style="border: 1.5px solid var(--progga-border); border-radius: 8px; font-size: 13px;" onchange="calculateModalTotal()">
-                        <option value="fixed">Fixed (৳)</option>
                         <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed (৳)</option>
                     </select>
                 </div>
                 <div class="col-6">

@@ -2085,7 +2085,7 @@
         $('#payModalItemsArea .progga-product-discount-item[data-detail-id]').each(function() {
             let row = $(this);
             let lineTotal = Math.max(0, posPaymentNumber(row.data('line-total')));
-            let type = row.find('.product-discount-type').val() || 'fixed';
+            let type = row.find('.product-discount-type').val() || 'percentage';
             let value = Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()));
             let amount = 0;
 
@@ -2313,7 +2313,7 @@
         if (currentOrderId > 0 && preInvoiceSnapshot) {
             window.preInvoiceSnapshotCache[currentOrderId] = preInvoiceSnapshot;
         }
-        $('#modal_discount_type').val(preInvoiceSnapshot && preInvoiceSnapshot.discount_type === 'percentage' ? 'percentage' : 'fixed');
+        $('#modal_discount_type').val(preInvoiceSnapshot && (preInvoiceSnapshot.discount_type === 'fixed' || preInvoiceSnapshot.discount_type === 'percentage') ? preInvoiceSnapshot.discount_type : 'percentage');
         let savedOrderDiscountValue = preInvoiceSnapshot ? posPaymentNumber(preInvoiceSnapshot.discount_value) : 0;
         $('#modal_discount_value').val(savedOrderDiscountValue > 0 ? savedOrderDiscountValue : '');
 
@@ -2326,7 +2326,7 @@
             data.items.forEach((item, index) => {
                 let itemId = parseInt(item.id || 0, 10);
                 let lineTotal = Math.max(0, posPaymentNumber(item.total));
-                let savedType = item.product_discount_type === 'percentage' ? 'percentage' : 'fixed';
+                let savedType = (item.product_discount_type === 'fixed' || item.product_discount_type === 'percentage') ? item.product_discount_type : 'percentage';
                 let savedValue = Math.max(0, posPaymentNumber(item.product_discount_value));
                 let safeName = escapeHtml(item.name);
                 let controlHtml = '';
@@ -2338,8 +2338,8 @@
                                 name="product_discounts[${itemId}][type]"
                                 form="payForm"
                                 aria-label="Discount type for ${safeName}">
-                            <option value="fixed" ${savedType === 'fixed' ? 'selected' : ''}>Fixed (৳)</option>
                             <option value="percentage" ${savedType === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
+                            <option value="fixed" ${savedType === 'fixed' ? 'selected' : ''}>Fixed (৳)</option>
                         </select>
                         <input type="number"
                                class="form-control product-discount-value"
@@ -2554,7 +2554,7 @@
                 let detailId = parseInt(row.data('detail-id') || 0, 10);
                 if (detailId > 0) {
                     payload.product_discounts[detailId] = {
-                        type: row.find('.product-discount-type').val() || 'fixed',
+                        type: row.find('.product-discount-type').val() || 'percentage',
                         value: Math.max(0, posPaymentNumber(row.find('.product-discount-value').val()))
                     };
                 }

@@ -21,43 +21,13 @@
         </a>
     </div>
     @endcan
-    @canany(['pos-view', 'table-booking-view'])
-    @php
-        $posMenuActive = request()->routeIs('pos.*') || request()->routeIs('table-booking.*');
-    @endphp
+    @can('pos-view')
     <div class="progga-nav-item">
-        <a class="progga-nav-link {{ $posMenuActive ? 'active' : '' }}" data-bs-toggle="collapse" href="#posSystemDropdown" role="button" aria-expanded="{{ $posMenuActive ? 'true' : 'false' }}" aria-controls="posSystemDropdown">
-            <i class="bi bi-display progga-nav-icon"></i><span>POS System</span>
-            <span class="progga-nav-badge">LIVE</span>
-            <i class="bi bi-chevron-down ms-auto" style="font-size:11px;"></i>
+        <a class="progga-nav-link {{ request()->routeIs('pos.index') ? 'active' : '' }}" href="{{ route('pos.index') }}">
+            <i class="bi bi-display progga-nav-icon"></i><span>Sales</span>
         </a>
-        <div class="collapse {{ $posMenuActive ? 'show' : '' }}" id="posSystemDropdown">
-            @can('pos-view')
-            <a class="progga-nav-link {{ request()->routeIs('pos.index') ? 'active' : '' }}" href="{{ route('pos.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-display progga-nav-icon"></i><span>Sales</span>
-            </a>
-            <a class="progga-nav-link {{ request()->routeIs('pos.sessions.*') ? 'active' : '' }}" href="{{ route('pos.sessions.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-clock-history progga-nav-icon"></i><span>Session List</span>
-            </a>
-            <a class="progga-nav-link {{ request()->routeIs('pos.kots.*') ? 'active' : '' }}" href="{{ route('pos.kots.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-receipt progga-nav-icon"></i><span>Kot List</span>
-            </a>
-            @endcan
-            @can('table-booking-view')
-            <a class="progga-nav-link {{ request()->routeIs('table-booking.*') ? 'active' : '' }}" href="{{ route('table-booking.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-calendar-check-fill progga-nav-icon"></i>
-                <span>Table Booking</span>
-                @php
-                    $upcomingCount = \App\Models\TableBooking::where('status', 'upcoming')->count();
-                @endphp
-                @if($upcomingCount > 0)
-                    <span class="badge bg-danger rounded-pill ms-auto" style="font-size:10px;">{{ $upcomingCount }}</span>
-                @endif
-            </a>
-            @endcan
-        </div>
     </div>
-    @endcanany
+    @endcan
 
     @can('kitchen-view')
     <div class="progga-nav-item">
@@ -66,99 +36,53 @@
         </a>
     </div>
     @endcan
-    @can('food-category-view')
-    <div class="progga-nav-section" ><div class="progga-nav-section-label">Menu</div></div>
 
+    @php
+        $operationMenuOpen = request()->routeIs('pos.sessions.*') || request()->routeIs('pos.kots.*') || request()->routeIs('table-booking.*') || request()->routeIs('food-category.*') || request()->routeIs('cuisine-type.*') || request()->routeIs('allergen.*') || request()->routeIs('course-type.*') || request()->routeIs('food-item.*') || request()->routeIs('order.*') || request()->routeIs('table.*') || request()->routeIs('floor-zone.*') || request()->routeIs('qrcode.*') || request()->routeIs('customer.*') || request()->routeIs('delivery-partner.*') || request()->routeIs('reviews.*') || request()->routeIs('waiter.*');
+    @endphp
+    @canany(['pos-view','table-booking-view','food-category-view','cuisine-type-view','allergen-view','food-item-view','order-view','table-view','qrcode-view','customer-view','waiter-view'])
     <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('food-category.*') ? 'active' : '' }}" href="{{ route('food-category.index') }}">
-            <i class="bi bi-tags-fill progga-nav-icon"></i><span>Food Categories</span>
+        <a class="progga-nav-link {{ $operationMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#operationDropdown" role="button" aria-expanded="{{ $operationMenuOpen ? 'true' : 'false' }}">
+            <i class="bi bi-grid-fill progga-nav-icon"></i><span>Operations</span>
+            <i class="bi bi-chevron-down ms-auto" style="font-size:11px;"></i>
         </a>
-    </div>
-    @endcan
-    @can('cuisine-type-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('cuisine-type.*') ? 'active' : '' }}" href="{{ route('cuisine-type.index') }}">
-            <i class="bi bi-globe progga-nav-icon"></i><span>Cuisine Types</span>
-        </a>
-    </div>
-    @endcan
-    @can('allergen-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('allergen.*') || request()->routeIs('course-type.*') ? 'active' : '' }}" href="{{ route('allergen.index') }}">
-            <i class="bi bi-sliders progga-nav-icon"></i><span>Food Attributes</span>
-        </a>
-    </div>
-    @endcan
-    @can('food-item-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('food-item.*') ? 'active' : '' }}" href="{{ route('food-item.index') }}">
-            <i class="bi bi-journal-richtext progga-nav-icon"></i><span>Food Menu</span>
-        </a>
-    </div>
-    @endcan
-    @can('order-view')
-    <div class="progga-nav-section" ><div class="progga-nav-section-label">Operations</div></div>
+        <div class="collapse {{ $operationMenuOpen ? 'show' : '' }}" id="operationDropdown">
+            @can('pos-view')
+
+            <a class="progga-nav-link {{ request()->routeIs('pos.kots.*') ? 'active' : '' }}" href="{{ route('pos.kots.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Kot List</span></a>
+            @endcan
+             @can('order-view')
+            <a class="progga-nav-link {{ request()->routeIs('order.index') ? 'active' : '' }}" href="{{ route('order.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-cart-check-fill progga-nav-icon"></i><span>Order List</span></a>
+            <a class="progga-nav-link {{ request()->routeIs('order.due_list') ? 'active' : '' }}" href="{{ route('order.due_list') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-wallet-fill progga-nav-icon"></i><span>Due List</span></a>
+            @endcan
+            @can('table-booking-view')
+            <a class="progga-nav-link {{ request()->routeIs('table-booking.*') ? 'active' : '' }}" href="{{ route('table-booking.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-calendar-check progga-nav-icon"></i><span>Table Booking</span></a>
+            @endcan
+
+            @can('food-category-view')<a class="progga-nav-link {{ request()->routeIs('food-category.*') ? 'active' : '' }}" href="{{ route('food-category.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-tags-fill progga-nav-icon"></i><span>Food Categories</span></a>@endcan
+            @can('cuisine-type-view')<a class="progga-nav-link {{ request()->routeIs('cuisine-type.*') ? 'active' : '' }}" href="{{ route('cuisine-type.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-egg-fried progga-nav-icon"></i><span>Cuisine Types</span></a>@endcan
+            @can('allergen-view')<a class="progga-nav-link {{ request()->routeIs('allergen.*') || request()->routeIs('course-type.*') ? 'active' : '' }}" href="{{ route('allergen.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-sliders progga-nav-icon"></i><span>Food Attributes</span></a>@endcan
+            @can('food-item-view')<a class="progga-nav-link {{ request()->routeIs('food-item.*') ? 'active' : '' }}" href="{{ route('food-item.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-menu-button-wide-fill progga-nav-icon"></i><span>Food Menu</span></a>@endcan
 
 
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('order.*') ? 'active' : '' }}" href="{{ route('order.index') }}">
-            <i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Order List</span>
-        </a>
-    </div>
-    @endcan
 
-   @can('table-view')
-<div class="progga-nav-item">
-    <a class="progga-nav-link {{ (request()->routeIs('table.*') || request()->routeIs('floor-zone.*')) ? 'active' : '' }}" data-bs-toggle="collapse" href="#tableManagementMenu" role="button" aria-expanded="false">
-        <i class="bi bi-table progga-nav-icon"></i><span>Table Management</span>
-        <i class="bi bi-chevron-down ms-auto"></i>
-    </a>
-    <div class="collapse {{ (request()->routeIs('table.*') || request()->routeIs('floor-zone.*')) ? 'show' : '' }}" id="tableManagementMenu">
-        <a class="progga-nav-link ps-5 {{ request()->routeIs('floor-zone.*') ? 'active' : '' }}" href="{{ route('floor-zone.index') }}">
-            <span>Floor / Zone</span>
-        </a>
-        <a class="progga-nav-link ps-5 {{ request()->routeIs('table.*') ? 'active' : '' }}" href="{{ route('table.index') }}#table-section">
-            <span>Tables</span>
-        </a>
+            @can('table-view')
+            <a class="progga-nav-link {{ request()->routeIs('table.index') ? 'active' : '' }}" href="{{ route('table.index') }}#table-section" style="padding-left:42px;font-size:13px;"><i class="bi bi-table progga-nav-icon"></i><span>Tables</span></a>
+            <a class="progga-nav-link {{ request()->routeIs("floor-zone.*") ? "active" : "" }}" href="{{ route("floor-zone.index") }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-building progga-nav-icon"></i><span>Floor / Zone</span></a>
+            @endcan
+            @can('qrcode-view')<a class="progga-nav-link {{ request()->routeIs('qrcode.*') ? 'active' : '' }}" href="{{ route('qrcode.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-qr-code progga-nav-icon"></i><span>Table QR Codes</span></a>@endcan
+            @can('customer-view')
+            <a class="progga-nav-link {{ request()->routeIs('customer.*') ? 'active' : '' }}" href="{{ route('customer.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-people-fill progga-nav-icon"></i><span>Customers</span></a>
+            <a class="progga-nav-link {{ request()->routeIs('delivery-partner.*') ? 'active' : '' }}" href="{{ route('delivery-partner.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-truck progga-nav-icon"></i><span>Delivery Partner</span></a>
+            <a class="progga-nav-link {{ request()->routeIs('reviews.*') ? 'active' : '' }}" href="{{ route('reviews.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-chat-square-text-fill progga-nav-icon"></i><span>Feedback List</span></a>
+            @endcan
+             @can('pos-view')
+            <a class="progga-nav-link {{ request()->routeIs('pos.sessions.*') ? 'active' : '' }}" href="{{ route('pos.sessions.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-clock-history progga-nav-icon"></i><span>Session List</span></a>
+            @endcan
+            @can('waiter-view')<a class="progga-nav-link {{ request()->routeIs('waiter.*') ? 'active' : '' }}" href="{{ route('waiter.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-person-badge-fill progga-nav-icon"></i><span>Waiters</span></a>@endcan
+        </div>
     </div>
-</div>
-@endcan
-
-
-@can('qrcode-view')
-<div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('qrcode.*') ? 'active' : '' }}" href="{{ route('qrcode.index') }}">
-        <i class="bi bi-qr-code-scan progga-nav-icon"></i><span>Table QR Codes</span>
-    </a>
-</div>
-@endcan
-   @can('customer-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('customer.*') || request()->routeIs('reward-points.*') ? 'active' : '' }}" href="{{ route('customer.index') }}">
-            <i class="bi bi-people-fill progga-nav-icon"></i><span>Customers</span>
-        </a>
-    </div>
-
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('delivery-partner.*') ? 'active' : '' }}" href="{{ route('delivery-partner.index') }}">
-            <i class="bi bi-truck progga-nav-icon"></i><span>Delivery Partner</span>
-        </a>
-    </div>
-    @endcan
-    @can('customer-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('reviews.*') ? 'active' : '' }}" href="{{ route('reviews.index') }}">
-            <i class="bi bi-chat-square-heart-fill progga-nav-icon"></i><span>Feedback List</span>
-        </a>
-    </div>
-    @endcan
-   @can('waiter-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('waiter.*') ? 'active' : '' }}" href="{{ route('waiter.index') }}">
-            <i class="bi bi-person-badge-fill progga-nav-icon"></i><span>Waiters</span>
-        </a>
-    </div>
-    @endcan
+    @endcanany
 
     @canany(['hr-dashboard-view', 'employee-view', 'attendance-view', 'leave-management-view', 'salary-advance-view', 'loan-view', 'payroll-view', 'shift-view', 'hr-setting-view'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Human Resources</div></div>
@@ -272,55 +196,25 @@
         </div>
     </div>
 @endcanany
-@can('systemsetting-view')
-    <div class="progga-nav-section" ><div class="progga-nav-section-label">System</div></div>
-
-
-    <div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}" href="{{ route('settings.index') }}">
+@canany(['systemsetting-view','profile-view','user-view','permission-view','role-view','offline-pos-device-view'])
+<div class="progga-nav-item">
+    @php
+        $settingsMenuOpen = request()->routeIs('settings.*') || request()->routeIs('profile.*') || request()->routeIs('user.*') || request()->routeIs('permission.*') || request()->routeIs('role.*') || request()->routeIs('offline-pos-devices.*');
+    @endphp
+    <a class="progga-nav-link {{ $settingsMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#settingsDropdown" role="button" aria-expanded="{{ $settingsMenuOpen ? 'true' : 'false' }}">
         <i class="bi bi-gear-fill progga-nav-icon"></i><span>Settings</span>
+        <i class="bi bi-chevron-down ms-auto"></i>
     </a>
-</div>
-@endcan
-@can('profile-view')
-<div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('profile.edit') ? 'active' : '' }}" href="{{ route('profile.edit') }}">
-        <i class="bi bi-person-circle progga-nav-icon"></i><span>My Profile</span>
-    </a>
-</div>
-@endcan
-
-@can('user-view')
-<div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('user.*') ? 'active' : '' }}" href="{{ route('user.index') }}">
-        <i class="bi bi-people-fill progga-nav-icon"></i><span>User Management</span>
-    </a>
-</div>
-@endcan
-    @can('permission-view')
-<div class="progga-nav-item">
-    <a class="progga-nav-link {{ request()->routeIs('permission.*') ? 'active' : '' }}" href="{{ route('permission.index') }}">
-        <i class="bi bi-shield-lock-fill progga-nav-icon"></i><span>Permissions</span>
-    </a>
-</div>
-@endcan
-
-@can('role-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('role.*') ? 'active' : '' }}" href="{{ route('role.index') }}">
-            <i class="bi bi-person-lines-fill progga-nav-icon"></i><span>Role Management</span>
-        </a>
+    <div class="collapse {{ $settingsMenuOpen ? 'show' : '' }}" id="settingsDropdown">
+        @can('systemsetting-view')<a class="progga-nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}" href="{{ route('settings.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-sliders progga-nav-icon"></i><span>System Settings</span></a>@endcan
+        @can('profile-view')<a class="progga-nav-link {{ request()->routeIs('profile.edit') ? 'active' : '' }}" href="{{ route('profile.edit') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-person-circle progga-nav-icon"></i><span>My Profile</span></a>@endcan
+        @can('user-view')<a class="progga-nav-link {{ request()->routeIs('user.*') ? 'active' : '' }}" href="{{ route('user.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-people progga-nav-icon"></i><span>User Management</span></a>@endcan
+        @can('permission-view')<a class="progga-nav-link {{ request()->routeIs('permission.*') ? 'active' : '' }}" href="{{ route('permission.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-shield-lock progga-nav-icon"></i><span>Permissions</span></a>@endcan
+        @can('role-view')<a class="progga-nav-link {{ request()->routeIs('role.*') ? 'active' : '' }}" href="{{ route('role.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-person-badge progga-nav-icon"></i><span>Role Management</span></a>@endcan
+        @can('offline-pos-device-view')<a class="progga-nav-link {{ request()->routeIs('offline-pos-devices.*') ? 'active' : '' }}" href="{{ route('offline-pos-devices.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-pc-display progga-nav-icon"></i><span>Offline POS Devices</span></a>@endcan
     </div>
-    @endcan
-
-    <div class="progga-nav-section"><div class="progga-nav-section-label">System</div></div>
-    @can('offline-pos-device-view')
-    <div class="progga-nav-item">
-        <a class="progga-nav-link {{ request()->routeIs('offline-pos-devices.*') ? 'active' : '' }}" href="{{ route('offline-pos-devices.index') }}">
-            <i class="bi bi-device-ssd progga-nav-icon"></i><span>Offline POS Devices</span>
-        </a>
-    </div>
-    @endcan
+</div>
+@endcanany
 </nav>
   <div class="progga-sidebar-footer">
     <div class="progga-sidebar-user" onclick="window.location='{{ route('profile.edit') }}'">

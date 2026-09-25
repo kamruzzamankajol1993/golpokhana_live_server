@@ -372,7 +372,7 @@
                                 'name' => $item->product_name,
                                 'qty' => $item->quantity,
                                 'total' => $item->subtotal,
-                                'product_discount_type' => $item->product_discount_type ?? 'fixed',
+                                'product_discount_type' => $item->product_discount_type ?? 'percentage',
                                 'product_discount_value' => $item->product_discount_value ?? 0,
                                 'product_discount_amount' => $item->product_discount_amount ?? 0,
                             ];
@@ -413,7 +413,7 @@
                                     'name' => $item->product_name,
                                     'qty' => $item->quantity,
                                     'total' => $item->subtotal,
-                                    'product_discount_type' => $item->product_discount_type ?? 'fixed',
+                                    'product_discount_type' => $item->product_discount_type ?? 'percentage',
                                     'product_discount_value' => $item->product_discount_value ?? 0,
                                     'product_discount_amount' => $item->product_discount_amount ?? 0,
                                 ];
