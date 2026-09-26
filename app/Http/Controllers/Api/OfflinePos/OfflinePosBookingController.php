@@ -31,7 +31,10 @@ class OfflinePosBookingController extends Controller
                 ['value' => 'Cash', 'label' => 'Cash'],
                 ['value' => 'Card', 'label' => 'Bank / Card'],
                 ['value' => 'MFS', 'label' => 'MFS'],
+                ['value' => 'Split', 'label' => 'Split'],
             ],
+            'card_providers' => ['Visa','Mastercard','American Express','UnionPay','JCB','Nexus','Diners Club','GPay','Bangla QR Card','Other'],
+            'mfs_providers' => ['Rocket','bKash','MYCash','Islami Bank mCash','tap','FirstCash','Upay','OK Wallet','RUPALICASH','TeleCash','Islamic Wallet','Meghna Pay','Nagad','Bangla QR','LENDEN','Other'],
         ]);
     }
     public function index(Request $request): JsonResponse
@@ -187,11 +190,7 @@ class OfflinePosBookingController extends Controller
             throw new \InvalidArgumentException('Booking date and start time are required.');
         }
 
-        $advancePaymentMethod = $this->normalizeAdvancePaymentMethod($payload['advance_payment_method'] ?? null);
-        $advancePaymentReference = trim((string) ($payload['advance_payment_reference'] ?? ''));
-        if (in_array($advancePaymentMethod, ['Card', 'MFS'], true) && $advancePaymentReference === '') {
-            throw new \InvalidArgumentException('Reference number is required for Bank / Card or MFS booking advance.');
-        }
+        $advancePayment = $this->normalizeAdvancePayment($payload);
 
         $booking ??= new TableBooking();
         $oldTableIds = [];
@@ -211,11 +210,16 @@ class OfflinePosBookingController extends Controller
             'booking_end_time' => $end,
             'occasion_id' => $payload['occasion_server_id'] ?? $payload['occasion_id'] ?? null,
             'special_request' => $payload['special_request'] ?? null,
-            'advance_amount' => max(0, (float) ($payload['advance_amount'] ?? 0)),
-            'advance_payment_method' => $advancePaymentMethod,
-            'advance_payment_reference' => $advancePaymentReference !== '' ? $advancePaymentReference : null,
-            'advance_card_provider' => $payload['advance_card_provider'] ?? null,
-            'advance_mfs_provider' => $payload['advance_mfs_provider'] ?? null,
+            'advance_amount' => $advancePayment['advance_amount'],
+            'advance_payment_method' => $advancePayment['advance_payment_method'],
+            'advance_payment_reference' => $advancePayment['advance_payment_reference'],
+            'advance_card_provider' => $advancePayment['advance_card_provider'],
+            'advance_mfs_provider' => $advancePayment['advance_mfs_provider'],
+            'advance_paid_in_cash' => $advancePayment['advance_paid_in_cash'],
+            'advance_paid_in_card' => $advancePayment['advance_paid_in_card'],
+            'advance_paid_in_mfs' => $advancePayment['advance_paid_in_mfs'],
+            'advance_split_card_reference' => $advancePayment['advance_split_card_reference'],
+            'advance_split_mfs_reference' => $advancePayment['advance_split_mfs_reference'],
             'status' => $status,
         ];
 
@@ -272,8 +276,71 @@ class OfflinePosBookingController extends Controller
             'cash' => 'Cash',
             'card', 'bank/card', 'bank / card', 'bank card' => 'Card',
             'mfs', 'mobile banking', 'mobile_banking', 'bkash', 'nagad', 'rocket' => 'MFS',
-            default => throw new \InvalidArgumentException('Unsupported booking advance payment method. Use Cash, Card or MFS.'),
+            'split' => 'Split',
+            default => throw new \InvalidArgumentException('Unsupported booking advance payment method. Use Cash, Card, MFS or Split.'),
         };
+    }
+
+    private function normalizeAdvancePayment(array $payload): array
+    {
+        $method = $this->normalizeAdvancePaymentMethod($payload['advance_payment_method'] ?? null);
+        $advanceAmount = max(0, round((float) ($payload['advance_amount'] ?? 0), 2));
+        $cash = max(0, round((float) ($payload['advance_paid_in_cash'] ?? 0), 2));
+        $card = max(0, round((float) ($payload['advance_paid_in_card'] ?? 0), 2));
+        $mfs = max(0, round((float) ($payload['advance_paid_in_mfs'] ?? 0), 2));
+        $normalReference = trim((string) ($payload['advance_payment_reference'] ?? ''));
+        $cardProvider = trim((string) ($payload['advance_card_provider'] ?? ''));
+        $mfsProvider = trim((string) ($payload['advance_mfs_provider'] ?? ''));
+        $splitCardReference = trim((string) ($payload['advance_split_card_reference'] ?? ''));
+        $splitMfsReference = trim((string) ($payload['advance_split_mfs_reference'] ?? ''));
+
+        if ($advanceAmount > 0 && !$method) {
+            throw new \InvalidArgumentException('Payment method is required when a booking advance amount is entered.');
+        }
+
+        if ($method === 'Card') {
+            if ($cardProvider === '') throw new \InvalidArgumentException('Card provider is required for booking advance.');
+            if ($normalReference === '') throw new \InvalidArgumentException('Bank / Card reference number is required for booking advance.');
+        }
+        if ($method === 'MFS') {
+            if ($mfsProvider === '') throw new \InvalidArgumentException('MFS provider is required for booking advance.');
+            if ($normalReference === '') throw new \InvalidArgumentException('MFS reference number is required for booking advance.');
+        }
+
+        if ($method === 'Split') {
+            $splitTotal = round($cash + $card + $mfs, 2);
+            $usedMethods = count(array_filter([$cash, $card, $mfs], fn ($amount) => $amount > 0));
+            if ($usedMethods < 2) throw new \InvalidArgumentException('Split booking advance requires at least two payment methods.');
+            if (abs($splitTotal - $advanceAmount) > 0.01) throw new \InvalidArgumentException('Split booking advance amounts must equal the advance amount.');
+            if ($card > 0 && $cardProvider === '') throw new \InvalidArgumentException('Card provider is required for the split card amount.');
+            if ($card > 0 && $splitCardReference === '') throw new \InvalidArgumentException('Card reference number is required for the split card amount.');
+            if ($mfs > 0 && $mfsProvider === '') throw new \InvalidArgumentException('MFS provider is required for the split MFS amount.');
+            if ($mfs > 0 && $splitMfsReference === '') throw new \InvalidArgumentException('MFS reference number is required for the split MFS amount.');
+            $normalReference = '';
+        } else {
+            $cash = $method === 'Cash' ? $advanceAmount : 0;
+            $card = $method === 'Card' ? $advanceAmount : 0;
+            $mfs = $method === 'MFS' ? $advanceAmount : 0;
+            $splitCardReference = '';
+            $splitMfsReference = '';
+        }
+
+        if ($method !== 'Card' && !($method === 'Split' && $card > 0)) $cardProvider = '';
+        if ($method !== 'MFS' && !($method === 'Split' && $mfs > 0)) $mfsProvider = '';
+        if (!in_array($method, ['Card', 'MFS'], true)) $normalReference = '';
+
+        return [
+            'advance_amount' => $advanceAmount,
+            'advance_payment_method' => $method,
+            'advance_payment_reference' => $normalReference !== '' ? $normalReference : null,
+            'advance_card_provider' => $cardProvider !== '' ? $cardProvider : null,
+            'advance_mfs_provider' => $mfsProvider !== '' ? $mfsProvider : null,
+            'advance_paid_in_cash' => $cash,
+            'advance_paid_in_card' => $card,
+            'advance_paid_in_mfs' => $mfs,
+            'advance_split_card_reference' => $splitCardReference !== '' ? $splitCardReference : null,
+            'advance_split_mfs_reference' => $splitMfsReference !== '' ? $splitMfsReference : null,
+        ];
     }
 
     private function releaseTableIfFree(?int $tableId): void
@@ -301,6 +368,11 @@ class OfflinePosBookingController extends Controller
         $data['advance_card_provider'] = $booking->advance_card_provider ?? null;
         $data['advance_mfs_provider'] = $booking->advance_mfs_provider ?? null;
         $data['advance_payment_reference'] = $booking->advance_payment_reference ?? null;
+        $data['advance_paid_in_cash'] = (float) ($booking->advance_paid_in_cash ?? 0);
+        $data['advance_paid_in_card'] = (float) ($booking->advance_paid_in_card ?? 0);
+        $data['advance_paid_in_mfs'] = (float) ($booking->advance_paid_in_mfs ?? 0);
+        $data['advance_split_card_reference'] = $booking->advance_split_card_reference ?? null;
+        $data['advance_split_mfs_reference'] = $booking->advance_split_mfs_reference ?? null;
         return $data;
     }
 

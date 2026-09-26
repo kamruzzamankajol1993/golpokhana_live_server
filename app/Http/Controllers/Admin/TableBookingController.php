@@ -14,6 +14,7 @@ use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class TableBookingController extends Controller
 {
@@ -103,15 +104,18 @@ class TableBookingController extends Controller
             'booking_start_time' => 'required|date_format:H:i',
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
             'advance_amount' => 'nullable|numeric|min:0',
-            'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
-            'advance_payment_reference' => 'nullable|required_if:advance_payment_method,Card|required_if:advance_payment_method,MFS|string|max:255',
-            'advance_card_provider' => 'nullable|required_if:advance_payment_method,Card|string|max:100',
-            'advance_mfs_provider' => 'nullable|required_if:advance_payment_method,MFS|string|max:100',
+            'advance_payment_method' => 'nullable|in:Cash,Card,MFS,Split',
+            'advance_payment_reference' => 'nullable|string|max:255',
+            'advance_card_provider' => 'nullable|string|max:100',
+            'advance_mfs_provider' => 'nullable|string|max:100',
+            'advance_paid_in_cash' => 'nullable|numeric|min:0',
+            'advance_paid_in_card' => 'nullable|numeric|min:0',
+            'advance_paid_in_mfs' => 'nullable|numeric|min:0',
+            'advance_split_card_reference' => 'nullable|string|max:255',
+            'advance_split_mfs_reference' => 'nullable|string|max:255',
         ]);
 
-        if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
-            return back()->withErrors(['advance_payment_reference' => 'Reference number is required for Bank / Card or MFS payment.'])->withInput();
-        }
+        $paymentData = $this->validatedAdvancePayment($request);
 
         DB::beginTransaction();
         try {
@@ -159,11 +163,16 @@ class TableBookingController extends Controller
                 'booking_end_time' => $request->booking_end_time,
                 'occasion_id' => $request->occasion_id,
                 'special_request' => $request->special_request,
-                'advance_amount' => $request->advance_amount ?? 0,
-                'advance_payment_method' => $request->advance_payment_method,
-                'advance_payment_reference' => $request->advance_payment_reference,
-                'advance_card_provider' => $request->advance_card_provider,
-                'advance_mfs_provider' => $request->advance_mfs_provider,
+                'advance_amount' => $paymentData['advance_amount'],
+                'advance_payment_method' => $paymentData['advance_payment_method'],
+                'advance_payment_reference' => $paymentData['advance_payment_reference'],
+                'advance_card_provider' => $paymentData['advance_card_provider'],
+                'advance_mfs_provider' => $paymentData['advance_mfs_provider'],
+                'advance_paid_in_cash' => $paymentData['advance_paid_in_cash'],
+                'advance_paid_in_card' => $paymentData['advance_paid_in_card'],
+                'advance_paid_in_mfs' => $paymentData['advance_paid_in_mfs'],
+                'advance_split_card_reference' => $paymentData['advance_split_card_reference'],
+                'advance_split_mfs_reference' => $paymentData['advance_split_mfs_reference'],
                 'status' => $request->status ?? 'upcoming',
             ]);
 
@@ -223,19 +232,50 @@ class TableBookingController extends Controller
             'booking_start_time' => 'required|date_format:H:i',
             'booking_end_time' => 'required|date_format:H:i|different:booking_start_time',
             'advance_amount' => 'nullable|numeric|min:0',
-            'advance_payment_method' => 'nullable|in:Cash,Card,MFS',
-            'advance_payment_reference' => 'nullable|required_if:advance_payment_method,Card|required_if:advance_payment_method,MFS|string|max:255',
-            'advance_card_provider' => 'nullable|required_if:advance_payment_method,Card|string|max:100',
-            'advance_mfs_provider' => 'nullable|required_if:advance_payment_method,MFS|string|max:100',
+            'advance_payment_method' => 'nullable|in:Cash,Card,MFS,Split',
+            'advance_payment_reference' => 'nullable|string|max:255',
+            'advance_card_provider' => 'nullable|string|max:100',
+            'advance_mfs_provider' => 'nullable|string|max:100',
+            'advance_paid_in_cash' => 'nullable|numeric|min:0',
+            'advance_paid_in_card' => 'nullable|numeric|min:0',
+            'advance_paid_in_mfs' => 'nullable|numeric|min:0',
+            'advance_split_card_reference' => 'nullable|string|max:255',
+            'advance_split_mfs_reference' => 'nullable|string|max:255',
         ]);
 
-        if (in_array($request->advance_payment_method, ['Card','MFS']) && empty($request->advance_payment_reference)) {
-            return back()->withErrors(['advance_payment_reference' => 'Reference number is required for Bank / Card or MFS payment.'])->withInput();
-        }
+        $booking = TableBooking::findOrFail($id);
+        $paymentKeys = [
+            'advance_amount',
+            'advance_payment_method',
+            'advance_payment_reference',
+            'advance_card_provider',
+            'advance_mfs_provider',
+            'advance_paid_in_cash',
+            'advance_paid_in_card',
+            'advance_paid_in_mfs',
+            'advance_split_card_reference',
+            'advance_split_mfs_reference',
+        ];
+
+        // Status-only actions (for example Complete/Cancel) do not submit the
+        // payment form. Preserve the existing advance payment data in that case.
+        $paymentData = $request->hasAny($paymentKeys)
+            ? $this->validatedAdvancePayment($request)
+            : [
+                'advance_amount' => (float) ($booking->advance_amount ?? 0),
+                'advance_payment_method' => $booking->advance_payment_method,
+                'advance_payment_reference' => $booking->advance_payment_reference,
+                'advance_card_provider' => $booking->advance_card_provider,
+                'advance_mfs_provider' => $booking->advance_mfs_provider,
+                'advance_paid_in_cash' => (float) ($booking->advance_paid_in_cash ?? 0),
+                'advance_paid_in_card' => (float) ($booking->advance_paid_in_card ?? 0),
+                'advance_paid_in_mfs' => (float) ($booking->advance_paid_in_mfs ?? 0),
+                'advance_split_card_reference' => $booking->advance_split_card_reference,
+                'advance_split_mfs_reference' => $booking->advance_split_mfs_reference,
+            ];
 
         DB::beginTransaction();
         try {
-            $booking = TableBooking::findOrFail($id);
             $customerId = $booking->customer_id;
 
             // এডিট করার সময়ও যদি নতুন কাস্টমার হিসেবে ডাটা দেয়
@@ -273,11 +313,16 @@ class TableBookingController extends Controller
                 'booking_end_time' => $request->booking_end_time,
                 'occasion_id' => $request->occasion_id,
                 'special_request' => $request->special_request,
-                'advance_amount' => $request->advance_amount ?? 0,
-                'advance_payment_method' => $request->advance_payment_method,
-                'advance_payment_reference' => $request->advance_payment_reference,
-                'advance_card_provider' => $request->advance_card_provider,
-                'advance_mfs_provider' => $request->advance_mfs_provider,
+                'advance_amount' => $paymentData['advance_amount'],
+                'advance_payment_method' => $paymentData['advance_payment_method'],
+                'advance_payment_reference' => $paymentData['advance_payment_reference'],
+                'advance_card_provider' => $paymentData['advance_card_provider'],
+                'advance_mfs_provider' => $paymentData['advance_mfs_provider'],
+                'advance_paid_in_cash' => $paymentData['advance_paid_in_cash'],
+                'advance_paid_in_card' => $paymentData['advance_paid_in_card'],
+                'advance_paid_in_mfs' => $paymentData['advance_paid_in_mfs'],
+                'advance_split_card_reference' => $paymentData['advance_split_card_reference'],
+                'advance_split_mfs_reference' => $paymentData['advance_split_mfs_reference'],
                 'status' => $request->status,
             ]);
 
@@ -293,6 +338,95 @@ class TableBookingController extends Controller
             Log::error('Table Booking Update Error: ' . $e->getMessage());
             return back()->with('error', 'Failed to update booking!');
         }
+    }
+
+    private function validatedAdvancePayment(Request $request): array
+    {
+        $method = $request->filled('advance_payment_method') ? (string) $request->advance_payment_method : null;
+        $advanceAmount = max(0, round((float) ($request->advance_amount ?? 0), 2));
+        $cash = max(0, round((float) ($request->advance_paid_in_cash ?? 0), 2));
+        $card = max(0, round((float) ($request->advance_paid_in_card ?? 0), 2));
+        $mfs = max(0, round((float) ($request->advance_paid_in_mfs ?? 0), 2));
+        $cardProvider = trim((string) ($request->advance_card_provider ?? ''));
+        $mfsProvider = trim((string) ($request->advance_mfs_provider ?? ''));
+        $normalReference = trim((string) ($request->advance_payment_reference ?? ''));
+        $splitCardReference = trim((string) ($request->advance_split_card_reference ?? ''));
+        $splitMfsReference = trim((string) ($request->advance_split_mfs_reference ?? ''));
+
+        if ($advanceAmount > 0 && !$method) {
+            throw ValidationException::withMessages(['advance_payment_method' => 'Payment method is required when an advance amount is entered.']);
+        }
+
+        if ($method === 'Card') {
+            if ($cardProvider === '') {
+                throw ValidationException::withMessages(['advance_card_provider' => 'Card provider is required.']);
+            }
+            if ($normalReference === '') {
+                throw ValidationException::withMessages(['advance_payment_reference' => 'Bank / Card reference number is required.']);
+            }
+        }
+
+        if ($method === 'MFS') {
+            if ($mfsProvider === '') {
+                throw ValidationException::withMessages(['advance_mfs_provider' => 'MFS provider is required.']);
+            }
+            if ($normalReference === '') {
+                throw ValidationException::withMessages(['advance_payment_reference' => 'MFS reference number is required.']);
+            }
+        }
+
+        if ($method === 'Split') {
+            $splitTotal = round($cash + $card + $mfs, 2);
+            $usedMethods = collect([$cash, $card, $mfs])->filter(fn ($amount) => $amount > 0)->count();
+
+            if ($usedMethods < 2) {
+                throw ValidationException::withMessages(['advance_payment_method' => 'Split payment requires at least two payment methods.']);
+            }
+            if (abs($splitTotal - $advanceAmount) > 0.01) {
+                throw ValidationException::withMessages(['advance_amount' => 'Split payment amounts must equal the advance amount.']);
+            }
+            if ($card > 0 && $cardProvider === '') {
+                throw ValidationException::withMessages(['advance_card_provider' => 'Card provider is required for the split card amount.']);
+            }
+            if ($card > 0 && $splitCardReference === '') {
+                throw ValidationException::withMessages(['advance_split_card_reference' => 'Card reference number is required for the split card amount.']);
+            }
+            if ($mfs > 0 && $mfsProvider === '') {
+                throw ValidationException::withMessages(['advance_mfs_provider' => 'MFS provider is required for the split MFS amount.']);
+            }
+            if ($mfs > 0 && $splitMfsReference === '') {
+                throw ValidationException::withMessages(['advance_split_mfs_reference' => 'MFS reference number is required for the split MFS amount.']);
+            }
+        } else {
+            $cash = $method === 'Cash' ? $advanceAmount : 0;
+            $card = $method === 'Card' ? $advanceAmount : 0;
+            $mfs = $method === 'MFS' ? $advanceAmount : 0;
+            $splitCardReference = '';
+            $splitMfsReference = '';
+        }
+
+        if ($method !== 'Card' && !($method === 'Split' && $card > 0)) {
+            $cardProvider = '';
+        }
+        if ($method !== 'MFS' && !($method === 'Split' && $mfs > 0)) {
+            $mfsProvider = '';
+        }
+        if (!in_array($method, ['Card', 'MFS'], true)) {
+            $normalReference = '';
+        }
+
+        return [
+            'advance_amount' => $advanceAmount,
+            'advance_payment_method' => $method,
+            'advance_payment_reference' => $normalReference !== '' ? $normalReference : null,
+            'advance_card_provider' => $cardProvider !== '' ? $cardProvider : null,
+            'advance_mfs_provider' => $mfsProvider !== '' ? $mfsProvider : null,
+            'advance_paid_in_cash' => $cash,
+            'advance_paid_in_card' => $card,
+            'advance_paid_in_mfs' => $mfs,
+            'advance_split_card_reference' => $splitCardReference !== '' ? $splitCardReference : null,
+            'advance_split_mfs_reference' => $splitMfsReference !== '' ? $splitMfsReference : null,
+        ];
     }
 
     private function releaseTableIfCompletedOrCancelled($booking)

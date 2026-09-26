@@ -402,22 +402,52 @@ window.deleteOccasion = function(id) {
 // Payment Provider + Reference Validation (Add/Edit)
 // ==========================================
 function toggleAdvancePayment(prefix='') {
-    let method = document.getElementById(prefix+'advance_payment_method');
-    let ref = document.getElementById(prefix+'advance_payment_reference');
-    let card = document.getElementById(prefix+'advance_card_provider');
-    let mfs = document.getElementById(prefix+'advance_mfs_provider');
+    const method = document.getElementById(prefix+'advance_payment_method');
     if(!method) return;
 
-    let isCard = method.value === 'Card';
-    let isMfs = method.value === 'MFS';
-    if(ref) ref.required = isCard || isMfs;
-    if(card) card.style.display = isCard ? 'block' : 'none';
-    if(mfs) mfs.style.display = isMfs ? 'block' : 'none';
+    const isSplit = method.value === 'Split';
+    const cardAmount = parseFloat((document.getElementById(prefix+'advance_paid_in_card') || {}).value || 0) || 0;
+    const mfsAmount = parseFloat((document.getElementById(prefix+'advance_paid_in_mfs') || {}).value || 0) || 0;
+    const cashAmount = parseFloat((document.getElementById(prefix+'advance_paid_in_cash') || {}).value || 0) || 0;
+    const needsCard = method.value === 'Card' || (isSplit && cardAmount > 0);
+    const needsMfs = method.value === 'MFS' || (isSplit && mfsAmount > 0);
+
+    const card = document.getElementById(prefix+'advance_card_provider');
+    const mfs = document.getElementById(prefix+'advance_mfs_provider');
+    const ref = document.getElementById(prefix+'advance_payment_reference');
+    const refWrapper = document.getElementById(prefix+'advance_reference_wrapper') || document.getElementById(prefix+'reference_wrapper');
+    const splitWrapper = document.getElementById(prefix+'advance_split_wrapper');
+    const splitCardRef = document.getElementById(prefix+'advance_split_card_reference');
+    const splitMfsRef = document.getElementById(prefix+'advance_split_mfs_reference');
+    const advanceAmount = document.getElementById(prefix+'advance_amount');
+
+    if(card) {
+        card.style.display = needsCard ? 'block' : 'none';
+        card.required = needsCard;
+        if(!needsCard) card.value = '';
+    }
+    if(mfs) {
+        mfs.style.display = needsMfs ? 'block' : 'none';
+        mfs.required = needsMfs;
+        if(!needsMfs) mfs.value = '';
+    }
+    if(ref) ref.required = method.value === 'Card' || method.value === 'MFS';
+    if(refWrapper) refWrapper.classList.toggle('d-none', isSplit);
+    if(splitWrapper) splitWrapper.classList.toggle('d-none', !isSplit);
+    if(splitCardRef) splitCardRef.required = isSplit && cardAmount > 0;
+    if(splitMfsRef) splitMfsRef.required = isSplit && mfsAmount > 0;
+
+    if(advanceAmount) {
+        advanceAmount.readOnly = isSplit;
+        if(isSplit) advanceAmount.value = (cashAmount + cardAmount + mfsAmount).toFixed(2);
+    }
 }
 
 $(document).on('change','#advance_payment_method,#edit_advance_payment_method',function(){
     toggleAdvancePayment(this.id.startsWith('edit_') ? 'edit_' : '');
 });
+$(document).on('input','#advance_paid_in_cash,#advance_paid_in_card,#advance_paid_in_mfs',function(){ toggleAdvancePayment(''); });
+$(document).on('input','#edit_advance_paid_in_cash,#edit_advance_paid_in_card,#edit_advance_paid_in_mfs',function(){ toggleAdvancePayment('edit_'); });
 
 toggleAdvancePayment();
 toggleAdvancePayment('edit_');

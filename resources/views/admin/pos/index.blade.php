@@ -856,6 +856,7 @@
     let posComplimentaryNote = '';
     let isOffcanvasComplimentaryMode = false;
     let isWaiter = @json((bool) ($isWaiterUser ?? false));
+    const loggedInWaiterName = @json($loggedInWaiter->name ?? '');
     const complimentaryNoteRequired = @json((bool) ($posSetting->complimentary_note_required ?? false));
     const dineInWaiterRequired = @json((bool) ($posSetting->dine_in_waiter_required ?? false));
 
@@ -1639,14 +1640,20 @@
         }
 
         const selectedWaiterId = $('#posWaiterSelect').val();
-        if (selectedOrderType === 'dine_in' && dineInWaiterRequired && !selectedWaiterId) {
+        if (selectedOrderType === 'dine_in' && isWaiter && !selectedWaiterId) {
+            Swal.fire('Waiter Profile Missing', 'Your login is not linked with an active waiter profile. Please contact an administrator.', 'warning');
+            return false;
+        }
+        if (selectedOrderType === 'dine_in' && !isWaiter && dineInWaiterRequired && !selectedWaiterId) {
             $('#posWaiterSelect').addClass('is-invalid').focus();
             Swal.fire('Waiter Required', 'Please assign a waiter before starting a Dine-In order.', 'warning');
             return false;
         }
         $('#posWaiterSelect').removeClass('is-invalid');
         currentOrder.waiter_id = selectedWaiterId || null;
-        currentOrder.waiter_name = currentOrder.waiter_id ? $('#posWaiterSelect option:selected').text() : 'Unassigned';
+        currentOrder.waiter_name = currentOrder.waiter_id
+            ? (isWaiter ? loggedInWaiterName : $('#posWaiterSelect option:selected').text())
+            : 'Unassigned';
         currentOrder.is_walk_in = $('#posWalkIn').is(':checked') ? 1 : 0;
         currentOrder.order_notes = $('#order_notes').val() || '';
         currentOrder.is_complimentary_order = $('#posComplimentaryOrder').is(':checked') ? 1 : 0;

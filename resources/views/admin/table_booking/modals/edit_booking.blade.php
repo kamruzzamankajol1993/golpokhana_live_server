@@ -124,7 +124,7 @@
             <div class="col-md-4">
               <div class="progga-form-group">
                 <label class="progga-form-label">Advance Amount</label>
-                <input type="number" step="0.01" name="advance_amount" class="progga-form-control" id="advance_amount" placeholder="0.00">
+                <input type="number" step="0.01" name="advance_amount" class="progga-form-control" id="edit_advance_amount" placeholder="0.00">
               </div>
             </div>
             <div class="col-md-4">
@@ -135,6 +135,7 @@
                   <option value="Cash">Cash</option>
                   <option value="Card">Bank / Card</option>
                   <option value="MFS">MFS</option>
+                  <option value="Split">Split</option>
                 </select>
               </div>
             </div>
@@ -160,10 +161,23 @@
                 </select>
               </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4" id="edit_advance_reference_wrapper">
               <div class="progga-form-group">
                 <label class="progga-form-label">Reference Number</label>
                 <input type="text" name="advance_payment_reference" id="edit_advance_payment_reference" class="progga-form-control" placeholder="Required for Bank / Card / MFS">
+              </div>
+            </div>
+            <div class="col-12 d-none" id="edit_advance_split_wrapper">
+              <div class="progga-form-group" style="border:1px dashed var(--progga-border);border-radius:10px;padding:12px;background:var(--progga-bg-soft,#f8f9fa);">
+                <label class="progga-form-label">Split Advance Payment</label>
+                <div class="row g-2">
+                  <div class="col-md-4"><label class="progga-form-label">Cash</label><input type="number" step="0.01" min="0" name="advance_paid_in_cash" id="edit_advance_paid_in_cash" class="progga-form-control" value="0"></div>
+                  <div class="col-md-4"><label class="progga-form-label">Bank / Card</label><input type="number" step="0.01" min="0" name="advance_paid_in_card" id="edit_advance_paid_in_card" class="progga-form-control" value="0"></div>
+                  <div class="col-md-4"><label class="progga-form-label">MFS</label><input type="number" step="0.01" min="0" name="advance_paid_in_mfs" id="edit_advance_paid_in_mfs" class="progga-form-control" value="0"></div>
+                  <div class="col-md-6"><label class="progga-form-label">Card Reference</label><input type="text" name="advance_split_card_reference" id="edit_advance_split_card_reference" class="progga-form-control" placeholder="Required when card amount is entered"></div>
+                  <div class="col-md-6"><label class="progga-form-label">MFS Reference</label><input type="text" name="advance_split_mfs_reference" id="edit_advance_split_mfs_reference" class="progga-form-control" placeholder="Required when MFS amount is entered"></div>
+                </div>
+                <small class="text-muted">Use at least two methods. Split amounts automatically set the Advance Amount.</small>
               </div>
             </div>
             <div class="col-12">

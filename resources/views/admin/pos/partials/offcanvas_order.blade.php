@@ -525,27 +525,29 @@
             </form>
         @endif
 
-        <form id="ocWaiterUpdateForm"
-              class="progga-oc-meta-form mt-2"
-              data-order-id="{{ $order->id }}"
-              data-table-id="{{ $order->table_id }}"
-              data-order-type="{{ $jsOrderType }}">
-            <div class="progga-oc-meta-title-row">
-                <div class="progga-oc-meta-title"><i class="bi bi-person-badge"></i> Waiter</div>
-            </div>
-            <div class="progga-oc-meta-help">Change the waiter assigned to this active order before payment.</div>
-            <div class="d-flex gap-2">
-                <select name="waiter_id" class="form-select form-select-sm " style="min-width:0;" required>
-                    <option value="">— Select Waiter —</option>
-                    @foreach(($waiters ?? collect()) as $waiterOption)
-                        <option value="{{ $waiterOption->id }}" {{ (int) $order->waiter_id === (int) $waiterOption->id ? 'selected' : '' }}>{{ $waiterOption->name }}</option>
-                    @endforeach
-                </select>
-                <button type="submit" class="btn btn-sm btn-primary fw-bold js-oc-waiter-save" style="white-space:nowrap;">
-                    Update
-                </button>
-            </div>
-        </form>
+        @if(!($isWaiterUser ?? false))
+            <form id="ocWaiterUpdateForm"
+                  class="progga-oc-meta-form mt-2"
+                  data-order-id="{{ $order->id }}"
+                  data-table-id="{{ $order->table_id }}"
+                  data-order-type="{{ $jsOrderType }}">
+                <div class="progga-oc-meta-title-row">
+                    <div class="progga-oc-meta-title"><i class="bi bi-person-badge"></i> Waiter</div>
+                </div>
+                <div class="progga-oc-meta-help">Change the waiter assigned to this active order before payment.</div>
+                <div class="d-flex gap-2">
+                    <select name="waiter_id" class="form-select form-select-sm " style="min-width:0;" required>
+                        <option value="">— Select Waiter —</option>
+                        @foreach(($waiters ?? collect()) as $waiterOption)
+                            <option value="{{ $waiterOption->id }}" {{ (int) $order->waiter_id === (int) $waiterOption->id ? 'selected' : '' }}>{{ $waiterOption->name }}</option>
+                        @endforeach
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-primary fw-bold js-oc-waiter-save" style="white-space:nowrap;">
+                        Update
+                    </button>
+                </div>
+            </form>
+        @endif
 
         @if($jsOrderType === 'delivery')
             <form id="ocDeliveryPartnerUpdateForm"

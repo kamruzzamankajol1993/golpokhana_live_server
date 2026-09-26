@@ -39,6 +39,7 @@ class OfflinePosDataController extends Controller
                 'waiters' => $masterData['waiters'] ?? [],
                 'customers' => $masterData['customers'] ?? [],
                 'food_categories' => $masterData['food_categories'] ?? [],
+                'food_subcategories' => $masterData['food_subcategories'] ?? [],
                 'food_items' => $masterData['food_items'] ?? [],
                 'food_addons' => $masterData['food_addons'] ?? [],
                 'delivery_partners' => $masterData['delivery_partners'] ?? [],
@@ -46,12 +47,15 @@ class OfflinePosDataController extends Controller
                 'payment_methods' => $this->paymentMethods(),
                 'payment_options' => app(OfflinePosOperationController::class)->paymentOptions()->getData(true),
                 'table_dashboard' => app(OfflinePosOperationController::class)->dashboard($request)->getData(true),
+                'table_states' => app(OfflinePosOperationController::class)->tableStatesResponse()->getData(true)['tables'] ?? [],
+                'takeaway_delivery' => app(OfflinePosOperationController::class)->takeawayDelivery()->getData(true)['orders'] ?? [],
                 'table_bookings' => app(OfflinePosBookingController::class)->index($request)->getData(true)['table_bookings'] ?? [],
                 'booking_options' => app(OfflinePosBookingController::class)->options()->getData(true),
                 'pos_sessions' => app(OfflinePosSessionController::class)->history($request)->getData(true)['pos_sessions'] ?? [],
                 'current_pos_session' => app(OfflinePosSessionController::class)->current($request)->getData(true),
                 'pos_status' => app(OfflinePosOperationController::class)->posStatus()->getData(true),
                 'active_orders' => $this->activeOrders(),
+                'kitchen_changes' => app(OfflinePosKitchenController::class)->sync($request)->getData(true)['data'] ?? [],
             ],
         ]);
     }

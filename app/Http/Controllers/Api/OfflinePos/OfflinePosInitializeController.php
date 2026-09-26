@@ -28,9 +28,22 @@ class OfflinePosInitializeController extends Controller
             ], 401);
         }
 
-        $device->update([
-            'last_seen_at' => now(),
-        ]);
+        $givenUuid = trim((string) ($request->device_uuid ?? ''));
+        $storedUuid = trim((string) ($device->device_uuid ?? ''));
+
+        if ($givenUuid !== '' && $storedUuid !== '' && !hash_equals($storedUuid, $givenUuid)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This device key is already bound to another device UUID.'
+            ], 401);
+        }
+
+        $deviceUpdate = ['last_seen_at' => now()];
+        if ($givenUuid !== '' && $storedUuid === '') {
+            $deviceUpdate['device_uuid'] = $givenUuid;
+        }
+        $device->update($deviceUpdate);
+        $device->refresh();
 
         $restaurant = RestaurantSetting::first();
 

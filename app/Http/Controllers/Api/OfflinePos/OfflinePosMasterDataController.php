@@ -360,6 +360,7 @@ class OfflinePosMasterDataController extends Controller
             'waiters' => $this->waiters($request)->getData(true)['waiters'] ?? [],
             'customers' => $this->customers($request)->getData(true)['customers'] ?? [],
             'food_categories' => $this->foodCategories($request)->getData(true)['food_categories'] ?? [],
+            'food_subcategories' => $this->foodSubCategories($request)->getData(true)['food_subcategories'] ?? [],
             'food_items' => $this->foodItems($request)->getData(true)['food_items'] ?? [],
             'food_addons' => $this->foodAddons($request)->getData(true)['food_addons'] ?? [],
             'delivery_partners' => $this->deliveryPartners($request)->getData(true)['delivery_partners'] ?? [],

@@ -56,7 +56,7 @@
             </div>
 
             <div class="row g-3">
-              <div class="col-5">
+              <div class="{{ ($isWaiterUser ?? false) ? 'col-12' : 'col-5' }}">
                 <div class="pos-modal-label">Guests</div>
                 <div class="pos-guest-counter">
                   <button type="button" class="pos-guest-btn" onclick="$('#posGuestCount').text(Math.max(1, parseInt($('#posGuestCount').text())-1))">−</button>
@@ -64,23 +64,19 @@
                   <button type="button" class="pos-guest-btn" onclick="$('#posGuestCount').text(parseInt($('#posGuestCount').text())+1)">+</button>
                 </div>
               </div>
-              <div class="col-7">
-                <div class="pos-modal-label">Assign Waiter</div>
-                <select id="posWaiterSelect" class="progga-select w-100">
-                  @if($isWaiterUser ?? false)
-                      @if($loggedInWaiter)
-                          <option value="{{ $loggedInWaiter->id }}" selected>{{ $loggedInWaiter->name }}</option>
-                      @else
-                          <option value="">— Linked Waiter Profile Not Found —</option>
-                      @endif
-                  @else
-                      <option value="">— Unassigned —</option>
-                      @foreach($waiters as $waiter)
-                        <option value="{{ $waiter->id }}">{{ $waiter->name }}</option>
-                      @endforeach
-                  @endif
-                </select>
-              </div>
+              @if($isWaiterUser ?? false)
+                <input type="hidden" id="posWaiterSelect" value="{{ $loggedInWaiter->id ?? '' }}" data-waiter-name="{{ $loggedInWaiter->name ?? '' }}">
+              @else
+                <div class="col-7">
+                  <div class="pos-modal-label">Assign Waiter</div>
+                  <select id="posWaiterSelect" class="progga-select w-100">
+                    <option value="">— Unassigned —</option>
+                    @foreach($waiters as $waiter)
+                      <option value="{{ $waiter->id }}">{{ $waiter->name }}</option>
+                    @endforeach
+                  </select>
+                </div>
+              @endif
             </div>
 
             <div class="pos-modal-section" style="margin-top:14px;">

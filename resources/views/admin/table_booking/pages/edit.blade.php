@@ -165,6 +165,7 @@
                                 <option value="Cash" {{ old('advance_payment_method', $booking->advance_payment_method)=='Cash' ? 'selected' : '' }}>Cash</option>
                                 <option value="Card" {{ old('advance_payment_method', $booking->advance_payment_method)=='Card' ? 'selected' : '' }}>Bank / Card</option>
                                 <option value="MFS" {{ old('advance_payment_method', $booking->advance_payment_method)=='MFS' ? 'selected' : '' }}>MFS</option>
+                                <option value="Split" {{ old('advance_payment_method', $booking->advance_payment_method)=='Split' ? 'selected' : '' }}>Split</option>
                             </select>
                         </div>
                     </div>
@@ -203,6 +204,19 @@
                         <div class="progga-form-group">
                             <label class="progga-form-label">Reference Number</label>
                             <input type="text" name="advance_payment_reference" id="edit_advance_payment_reference" class="progga-form-control" value="{{ old('advance_payment_reference', $booking->advance_payment_reference) }}" placeholder="Required for Bank / Card / MFS">
+                        </div>
+                    </div>
+                    <div class="col-12 d-none" id="edit_advance_split_wrapper">
+                        <div class="progga-form-group" style="border:1px dashed var(--progga-border);border-radius:10px;padding:12px;background:var(--progga-bg-soft,#f8f9fa);">
+                            <label class="progga-form-label">Split Advance Payment</label>
+                            <div class="row g-2">
+                                <div class="col-md-4"><label class="progga-form-label">Cash</label><input type="number" step="0.01" min="0" name="advance_paid_in_cash" id="edit_advance_paid_in_cash" class="progga-form-control" value="{{ old('advance_paid_in_cash',$booking->advance_paid_in_cash ?? 0) }}"></div>
+                                <div class="col-md-4"><label class="progga-form-label">Bank / Card</label><input type="number" step="0.01" min="0" name="advance_paid_in_card" id="edit_advance_paid_in_card" class="progga-form-control" value="{{ old('advance_paid_in_card',$booking->advance_paid_in_card ?? 0) }}"></div>
+                                <div class="col-md-4"><label class="progga-form-label">MFS</label><input type="number" step="0.01" min="0" name="advance_paid_in_mfs" id="edit_advance_paid_in_mfs" class="progga-form-control" value="{{ old('advance_paid_in_mfs',$booking->advance_paid_in_mfs ?? 0) }}"></div>
+                                <div class="col-md-6"><label class="progga-form-label">Card Reference</label><input type="text" name="advance_split_card_reference" id="edit_advance_split_card_reference" class="progga-form-control" value="{{ old('advance_split_card_reference',$booking->advance_split_card_reference ?? '') }}" placeholder="Required when card amount is entered"></div>
+                                <div class="col-md-6"><label class="progga-form-label">MFS Reference</label><input type="text" name="advance_split_mfs_reference" id="edit_advance_split_mfs_reference" class="progga-form-control" value="{{ old('advance_split_mfs_reference',$booking->advance_split_mfs_reference ?? '') }}" placeholder="Required when MFS amount is entered"></div>
+                            </div>
+                            <small class="text-muted">Use at least two methods. Split amounts automatically set the Advance Amount.</small>
                         </div>
                     </div>
                     <div class="col-12">
@@ -259,23 +273,29 @@ $(document).ready(function(){
 
     function toggleEditPaymentProvider() {
         const method = $('#edit_advance_payment_method').val();
-        const showCard = method === 'Card';
-        const showMfs = method === 'MFS';
-        const needsReference = showCard || showMfs;
+        const isSplit = method === 'Split';
+        const cash = parseFloat($('#edit_advance_paid_in_cash').val()) || 0;
+        const card = parseFloat($('#edit_advance_paid_in_card').val()) || 0;
+        const mfs = parseFloat($('#edit_advance_paid_in_mfs').val()) || 0;
+        const showCard = method === 'Card' || (isSplit && card > 0);
+        const showMfs = method === 'MFS' || (isSplit && mfs > 0);
 
         $('#edit_card_provider_wrapper').toggleClass('d-none', !showCard);
         $('#edit_mfs_provider_wrapper').toggleClass('d-none', !showMfs);
+        $('#edit_advance_split_wrapper').toggleClass('d-none', !isSplit);
+        $('#edit_reference_wrapper').toggleClass('d-none', isSplit);
 
         $('#edit_advance_card_provider').prop('required', showCard);
         $('#edit_advance_mfs_provider').prop('required', showMfs);
-        $('#edit_advance_payment_reference').prop('required', needsReference);
+        $('#edit_advance_payment_reference').prop('required', method === 'Card' || method === 'MFS');
+        $('#edit_advance_split_card_reference').prop('required', isSplit && card > 0);
+        $('#edit_advance_split_mfs_reference').prop('required', isSplit && mfs > 0);
 
-        if (!showCard) {
-            $('#edit_advance_card_provider').val('').trigger('change');
-        }
-        if (!showMfs) {
-            $('#edit_advance_mfs_provider').val('').trigger('change');
-        }
+        $('#edit_advance_amount').prop('readonly', isSplit);
+        if(isSplit) $('#edit_advance_amount').val((cash + card + mfs).toFixed(2));
+
+        if (!showCard) $('#edit_advance_card_provider').val('').trigger('change');
+        if (!showMfs) $('#edit_advance_mfs_provider').val('').trigger('change');
     }
 
     initSelect2(document);
@@ -284,6 +304,7 @@ $(document).ready(function(){
 
     $('#edit_is_new_customer').on('change', toggleEditNewCustomerFields);
     $('#edit_advance_payment_method').on('change', toggleEditPaymentProvider);
+    $('#edit_advance_paid_in_cash,#edit_advance_paid_in_card,#edit_advance_paid_in_mfs').on('input', toggleEditPaymentProvider);
 });
 </script>
 @endsection

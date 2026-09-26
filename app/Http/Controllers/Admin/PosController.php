@@ -1972,6 +1972,11 @@ public function placeOrder(Request $request)
         // This is enforced server-side as well as preselected in the modal.
         if ($loggedInWaiterForOrder) {
             $request->merge(['waiter_id' => $loggedInWaiterForOrder->id]);
+        } elseif ($isWaiterActor && $this->normalizePosOrderType($request->order_type ?? 'dine_in') === 'dine_in') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Your login is not linked with an active waiter profile. Please contact an administrator.',
+            ], 422);
         }
 
         $sessionManagerId = app(PosSessionManagerResolver::class)->resolveId($actor);
@@ -2455,8 +2460,9 @@ public function placeOrder(Request $request)
         $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
         $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
         $mergedOrderItemsByKot = $mergedOrderItems->groupBy('display_kot_id');
+        $isWaiterUser = $isWaiter;
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot'))->render();
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot', 'isWaiterUser'))->render();
     }
 
 public function tableReservationStatuses()
@@ -2814,6 +2820,14 @@ public function tableReservationStatuses()
             }
 
             if ($request->update_type === 'waiter') {
+                if ($this->userHasRoleCaseInsensitive(auth()->user(), 'waiter')) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Waiter users cannot reassign the waiter for an active order.'
+                    ], 403);
+                }
+
                 $waiter = Waiter::where('id', $request->waiter_id)
                     ->where('status', 1)
                     ->first();
@@ -2977,8 +2991,9 @@ public function tableReservationStatuses()
         $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
         $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
         $mergedOrderItemsByKot = $mergedOrderItems->groupBy('display_kot_id');
+        $isWaiterUser = $isWaiter;
 
-        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot'))->render();
+        return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot', 'isWaiterUser'))->render();
     }
 
     public function holdWebOrder(Request $request)
