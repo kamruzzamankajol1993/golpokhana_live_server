@@ -20,7 +20,6 @@ return new class extends Migration
         'inventory-wastage-post',
         'inventory-adjustment-post',
         'inventory-reports-view',
-        'inventory-branch-all-view',
     ];
 
     public function up(): void

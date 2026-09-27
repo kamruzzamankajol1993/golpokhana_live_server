@@ -3,7 +3,6 @@
 namespace App\Services\Inventory;
 
 use App\Models\Purchase;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +22,7 @@ class PurchaseReceivingService
 
         return DB::transaction(function () use ($purchaseId, $userId) {
             $purchase = Purchase::query()
-                ->withoutGlobalScope(BranchScope::class)
-                ->with(['items.ingredient', 'vendor', 'branch', 'receivedMovement'])
+                ->with(['items.ingredient', 'vendor', 'receivedMovement'])
                 ->whereKey($purchaseId)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -45,9 +43,8 @@ class PurchaseReceivingService
                 ]);
             }
 
-            $main = $this->locations->forBranchAndType((int) $purchase->branch_id, StockLocation::TYPE_MAIN);
+            $main = $this->locations->forType(StockLocation::TYPE_MAIN);
             $movement = $this->movements->post(
-                (int) $purchase->branch_id,
                 StockMovement::PURCHASE_RECEIVE,
                 $purchase->items->map(fn ($item) => [
                     'ingredient_id' => (int) $item->ingredient_id,
@@ -71,7 +68,7 @@ class PurchaseReceivingService
                 'received_stock_movement_id' => $movement->id,
             ])->save();
 
-            return $purchase->fresh(['items.ingredient.baseUnit', 'vendor', 'branch', 'receivedMovement.items']);
+            return $purchase->fresh(['items.ingredient.baseUnit', 'vendor', 'receivedMovement.items']);
         }, 5);
     }
 }

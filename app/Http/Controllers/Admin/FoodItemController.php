@@ -11,6 +11,9 @@ use App\Models\CourseType;
 use App\Models\Allergen;
 use App\Models\FoodAddon;
 use App\Models\FoodImage;
+use App\Models\Ingredient;
+use App\Models\Unit;
+use App\Services\Inventory\RecipeService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -73,8 +76,11 @@ class FoodItemController extends Controller
             $cuisines = CuisineType::where('status', 1)->get();
             $courseTypes = CourseType::where('status', 1)->get();
             $allergens = Allergen::where('status', 1)->get();
+            $inventoryIngredients = $this->inventoryIngredients();
+            $inventoryUnits = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
+            $recipeRows = [];
 
-            return view('admin.food_item.create', compact('categories', 'subCategories', 'cuisines', 'courseTypes', 'allergens'));
+            return view('admin.food_item.create', compact('categories', 'subCategories', 'cuisines', 'courseTypes', 'allergens', 'inventoryIngredients', 'inventoryUnits', 'recipeRows'));
         } catch (Exception $e) {
             Log::error('Error loading Add Food page: ' . $e->getMessage());
             return back()->with('error', 'Failed to load create page!');
@@ -84,13 +90,19 @@ class FoodItemController extends Controller
     /**
      * Store a newly created Food Item.
      */
-    public function store(Request $request)
+    public function store(Request $request, RecipeService $recipes)
     {
         $request->validate([
             'name' => 'required|string|max:255',
             'food_category_id' => 'required',
             'base_price' => 'required|numeric',
+            'inventory_tracking' => 'nullable|boolean',
+            'recipe' => 'nullable|array',
+            'recipe.*.ingredient_id' => 'nullable|integer|exists:ingredients,id',
+            'recipe.*.quantity' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
+            'recipe.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
+        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), $request->boolean('inventory_tracking'));
 
         DB::beginTransaction();
         try {
@@ -122,6 +134,7 @@ class FoodItemController extends Controller
                 'preparation_time' => $request->preparation_time,
                 'calories' => $request->calories,
                 'is_draft' => $request->is_draft ?? 0,
+                'inventory_tracking' => $request->boolean('inventory_tracking'),
                 'allergens' => $request->allergens ?? [],
                 'allergen_notes' => $request->allergen_notes,
                 'main_image' => $mainImageName,
@@ -161,6 +174,8 @@ class FoodItemController extends Controller
                 }
             }
 
+            $recipes->syncRecipe($foodItem, $recipeRows, $request->user()?->id);
+
             DB::commit();
             Log::info('New Food Item Published Successfully: ' . $foodItem->name . ' (ID: ' . $foodItem->id . ')');
 
@@ -178,14 +193,21 @@ class FoodItemController extends Controller
     public function edit($id)
     {
         try {
-            $foodItem = FoodItem::with(['addons', 'galleryImages'])->findOrFail($id);
+            $foodItem = FoodItem::with(['addons', 'galleryImages', 'activeRecipe.items.ingredient.baseUnit', 'activeRecipe.items.ingredient.unitConversions', 'activeRecipe.items.inputUnit', 'activeRecipe.items.packageConversion'])->findOrFail($id);
             $categories = FoodCategory::whereNull('parent_category_id')->where('status', 1)->get();
             $subCategories = FoodCategory::whereNotNull('parent_category_id')->where('status', 1)->get();
             $cuisines = CuisineType::where('status', 1)->get();
             $courseTypes = CourseType::where('status', 1)->get();
             $allergens = Allergen::where('status', 1)->get();
+            $inventoryIngredients = $this->inventoryIngredients();
+            $inventoryUnits = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
+            $recipeRows = $foodItem->activeRecipe?->items?->map(fn ($row) => [
+                'ingredient_id' => (int) $row->ingredient_id,
+                'quantity' => number_format((float) $row->input_quantity, 2, '.', ''),
+                'unit_choice' => $this->recipeUnitChoice($row),
+            ])->values()->all() ?? [];
 
-            return view('admin.food_item.edit', compact('foodItem', 'categories', 'subCategories', 'cuisines', 'courseTypes', 'allergens'));
+            return view('admin.food_item.edit', compact('foodItem', 'categories', 'subCategories', 'cuisines', 'courseTypes', 'allergens', 'inventoryIngredients', 'inventoryUnits', 'recipeRows'));
         } catch (Exception $e) {
             Log::error('Error loading Edit Food page for ID ('.$id.'): ' . $e->getMessage());
             return back()->with('error', 'Food item not found!');
@@ -195,13 +217,19 @@ class FoodItemController extends Controller
     /**
      * Update the specified Food Item in database.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, $id, RecipeService $recipes)
     {
         $request->validate([
             'name' => 'required|string|max:255',
             'food_category_id' => 'required',
             'base_price' => 'required|numeric',
+            'inventory_tracking' => 'nullable|boolean',
+            'recipe' => 'nullable|array',
+            'recipe.*.ingredient_id' => 'nullable|integer|exists:ingredients,id',
+            'recipe.*.quantity' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
+            'recipe.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
+        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), $request->boolean('inventory_tracking'));
 
         DB::beginTransaction();
         try {
@@ -246,6 +274,7 @@ class FoodItemController extends Controller
                 'is_dine_in' => $request->has('is_dine_in') ? 1 : 0,
                 'is_takeaway' => $request->has('is_takeaway') ? 1 : 0,
                 'is_draft' => $request->is_draft ?? 0,
+                'inventory_tracking' => $request->boolean('inventory_tracking'),
                 'active_days' => $request->active_days ?? [],
                 'start_time' => $request->start_time,
                 'end_time' => $request->end_time,
@@ -277,6 +306,8 @@ class FoodItemController extends Controller
                     ]);
                 }
             }
+
+            $recipes->syncRecipe($foodItem, $recipeRows, $request->user()?->id);
 
             DB::commit();
             Log::info('Food Item Updated Successfully: ' . $foodItem->name . ' (ID: ' . $foodItem->id . ')');
@@ -319,7 +350,10 @@ class FoodItemController extends Controller
                 'cuisineType',
                 'courseType',
                 'addons',
-                'galleryImages'
+                'galleryImages',
+                'activeRecipe.items.ingredient.baseUnit',
+                'activeRecipe.items.inputUnit',
+                'activeRecipe.items.packageConversion.unit'
             ])->findOrFail($id);
 
             return view('admin.food_item.show', compact('foodItem'));
@@ -364,4 +398,38 @@ class FoodItemController extends Controller
     }
 
    
+    private function inventoryIngredients()
+    {
+        return Ingredient::query()->active()->where('track_inventory', true)
+            ->with([
+                'baseUnit',
+                'unitConversions' => fn ($q) => $q->where('is_active', true)->where('recipe_allowed', true)->with('unit'),
+            ])
+            ->orderBy('name')->get();
+    }
+
+    private function recipeUnitChoice($row): string
+    {
+        if (!empty($row->package_conversion_id)) {
+            return 'c:' . (int) $row->package_conversion_id;
+        }
+
+        if ($row->inputUnit?->dimension !== Unit::DIMENSION_PACKAGE) {
+            return 'u:' . (int) $row->input_unit_id;
+        }
+
+        $input = (float) $row->input_quantity;
+        $base = (float) $row->base_quantity;
+        if ($input > 0) {
+            $factor = $base / $input;
+            $match = $row->ingredient?->unitConversions?->first(function ($conversion) use ($row, $factor) {
+                return (int) $conversion->unit_id === (int) $row->input_unit_id
+                    && abs((float) $conversion->factor_to_base - $factor) < 0.00000001;
+            });
+            if ($match) return 'c:' . (int) $match->id;
+        }
+
+        return 'u:' . (int) $row->input_unit_id;
+    }
+
 }

@@ -2,14 +2,13 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 
 class StockTransfer extends Model
 {
-    use HasFactory, BelongsToBranch;
+    use HasFactory;
 
     public const DIRECTION_MAIN_TO_KITCHEN = 'MAIN_TO_KITCHEN';
     public const DIRECTION_KITCHEN_TO_MAIN = 'KITCHEN_TO_MAIN';

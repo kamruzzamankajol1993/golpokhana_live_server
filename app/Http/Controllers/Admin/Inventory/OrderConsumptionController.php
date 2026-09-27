@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
 use App\Models\OrderInventoryConsumption;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class OrderConsumptionController extends Controller
@@ -13,10 +14,10 @@ class OrderConsumptionController extends Controller
         $this->middleware('permission:inventory-view');
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $consumptions = OrderInventoryConsumption::query()
-            ->with(['branch', 'order', 'creator'])
+            ->with(['order', 'creator'])
             ->withCount('items')
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
@@ -31,10 +32,11 @@ class OrderConsumptionController extends Controller
         return view('admin.inventory.consumptions.index', compact('consumptions'));
     }
 
-    public function show(OrderInventoryConsumption $consumption)
+    public function show(OrderInventoryConsumption $consumption, InventorySiteContext $site)
     {
+        $site->ensureDefaultLocations();
         $consumption->load([
-            'branch', 'order', 'creator',
+            'order', 'creator',
             'stockMovement.items.ingredient.baseUnit',
             'items.ingredient.baseUnit', 'items.foodItem', 'items.recipe',
         ]);

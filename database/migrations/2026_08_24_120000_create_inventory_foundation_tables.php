@@ -47,7 +47,6 @@ return new class extends Migration
                 $table->date('effective_from')->nullable();
                 $table->boolean('is_active')->default(true)->index();
                 $table->timestamps();
-
                 $table->unique(['ingredient_id', 'unit_id'], 'ingredient_unit_conversions_ingredient_unit_unique');
             });
         }
@@ -55,15 +54,12 @@ return new class extends Migration
         if (!Schema::hasTable('stock_locations')) {
             Schema::create('stock_locations', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
-                $table->string('code', 40);
+                $table->string('code', 40)->unique();
                 $table->string('name', 120);
                 $table->string('type', 30)->index();
                 $table->boolean('is_active')->default(true)->index();
                 $table->timestamps();
-
-                $table->unique(['branch_id', 'code'], 'stock_locations_branch_code_unique');
-                $table->index(['branch_id', 'type', 'is_active'], 'stock_locations_branch_type_active_idx');
+                $table->index(['type', 'is_active'], 'stock_locations_type_active_idx');
             });
         }
 
@@ -81,12 +77,8 @@ return new class extends Migration
 
     private function seedStandardUnits(): void
     {
-        if (!Schema::hasTable('units')) {
-            return;
-        }
-
         $now = now();
-        $units = [
+        foreach ([
             ['name' => 'Gram', 'symbol' => 'g', 'dimension' => 'WEIGHT', 'is_base' => 1, 'standard_to_base_factor' => '1.00000000'],
             ['name' => 'Kilogram', 'symbol' => 'kg', 'dimension' => 'WEIGHT', 'is_base' => 0, 'standard_to_base_factor' => '1000.00000000'],
             ['name' => 'Milliliter', 'symbol' => 'ml', 'dimension' => 'VOLUME', 'is_base' => 1, 'standard_to_base_factor' => '1.00000000'],
@@ -98,9 +90,7 @@ return new class extends Migration
             ['name' => 'Bag', 'symbol' => 'bag', 'dimension' => 'PACKAGE', 'is_base' => 0, 'standard_to_base_factor' => null],
             ['name' => 'Box', 'symbol' => 'box', 'dimension' => 'PACKAGE', 'is_base' => 0, 'standard_to_base_factor' => null],
             ['name' => 'Carton', 'symbol' => 'ctn', 'dimension' => 'PACKAGE', 'is_base' => 0, 'standard_to_base_factor' => null],
-        ];
-
-        foreach ($units as $unit) {
+        ] as $unit) {
             DB::table('units')->updateOrInsert(
                 ['name' => $unit['name']],
                 $unit + ['is_active' => 1, 'created_at' => $now, 'updated_at' => $now]
@@ -110,21 +100,15 @@ return new class extends Migration
 
     private function seedDefaultStockLocations(): void
     {
-        if (!Schema::hasTable('branches') || !Schema::hasTable('stock_locations')) {
-            return;
-        }
-
         $now = now();
-        foreach (DB::table('branches')->pluck('id') as $branchId) {
-            foreach ([
-                ['code' => 'MAIN', 'name' => 'Main Stock', 'type' => 'MAIN'],
-                ['code' => 'KITCHEN', 'name' => 'Kitchen Stock', 'type' => 'KITCHEN'],
-            ] as $location) {
-                DB::table('stock_locations')->updateOrInsert(
-                    ['branch_id' => (int) $branchId, 'code' => $location['code']],
-                    $location + ['branch_id' => (int) $branchId, 'is_active' => 1, 'created_at' => $now, 'updated_at' => $now]
-                );
-            }
+        foreach ([
+            ['code' => 'MAIN', 'name' => 'Main Stock', 'type' => 'MAIN'],
+            ['code' => 'KITCHEN', 'name' => 'Kitchen Stock', 'type' => 'KITCHEN'],
+        ] as $location) {
+            DB::table('stock_locations')->updateOrInsert(
+                ['code' => $location['code']],
+                $location + ['is_active' => 1, 'created_at' => $now, 'updated_at' => $now]
+            );
         }
     }
 };

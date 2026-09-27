@@ -1,14 +1,115 @@
 @extends('admin.master.master')
-@php $oldItems=old('items',[['ingredient_id'=>'','quantity'=>'','unit_choice'=>'']]); @endphp
-@section('title','Post Inventory Wastage')
+@php
+    $record = $wastage ?? null;
+    $isEdit = (bool) $record;
+    $defaultItems = $record
+        ? $record->items->map(fn($item) => [
+            'ingredient_id' => $item->ingredient_id,
+            'quantity' => rtrim(rtrim((string) $item->quantity, '0'), '.'),
+            'unit_choice' => $item->package_conversion_id ? 'c:'.$item->package_conversion_id : 'u:'.$item->unit_id,
+        ])->values()->all()
+        : [['ingredient_id'=>'','quantity'=>'','unit_choice'=>'']];
+    $oldItems = old('items', $defaultItems);
+    $kitchenActor = auth()->user()?->isKitchenUser() ?? false;
+    $inventoryActor = auth()->user()?->isInventoryManager() ?? false;
+    $fixedLocation = ($kitchenActor || $inventoryActor) ? $locations->first() : null;
+    $selectedLocation = old('location_id', $record?->location_id);
+@endphp
+@section('title', $isEdit ? 'Edit Wastage Draft' : 'Inventory Wastage')
 @section('body')
-@php $kitchenActor = auth()->user()?->isKitchenUser() ?? false; $kitchenLocation = $kitchenActor ? $locations->first() : null; @endphp
-<main class="progga-content"><div class="progga-page-header"><div><h1 class="progga-page-title">Post Wastage</h1><p class="text-muted mb-0">Wastage reduces only the selected branch stock location and creates immutable evidence in the ledger.</p></div><a href="{{ route('inventory.wastages.index') }}" class="progga-btn progga-btn-outline">Back</a></div>
-@if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-<form method="POST" action="{{ route('inventory.wastages.store') }}" onsubmit="return confirm('Post this wastage? Posted records cannot be edited directly.')">@csrf
-<div class="progga-card mb-4"><div class="p-4"><div class="row g-3"><div class="col-md-4"><label class="progga-form-label">Stock Location</label>@if($kitchenActor)<input type="hidden" id="wasteLocation" name="location_id" value="{{ $kitchenLocation?->id }}"><div class="progga-form-control bg-light">{{ $kitchenLocation?->name ?: 'Kitchen Stock' }} (KITCHEN)</div><small class="text-muted">Kitchen users can post wastage only from Kitchen Stock.</small>@else<select id="wasteLocation" name="location_id" class="progga-form-control" onchange="refreshWasteAvailable()" required><option value="">Select location</option>@foreach($locations as $location)<option value="{{ $location->id }}" @selected((string)old('location_id')===(string)$location->id)>{{ $location->name }} ({{ $location->type }})</option>@endforeach</select>@endif</div><div class="col-md-4"><label class="progga-form-label">Reason</label><select name="reason_code" class="progga-form-control" required><option value="">Select reason</option>@foreach($reasons as $reason)<option value="{{ $reason }}" @selected(old('reason_code')===$reason)>{{ ucfirst(strtolower($reason)) }}</option>@endforeach</select></div><div class="col-md-4"><label class="progga-form-label">Notes</label><input name="notes" value="{{ old('notes') }}" class="progga-form-control" placeholder="Required for Other"></div></div></div></div>
-<div class="progga-card mb-4"><div class="progga-card-header d-flex justify-content-between"><div><strong>Wastage Items</strong><div class="small text-muted">Available stock is informational; the server validates again under lock.</div></div><button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addWasteRow()">Add Item</button></div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th style="width:160px">Available</th><th style="width:170px">Quantity</th><th style="width:220px">Unit</th><th style="width:60px"></th></tr></thead><tbody id="wasteRows">@foreach($oldItems as $idx=>$row)<tr class="waste-row"><td><select name="items[{{ $idx }}][ingredient_id]" class="progga-form-control waste-ingredient" onchange="filterWasteUnits(this);refreshWasteAvailable()" required><option value="">Select ingredient</option>@foreach($ingredients as $ingredient)<option value="{{ $ingredient->id }}" data-dimension="{{ $ingredient->measurement_dimension }}" data-packages="{{ $ingredient->unitConversions->pluck('unit_id')->implode(',') }}" data-base="{{ $ingredient->baseUnit?->symbol }}" @selected((string)($row['ingredient_id']??'')===(string)$ingredient->id)>{{ $ingredient->name }} ({{ $ingredient->baseUnit?->symbol }})</option>@endforeach</select></td><td class="waste-available text-muted">—</td><td><input type="number" step="0.00000001" min="0.00000001" name="items[{{ $idx }}][quantity]" value="{{ $row['quantity']??'' }}" class="progga-form-control" required></td><td><select name="items[{{ $idx }}][unit_choice]" class="progga-form-control waste-unit" data-selected="{{ $row['unit_choice']??'' }}" required><option value="">Select ingredient first</option></select></td><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeWasteRow(this)"><i class="bi bi-trash"></i></button></td></tr>@endforeach</tbody></table></div></div>
-<div class="d-flex justify-content-end"><button class="progga-btn progga-btn-primary">Post Wastage</button></div></form></main>
+<main class="progga-content">
+    <div class="progga-page-header">
+        <div>
+            <h1 class="progga-page-title">{{ $isEdit ? 'Edit Wastage Draft' : 'New Wastage' }}</h1>
+            <p class="text-muted mb-0">Save as draft to edit/delete later, or post now to reduce stock and lock the transaction in the ledger.</p>
+        </div>
+        <a href="{{ route('inventory.wastages.index') }}" class="progga-btn progga-btn-outline">Back</a>
+    </div>
+
+    @if($errors->any())
+        <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+    @endif
+
+    <form method="POST" action="{{ $isEdit ? route('inventory.wastages.update', $record) : route('inventory.wastages.store') }}">
+        @csrf
+        @if($isEdit) @method('PUT') @endif
+
+        <div class="progga-card mb-4">
+            <div class="p-4">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="progga-form-label">Stock Location</label>
+                        @if($fixedLocation)
+                            <input type="hidden" id="wasteLocation" name="location_id" value="{{ $fixedLocation?->id }}">
+                            <div class="progga-form-control bg-light">{{ $fixedLocation?->name ?: ($kitchenActor ? 'Kitchen Stock' : 'Main Stock') }} ({{ $fixedLocation?->type }})</div>
+                            <small class="text-muted">
+                                {{ $kitchenActor ? 'Kitchen user can record wastage only from Kitchen Stock.' : 'Inventory Manager can record wastage only from Main Stock.' }}
+                            </small>
+                        @else
+                            <select id="wasteLocation" name="location_id" class="progga-form-control" onchange="refreshWasteAvailable()" required>
+                                <option value="">Select location</option>
+                                @foreach($locations as $location)
+                                    <option value="{{ $location->id }}" @selected((string)$selectedLocation===(string)$location->id)>{{ $location->name }} ({{ $location->type }})</option>
+                                @endforeach
+                            </select>
+                        @endif
+                    </div>
+                    <div class="col-md-4">
+                        <label class="progga-form-label">Reason</label>
+                        <select name="reason_code" class="progga-form-control" required>
+                            <option value="">Select reason</option>
+                            @foreach($reasons as $reason)
+                                <option value="{{ $reason }}" @selected(old('reason_code', $record?->reason_code)===$reason)>{{ ucfirst(strtolower($reason)) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="progga-form-label">Notes</label>
+                        <input name="notes" value="{{ old('notes', $record?->notes) }}" class="progga-form-control" placeholder="Required for Other">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="progga-card mb-4">
+            <div class="progga-card-header d-flex justify-content-between">
+                <div>
+                    <strong>Wastage Items</strong>
+                    <div class="small text-muted">Available stock is informational; stock is reduced only when you Post Wastage.</div>
+                </div>
+                <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addWasteRow()">Add Item</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Ingredient</th><th style="width:160px">Available</th><th style="width:170px">Quantity</th><th style="width:220px">Unit</th><th style="width:60px"></th></tr></thead>
+                    <tbody id="wasteRows">
+                    @foreach($oldItems as $idx=>$row)
+                        <tr class="waste-row">
+                            <td>
+                                <select name="items[{{ $idx }}][ingredient_id]" class="progga-form-control waste-ingredient" onchange="filterWasteUnits(this);refreshWasteAvailable()" required>
+                                    <option value="">Select ingredient</option>
+                                    @foreach($ingredients as $ingredient)
+                                        <option value="{{ $ingredient->id }}" data-dimension="{{ $ingredient->measurement_dimension }}" data-packages="{{ $ingredient->unitConversions->pluck('unit_id')->implode(',') }}" data-base="{{ $ingredient->baseUnit?->symbol }}" @selected((string)($row['ingredient_id']??'')===(string)$ingredient->id)>{{ $ingredient->name }} ({{ $ingredient->baseUnit?->symbol }})</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td class="waste-available text-muted">—</td>
+                            <td><input type="number" step="0.00000001" min="0.00000001" name="items[{{ $idx }}][quantity]" value="{{ $row['quantity']??'' }}" class="progga-form-control" required></td>
+                            <td><select name="items[{{ $idx }}][unit_choice]" class="progga-form-control waste-unit" data-selected="{{ $row['unit_choice']??'' }}" required><option value="">Select ingredient first</option></select></td>
+                            <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeWasteRow(this)"><i class="bi bi-trash"></i></button></td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+            <button type="submit" name="action" value="draft" class="progga-btn progga-btn-secondary">Save Draft</button>
+            <button type="submit" name="action" value="post" class="progga-btn progga-btn-primary" onclick="return confirm('Post this wastage? After posting, stock will be reduced and the record cannot be edited or deleted directly.')">Post Wastage</button>
+        </div>
+    </form>
+</main>
 @endsection
 @section('script')
 <script>

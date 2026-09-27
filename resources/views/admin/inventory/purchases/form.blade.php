@@ -14,7 +14,6 @@
             return ['ingredient_id'=>$i->ingredient_id,'quantity'=>(string)$i->quantity,'unit_choice'=>$choice,'unit_price'=>(string)(str_starts_with($choice, 'c:') ? $i->unit_price : $i->line_total)];
         })->values()->all() : [['ingredient_id'=>'','quantity'=>'','unit_choice'=>'','unit_price'=>'']];
     }
-    $selectedBranch = old('branch_id', $isEdit ? $purchase->branch_id : $currentBranchId);
 @endphp
 <main class="progga-content">
     <div class="progga-page-header">
@@ -27,18 +26,7 @@
         @csrf @if($isEdit) @method('PUT') @endif
         <input type="hidden" name="submit_action" id="purchaseSubmitAction" value="draft">
         <div class="progga-card mb-4"><div class="p-4"><div class="row g-3">
-            @if(auth()->user()?->isSuperAdmin())
-            <div class="col-md-3"><label class="progga-form-label">Branch <span class="progga-required">*</span></label>
-                @if($isEdit)
-                    <select class="progga-form-control" disabled>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected((int)$selectedBranch===(int)$branch->id)>{{ $branch->name }}</option>@endforeach</select><input type="hidden" name="branch_id" value="{{ $purchase->branch_id }}">
-                @else
-                    <select name="branch_id" class="progga-form-control" required><option value="">Select branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected((int)$selectedBranch===(int)$branch->id)>{{ $branch->name }}</option>@endforeach</select>
-                @endif
-            </div>
-            @else
-                <input type="hidden" name="branch_id" value="{{ $selectedBranch }}">
-            @endif
-            <div class="col-md-{{ auth()->user()?->isSuperAdmin() ? '3' : '4' }}"><label class="progga-form-label">Vendor <span class="progga-required">*</span></label><select name="vendor_id" class="progga-form-control" required><option value="">Select vendor</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}" @selected((string)old('vendor_id',$purchase->vendor_id)===(string)$vendor->id)>{{ $vendor->name }}</option>@endforeach</select>@can('inventory-vendors-manage')<small><a href="{{ route('inventory.vendors.create') }}">Add vendor</a></small>@endcan</div>
+            <div class="col-md-4"><label class="progga-form-label">Vendor <span class="progga-required">*</span></label><select name="vendor_id" class="progga-form-control" required><option value="">Select vendor</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}" @selected((string)old('vendor_id',$purchase->vendor_id)===(string)$vendor->id)>{{ $vendor->name }}</option>@endforeach</select>@can('inventory-vendors-manage')<small><a href="{{ route('inventory.vendors.create') }}">Add vendor</a></small>@endcan</div>
             <div class="col-md-3"><label class="progga-form-label">Purchase Date <span class="progga-required">*</span></label><input type="text" name="purchase_date" value="{{ old('purchase_date',$isEdit ? optional($purchase->purchase_date)->format('Y-m-d') : now()->format('Y-m-d')) }}" class="progga-form-control progga-datepicker" required></div>
             <div class="col-md-3"><label class="progga-form-label">Invoice No.</label><input name="invoice_no" value="{{ old('invoice_no',$purchase->invoice_no) }}" class="progga-form-control"></div>
             <div class="col-md-3"><label class="progga-form-label">Reference</label><input name="reference_no" value="{{ old('reference_no',$purchase->reference_no) }}" class="progga-form-control"></div>

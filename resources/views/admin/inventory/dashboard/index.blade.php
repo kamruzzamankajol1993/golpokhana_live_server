@@ -49,20 +49,20 @@
         <div class="col-xl-6">
             <div class="progga-card h-100">
                 <div class="progga-card-header"><div><strong>Low / Negative Stock</strong><div class="small text-muted">Lowest balances that need attention.</div></div><a href="{{ route('inventory.stock.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">View Stock</a></div>
-                <div class="progga-table-wrapper" style="border:none;border-radius:0;"><table class="progga-table"><thead><tr>@if($showBranchColumn)<th>Branch</th>@endif<th>Location</th><th>Ingredient</th><th class="text-end">Current</th><th class="text-end">Low Level</th></tr></thead><tbody>
+                <div class="progga-table-wrapper" style="border:none;border-radius:0;"><table class="progga-table"><thead><tr><th>Location</th><th>Ingredient</th><th class="text-end">Current</th><th class="text-end">Low Level</th></tr></thead><tbody>
                     @forelse($lowStocks as $row)
-                    <tr>@if($showBranchColumn)<td>{{ $row->branch_name ?? '—' }}</td>@endif<td>{{ $row->location_name }}</td><td><strong>{{ $row->ingredient_name }}</strong></td><td class="text-end {{ (float)$row->quantity_base < 0 ? 'text-danger fw-bold' : '' }}">{{ number_format((float)$row->quantity_base,2) }} {{ $row->unit_symbol }}</td><td class="text-end">{{ number_format((float)$row->low_stock_level_base,2) }} {{ $row->unit_symbol }}</td></tr>
-                    @empty<tr><td colspan="{{ $showBranchColumn ? 5 : 4 }}" class="text-center text-muted py-4">No low or negative stock rows.</td></tr>@endforelse
+                    <tr><td>{{ $row->location_name }}</td><td><strong>{{ $row->ingredient_name }}</strong></td><td class="text-end {{ (float)$row->quantity_base < 0 ? 'text-danger fw-bold' : '' }}">{{ number_format((float)$row->quantity_base,2) }} {{ $row->unit_symbol }}</td><td class="text-end">{{ number_format((float)$row->low_stock_level_base,2) }} {{ $row->unit_symbol }}</td></tr>
+                    @empty<tr><td colspan="4" class="text-center text-muted py-4">No low or negative stock rows.</td></tr>@endforelse
                 </tbody></table></div>
             </div>
         </div>
         <div class="col-xl-6">
             <div class="progga-card h-100">
                 <div class="progga-card-header"><div><strong>Recent Stock Movements</strong><div class="small text-muted">Latest immutable ledger postings.</div></div><a href="{{ route('inventory.ledger.index') }}" class="progga-btn progga-btn-outline progga-btn-sm">View Ledger</a></div>
-                <div class="progga-table-wrapper" style="border:none;border-radius:0;"><table class="progga-table"><thead><tr>@if($showBranchColumn)<th>Branch</th>@endif<th>Movement</th><th>Flow</th><th>When</th></tr></thead><tbody>
+                <div class="progga-table-wrapper" style="border:none;border-radius:0;"><table class="progga-table"><thead><tr><th>Movement</th><th>Flow</th><th>When</th></tr></thead><tbody>
                     @forelse($recentMovements as $movement)
-                    <tr>@if($showBranchColumn)<td>{{ $movement->branch?->name ?? '—' }}</td>@endif<td><strong>{{ $movement->movement_no }}</strong><div class="small text-muted">{{ str_replace('_',' ',$movement->movement_type) }}</div></td><td>{{ $movement->sourceLocation?->name ?: 'External' }} → {{ $movement->destinationLocation?->name ?: 'External' }}</td><td>{{ $movement->occurred_at?->format('d M Y h:i A') ?: '—' }}</td></tr>
-                    @empty<tr><td colspan="{{ $showBranchColumn ? 4 : 3 }}" class="text-center text-muted py-4">No posted movement yet.</td></tr>@endforelse
+                    <tr><td><strong>{{ $movement->movement_no }}</strong><div class="small text-muted">{{ str_replace('_',' ',$movement->movement_type) }}</div></td><td>{{ $movement->sourceLocation?->name ?: 'External' }} → {{ $movement->destinationLocation?->name ?: 'External' }}</td><td>{{ $movement->occurred_at?->format('d M Y h:i A') ?: '—' }}</td></tr>
+                    @empty<tr><td colspan="3" class="text-center text-muted py-4">No posted movement yet.</td></tr>@endforelse
                 </tbody></table></div>
             </div>
         </div>

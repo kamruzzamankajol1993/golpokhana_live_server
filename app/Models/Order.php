@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class Order extends Model
 {
@@ -45,6 +47,15 @@ class Order extends Model
             } else {
                 // যদি এটিই প্রথম অর্ডার হয় অথবা আগের নাম্বার starting_number এর চেয়ে ছোট হয়
                 $order->order_number = $startingNumber;
+            }
+        });
+
+        static::deleting(function (Order $order): void {
+            if (Schema::hasTable('order_inventory_consumptions')
+                && OrderInventoryConsumption::query()->where('order_id', $order->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'order' => 'An order with posted inventory consumption cannot be hard deleted. Use the inventory reconciliation workflow first.',
+                ]);
             }
         });
     }
@@ -169,6 +180,11 @@ class Order extends Model
     public function review()
     {
         return $this->hasOne(Review::class);
+    }
+
+    public function inventoryConsumption()
+    {
+        return $this->hasOne(OrderInventoryConsumption::class);
     }
 
     public function duePayments()

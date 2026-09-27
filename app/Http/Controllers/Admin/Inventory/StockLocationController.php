@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
 use App\Models\StockLocation;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class StockLocationController extends Controller
@@ -13,15 +14,13 @@ class StockLocationController extends Controller
         $this->middleware('permission:inventory-view');
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $locations = StockLocation::query()
-            ->with('branch')
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(fn ($q) => $q->where('name', 'like', $search)->orWhere('code', 'like', $search));
             })
-            ->orderBy('branch_id')
             ->orderByRaw("CASE type WHEN 'MAIN' THEN 1 WHEN 'KITCHEN' THEN 2 ELSE 3 END")
             ->paginate(30)
             ->appends($request->query());

@@ -30,7 +30,6 @@
         <tr>
             <td style="width:62%">
                 <div class="brand">{{ $restaurant?->name ?: 'Restaurant' }}</div>
-                @if($branch)<div><strong>{{ $branch->name }}</strong></div>@endif
                 @if($restaurant?->address)<div class="muted">{{ $restaurant->address }}</div>@endif
                 @if($restaurant?->phone)<div class="muted">Phone: {{ $restaurant->phone }}</div>@endif
                 @if($restaurant?->email)<div class="muted">{{ $restaurant->email }}</div>@endif

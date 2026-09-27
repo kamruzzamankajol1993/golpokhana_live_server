@@ -107,6 +107,7 @@ class SettingController extends Controller
         $data['dine_in_waiter_required'] = $request->has('dine_in_waiter_required');
         $data['opening_balance_enabled'] = $request->has('opening_balance_enabled');
         $data['final_payment_depends_on_kitchen_status'] = $request->has('final_payment_depends_on_kitchen_status');
+        $data['deduct_inventory_on_order_complete'] = $request->has('deduct_inventory_on_order_complete');
 
         if ($this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {
             $request->validate([

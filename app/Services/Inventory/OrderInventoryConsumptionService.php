@@ -7,7 +7,6 @@ use App\Models\InventoryException;
 use App\Models\MenuItemRecipe;
 use App\Models\Order;
 use App\Models\OrderInventoryConsumption;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +17,8 @@ class OrderInventoryConsumptionService
     public function __construct(
         private StockMovementService $movements,
         private StockLocationService $locations,
-        private DecimalQuantity $decimal
+        private DecimalQuantity $decimal,
+        private InventorySiteContext $site
     ) {
     }
 
@@ -42,7 +42,7 @@ class OrderInventoryConsumptionService
                 ->firstOrFail();
 
             $existing = OrderInventoryConsumption::query()
-                ->withoutGlobalScope(BranchScope::class)
+                
                 ->where('order_id', $lockedOrder->id)
                 ->with($this->relations())
                 ->first();
@@ -51,12 +51,8 @@ class OrderInventoryConsumptionService
                 return $existing;
             }
 
-            $branchId = (int) $lockedOrder->branch_id;
-            if ($branchId < 1) {
-                throw ValidationException::withMessages(['branch_id' => 'Order inventory consumption requires a valid order branch.']);
-            }
-
-            $kitchen = $this->locations->forBranchAndType($branchId, StockLocation::TYPE_KITCHEN);
+            $this->site->ensureDefaultLocations();
+            $kitchen = $this->locations->forType(StockLocation::TYPE_KITCHEN);
             $orderItems = $lockedOrder->orderDetails()
                 ->with(['foodItem' => fn ($q) => $q->withoutGlobalScopes()])
                 ->orderBy('id')
@@ -78,7 +74,7 @@ class OrderInventoryConsumptionService
                 }
 
                 $food = $orderItem->foodItem;
-                if (!$food || (int) $food->branch_id !== $branchId || !$food->inventory_tracking) {
+                if (!$food || !$food->inventory_tracking) {
                     continue;
                 }
 
@@ -118,7 +114,6 @@ class OrderInventoryConsumptionService
             if ($movementTotals !== []) {
                 ksort($movementTotals, SORT_NUMERIC);
                 $movement = $this->movements->post(
-                    $branchId,
                     StockMovement::ORDER_CONSUMPTION,
                     array_map(
                         fn ($ingredientId, $quantity) => [
@@ -140,9 +135,8 @@ class OrderInventoryConsumptionService
             }
 
             $consumption = OrderInventoryConsumption::query()
-                ->withoutGlobalScope(BranchScope::class)
+                
                 ->create([
-                    'branch_id' => $branchId,
                     'order_id' => $lockedOrder->id,
                     'trigger_source' => $triggerSource,
                     'consumed_at' => now(),
@@ -155,8 +149,7 @@ class OrderInventoryConsumptionService
             }
 
             foreach ($missingRecipeMenuIds as $menuId => $menuName) {
-                InventoryException::query()->withoutGlobalScope(BranchScope::class)->create([
-                    'branch_id' => $branchId,
+                InventoryException::query()->create([
                     'exception_type' => InventoryException::MISSING_RECIPE,
                     'reference_type' => OrderInventoryConsumption::class,
                     'reference_id' => $consumption->id,
@@ -173,9 +166,8 @@ class OrderInventoryConsumptionService
                 foreach ($movement->items as $movementItem) {
                     $after = (string) ($movementItem->source_after ?? '0');
                     if ($this->decimal->compare($after, '0') < 0) {
-                        InventoryException::query()->withoutGlobalScope(BranchScope::class)->create([
-                            'branch_id' => $branchId,
-                            'exception_type' => InventoryException::NEGATIVE_KITCHEN_STOCK,
+                        InventoryException::query()->create([
+                                    'exception_type' => InventoryException::NEGATIVE_KITCHEN_STOCK,
                             'reference_type' => OrderInventoryConsumption::class,
                             'reference_id' => $consumption->id,
                             'ingredient_id' => (int) $movementItem->ingredient_id,
@@ -190,6 +182,166 @@ class OrderInventoryConsumptionService
 
             return $consumption->fresh($this->relations());
         }, 5);
+    }
+
+    /**
+     * Temporarily reconcile an already-consumed order before its item lines are edited.
+     *
+     * The original ORDER_CONSUMPTION stock movement is never mutated or deleted. Instead,
+     * a REVERSAL movement restores the previously consumed Kitchen Stock, then the current
+     * consumption snapshot is removed with direct DB queries so OrderDetail model guards
+     * allow the edit inside the caller's transaction. finishOrderEditReconciliation()
+     * creates a fresh snapshot for the edited order.
+     *
+     * If the order has not consumed inventory yet, no reconciliation is needed and null is
+     * returned.
+     */
+    public function beginOrderEditReconciliation(Order|int $order, ?int $userId = null): ?array
+    {
+        $orderId = $order instanceof Order ? (int) $order->id : (int) $order;
+
+        // Keep lock ordering consistent with consumeOrderInventory(): order first,
+        // then its consumption snapshot. This avoids a potential cross-transaction deadlock.
+        /** @var Order $lockedOrder */
+        $lockedOrder = Order::query()
+            ->withoutGlobalScopes()
+            ->whereKey($orderId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        /** @var OrderInventoryConsumption|null $consumption */
+        $consumption = OrderInventoryConsumption::query()
+            
+            ->where('order_id', $orderId)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$consumption) {
+            return null;
+        }
+
+        $this->site->ensureDefaultLocations();
+
+        $triggerSource = (string) $consumption->trigger_source;
+        if (!in_array($triggerSource, [
+            OrderInventoryConsumption::TRIGGER_KITCHEN_COMPLETE,
+            OrderInventoryConsumption::TRIGGER_PAYMENT_COMPLETE,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'trigger_source' => 'The existing inventory consumption has an unsupported trigger source.',
+            ]);
+        }
+
+        $reversalMovementId = null;
+        $originalMovementId = $consumption->stock_movement_id ? (int) $consumption->stock_movement_id : null;
+
+        if ($originalMovementId) {
+            /** @var StockMovement|null $originalMovement */
+            $originalMovement = StockMovement::query()
+                
+                ->whereKey($originalMovementId)
+                ->with('items')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$originalMovement
+                || $originalMovement->movement_type !== StockMovement::ORDER_CONSUMPTION
+                || !$originalMovement->source_location_id) {
+                throw ValidationException::withMessages([
+                    'inventory' => 'The existing order inventory movement is invalid and cannot be reconciled safely.',
+                ]);
+            }
+
+            $restoreTotals = [];
+            foreach ($originalMovement->items as $movementItem) {
+                $ingredientId = (int) $movementItem->ingredient_id;
+                $quantity = $this->decimal->normalize((string) $movementItem->quantity_base);
+                if ($ingredientId < 1 || !$this->decimal->isPositive($quantity)) {
+                    continue;
+                }
+
+                $restoreTotals[$ingredientId] = isset($restoreTotals[$ingredientId])
+                    ? $this->decimal->add($restoreTotals[$ingredientId], $quantity)
+                    : $quantity;
+            }
+
+            if ($restoreTotals !== []) {
+                ksort($restoreTotals, SORT_NUMERIC);
+                $reversal = $this->movements->post(
+                    StockMovement::REVERSAL,
+                    array_map(
+                        fn ($ingredientId, $quantity) => [
+                            'ingredient_id' => (int) $ingredientId,
+                            'quantity_base' => $quantity,
+                        ],
+                        array_keys($restoreTotals),
+                        array_values($restoreTotals)
+                    ),
+                    null,
+                    (int) $originalMovement->source_location_id,
+                    [
+                        'reference_type' => StockMovement::class,
+                        'reference_id' => $originalMovement->id,
+                        'performed_by' => $userId,
+                        'reason' => "Order {$lockedOrder->order_number} inventory edit reconciliation reversal",
+                    ]
+                );
+                $reversalMovementId = (int) $reversal->id;
+            }
+        }
+
+        // The consumption model is intentionally immutable. This controlled workflow uses
+        // direct DB deletes only for the superseded snapshot; the posted stock ledger stays
+        // auditable through the original ORDER_CONSUMPTION + REVERSAL movements.
+        DB::table('inventory_exceptions')
+            ->where('reference_type', OrderInventoryConsumption::class)
+            ->where('reference_id', $consumption->id)
+            ->delete();
+
+        DB::table('order_inventory_consumption_items')
+            ->where('order_inventory_consumption_id', $consumption->id)
+            ->delete();
+
+        DB::table('order_inventory_consumptions')
+            ->where('id', $consumption->id)
+            ->delete();
+
+        return [
+            'order_id' => $orderId,
+            'trigger_source' => $triggerSource,
+            'original_consumption_id' => (int) $consumption->id,
+            'original_stock_movement_id' => $originalMovementId,
+            'reversal_stock_movement_id' => $reversalMovementId,
+        ];
+    }
+
+    /**
+     * Rebuild the inventory-consumption snapshot after an order edit reconciliation.
+     */
+    public function finishOrderEditReconciliation(
+        Order|int $order,
+        array $reconciliation,
+        ?int $userId = null
+    ): OrderInventoryConsumption {
+        $orderId = $order instanceof Order ? (int) $order->id : (int) $order;
+
+        if ((int) ($reconciliation['order_id'] ?? 0) !== $orderId) {
+            throw ValidationException::withMessages([
+                'order_id' => 'Inventory reconciliation does not belong to this order.',
+            ]);
+        }
+
+        $triggerSource = (string) ($reconciliation['trigger_source'] ?? '');
+        if (!in_array($triggerSource, [
+            OrderInventoryConsumption::TRIGGER_KITCHEN_COMPLETE,
+            OrderInventoryConsumption::TRIGGER_PAYMENT_COMPLETE,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'trigger_source' => 'Inventory reconciliation has an invalid trigger source.',
+            ]);
+        }
+
+        return $this->consumeOrderInventory($orderId, $triggerSource, $userId);
     }
 
     private function recipeForOrderItem(FoodItem $food, $orderedAt): ?MenuItemRecipe

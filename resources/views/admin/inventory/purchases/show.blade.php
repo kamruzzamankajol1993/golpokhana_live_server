@@ -3,7 +3,7 @@
 @section('body')
 <main class="progga-content">
     <div class="progga-page-header">
-        <div><h1 class="progga-page-title">{{ $purchase->purchase_no }}</h1><p class="text-muted mb-0">{{ $purchase->branch?->name }} · {{ $purchase->vendor?->name }} · {{ optional($purchase->purchase_date)->format('d M Y') }}</p></div>
+        <div><h1 class="progga-page-title">{{ $purchase->purchase_no }}</h1><p class="text-muted mb-0">{{ $purchase->vendor?->name }} · {{ optional($purchase->purchase_date)->format('d M Y') }}</p></div>
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ route('inventory.purchases.index') }}" class="progga-btn progga-btn-outline">Back</a>
             <a href="{{ route('inventory.purchases.invoice-pdf',$purchase) }}" class="progga-btn progga-btn-outline" title="Download Purchase Invoice PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
@@ -13,7 +13,7 @@
             @if($purchase->isEditable())
                 @can('inventory-purchase-create')
                 <a href="{{ route('inventory.purchases.edit',$purchase) }}" class="progga-btn progga-btn-outline progga-btn-icon" title="Edit Draft"><i class="bi bi-pencil"></i></a>
-                <form method="POST" action="{{ route('inventory.purchases.destroy',$purchase) }}" class="d-inline">@csrf @method('DELETE')<input type="hidden" name="branch_id" value="{{ $purchase->branch_id }}"><button type="button" class="progga-btn progga-btn-danger progga-btn-icon" title="Delete Draft" onclick="confirmPurchaseDeleteShow(this)"><i class="bi bi-trash"></i></button></form>
+                <form method="POST" action="{{ route('inventory.purchases.destroy',$purchase) }}" class="d-inline">@csrf @method('DELETE')<button type="button" class="progga-btn progga-btn-danger progga-btn-icon" title="Delete Draft" onclick="confirmPurchaseDeleteShow(this)"><i class="bi bi-trash"></i></button></form>
                 @endcan
             @endif
         </div>
@@ -45,7 +45,7 @@
 
     @if($purchase->isEditable())
         @can('inventory-purchase-receive')
-        <div class="progga-card"><div class="p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3"><div><strong>Receive / Post Purchase</strong><div class="text-muted small">This is the stock-affecting action. It will atomically add the saved base quantities to this branch Main Stock and create one PURCHASE_RECEIVE ledger movement.</div></div><form method="POST" action="{{ route('inventory.purchases.receive',$purchase) }}">@csrf<input type="hidden" name="branch_id" value="{{ $purchase->branch_id }}"><button type="button" class="progga-btn progga-btn-primary" onclick="confirmPurchaseReceiveShow(this)"><i class="bi bi-box-arrow-in-down"></i> Receive / Post</button></form></div></div>
+        <div class="progga-card"><div class="p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3"><div><strong>Receive / Post Purchase</strong><div class="text-muted small">This is the stock-affecting action. It will atomically add the saved base quantities to Main Stock and create one PURCHASE_RECEIVE ledger movement.</div></div><form method="POST" action="{{ route('inventory.purchases.receive',$purchase) }}">@csrf<button type="button" class="progga-btn progga-btn-primary" onclick="confirmPurchaseReceiveShow(this)"><i class="bi bi-box-arrow-in-down"></i> Receive / Post</button></form></div></div>
         @endcan
     @else
         <div class="alert alert-success">Received {{ optional($purchase->received_at)->format('d M Y h:i A') }}. Ledger movement: {{ $purchase->receivedMovement?->movement_no ?: '—' }}.</div>

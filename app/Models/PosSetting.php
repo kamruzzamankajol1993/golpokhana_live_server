@@ -22,6 +22,7 @@ class PosSetting extends Model
         'complimentary_note_required'          => 'boolean',
         'dine_in_waiter_required'              => 'boolean',
         'opening_balance_enabled'                => 'boolean',
+        'deduct_inventory_on_order_complete'       => 'boolean',
         'order_list_random_half_enabled'    => 'boolean',
         'random_half_order_button_visible'  => 'boolean',
         'random_order_hide_percentage'      => 'integer',

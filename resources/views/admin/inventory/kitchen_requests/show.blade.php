@@ -10,7 +10,7 @@
 @endphp
 <main class="progga-content">
     <div class="progga-page-header">
-        <div><h1 class="progga-page-title">{{ $kitchenRequest->request_no }}</h1><p class="text-muted mb-0">{{ $kitchenRequest->branch?->name }} · {{ $typeLabel }} · {{ optional($kitchenRequest->request_date)->format('d M Y') }}</p></div>
+        <div><h1 class="progga-page-title">{{ $kitchenRequest->request_no }}</h1><p class="text-muted mb-0">{{ $typeLabel }} · {{ optional($kitchenRequest->request_date)->format('d M Y') }}</p></div>
         <div class="d-flex gap-2 align-items-center">
             <a href="{{ route('inventory.kitchen-requests.index') }}" class="progga-btn progga-btn-outline">Back</a>
             @if($kitchenRequest->isEditable())
@@ -46,7 +46,7 @@
 
     @if($kitchenRequest->status==='DRAFT')
     @can('inventory-kitchen-request-create')
-    <div class="progga-card mb-4"><div class="p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3"><div><strong>Submit for Store Review</strong><div class="small text-muted">Submission freezes this request document. Stock is still unchanged.</div></div><div class="d-flex gap-2"><form method="POST" action="{{ route('inventory.kitchen-requests.cancel',$kitchenRequest) }}" onsubmit="return confirm('Cancel this draft request?')">@csrf<input type="hidden" name="branch_id" value="{{ $kitchenRequest->branch_id }}"><button class="progga-btn progga-btn-outline">Cancel Request</button></form><form method="POST" action="{{ route('inventory.kitchen-requests.submit',$kitchenRequest) }}">@csrf<input type="hidden" name="branch_id" value="{{ $kitchenRequest->branch_id }}"><button class="progga-btn progga-btn-primary"><i class="bi bi-send"></i> Submit Request</button></form></div></div></div>
+    <div class="progga-card mb-4"><div class="p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3"><div><strong>Submit for Store Review</strong><div class="small text-muted">Submission freezes this request document. Stock is still unchanged.</div></div><div class="d-flex gap-2"><form method="POST" action="{{ route('inventory.kitchen-requests.cancel',$kitchenRequest) }}" onsubmit="return confirm('Cancel this draft request?')">@csrf<button class="progga-btn progga-btn-outline">Cancel Request</button></form><form method="POST" action="{{ route('inventory.kitchen-requests.submit',$kitchenRequest) }}">@csrf<button class="progga-btn progga-btn-primary"><i class="bi bi-send"></i> Submit Request</button></form></div></div></div>
     @endcan
     @endif
 
@@ -56,7 +56,7 @@
     <div class="progga-card mb-4">
         <div class="progga-card-header"><strong>Store Issue / Post Main → Kitchen</strong><div class="small text-muted">Enter actual issue quantities. You may issue less than required. More than Main availability is blocked by default.</div></div>
         <form method="POST" action="{{ route('inventory.kitchen-requests.issue',$kitchenRequest) }}" onsubmit="return confirm('Post this stock issue? Main Stock will decrease and Kitchen Stock will increase atomically.')">
-            @csrf<input type="hidden" name="branch_id" value="{{ $kitchenRequest->branch_id }}"><input type="hidden" name="idempotency_key" value="{{ old('idempotency_key',(string)\Illuminate\Support\Str::uuid()) }}">
+            @csrf<input type="hidden" name="idempotency_key" value="{{ old('idempotency_key',(string)\Illuminate\Support\Str::uuid()) }}">
             <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th>Remaining (Base)</th><th>Available Main</th><th style="width:180px">Issue Qty</th><th style="width:220px">Unit</th></tr></thead><tbody>
             @foreach($kitchenRequest->ingredientItems as $item)
                 @if((float)$item->remaining_base > 0)
@@ -73,7 +73,7 @@
 
     @if(in_array($kitchenRequest->status,['SUBMITTED','PARTIALLY_ISSUED','FULLY_ISSUED'],true))
     @can('inventory-kitchen-request-review')
-    <div class="d-flex justify-content-end mb-4"><form method="POST" action="{{ route('inventory.kitchen-requests.close',$kitchenRequest) }}" onsubmit="return confirm('Close this request lifecycle? Further issues will be blocked.')">@csrf<input type="hidden" name="branch_id" value="{{ $kitchenRequest->branch_id }}"><button class="progga-btn progga-btn-outline">Close Request</button></form></div>
+    <div class="d-flex justify-content-end mb-4"><form method="POST" action="{{ route('inventory.kitchen-requests.close',$kitchenRequest) }}" onsubmit="return confirm('Close this request lifecycle? Further issues will be blocked.')">@csrf<button class="progga-btn progga-btn-outline">Close Request</button></form></div>
     @endcan
     @endif
 

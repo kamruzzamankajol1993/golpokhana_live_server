@@ -5,7 +5,6 @@ namespace App\Services\Inventory;
 use App\Models\Ingredient;
 use App\Models\KitchenRequest;
 use App\Models\KitchenRequestIngredientItem;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use App\Models\StockTransfer;
@@ -32,15 +31,13 @@ class StockTransferService
         ?int $userId = null,
         ?string $notes = null
     ): StockTransfer {
-        $branchId = (int) $request->branch_id;
-        if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+        if ($existing = $this->existingByKey($idempotencyKey)) {
             return $existing;
         }
 
         try {
-            return DB::transaction(function () use ($request, $rows, $idempotencyKey, $userId, $notes, $branchId) {
+            return DB::transaction(function () use ($request, $rows, $idempotencyKey, $userId, $notes) {
                 $request = KitchenRequest::query()
-                    ->withoutGlobalScope(BranchScope::class)
                     ->whereKey($request->id)
                     ->lockForUpdate()
                     ->firstOrFail();
@@ -107,7 +104,6 @@ class StockTransferService
                 }
 
                 $transfer = $this->createAndPost(
-                    $branchId,
                     $normalized,
                     $idempotencyKey,
                     $userId,
@@ -140,7 +136,7 @@ class StockTransferService
                 return $transfer->fresh($this->transferRelations());
             }, 5);
         } catch (QueryException $e) {
-            if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+            if ($existing = $this->existingByKey($idempotencyKey)) {
                 return $existing;
             }
             throw $e;
@@ -148,24 +144,23 @@ class StockTransferService
     }
 
     public function postDirect(
-        int $branchId,
         array $rows,
         string $idempotencyKey,
         ?int $userId = null,
         ?string $notes = null
     ): StockTransfer {
-        if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+        if ($existing = $this->existingByKey($idempotencyKey)) {
             return $existing;
         }
 
         $normalized = $this->normalizeDirectRows($rows);
         try {
-            return DB::transaction(function () use ($branchId, $normalized, $idempotencyKey, $userId, $notes) {
-                return $this->createAndPost($branchId, $normalized, $idempotencyKey, $userId, $notes, null)
+            return DB::transaction(function () use ($normalized, $idempotencyKey, $userId, $notes) {
+                return $this->createAndPost($normalized, $idempotencyKey, $userId, $notes, null)
                     ->fresh($this->transferRelations());
             }, 5);
         } catch (QueryException $e) {
-            if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+            if ($existing = $this->existingByKey($idempotencyKey)) {
                 return $existing;
             }
             throw $e;
@@ -173,14 +168,13 @@ class StockTransferService
     }
 
     public function postReturn(
-        int $branchId,
         array $rows,
         string $idempotencyKey,
         ?int $userId = null,
         ?string $notes = null,
         ?int $originalTransferId = null
     ): StockTransfer {
-        if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+        if ($existing = $this->existingByKey($idempotencyKey)) {
             return $existing;
         }
 
@@ -188,8 +182,6 @@ class StockTransferService
         $original = null;
         if ($originalTransferId) {
             $original = StockTransfer::query()
-                ->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)
                 ->whereKey($originalTransferId)
                 ->where('status', StockTransfer::STATUS_POSTED)
                 ->where('direction', StockTransfer::DIRECTION_MAIN_TO_KITCHEN)
@@ -197,13 +189,12 @@ class StockTransferService
         }
 
         try {
-            return DB::transaction(function () use ($branchId, $normalized, $idempotencyKey, $userId, $notes, $original) {
-                $main = $this->locations->forBranchAndType($branchId, StockLocation::TYPE_MAIN);
-                $kitchen = $this->locations->forBranchAndType($branchId, StockLocation::TYPE_KITCHEN);
+            return DB::transaction(function () use ($normalized, $idempotencyKey, $userId, $notes, $original) {
+                $main = $this->locations->forType(StockLocation::TYPE_MAIN);
+                $kitchen = $this->locations->forType(StockLocation::TYPE_KITCHEN);
 
-                $transfer = StockTransfer::query()->withoutGlobalScope(BranchScope::class)->create([
-                    'branch_id' => $branchId,
-                    'transfer_no' => $this->nextTransferNumber($branchId),
+                $transfer = StockTransfer::query()->create([
+                    'transfer_no' => $this->nextTransferNumber(),
                     'direction' => StockTransfer::DIRECTION_KITCHEN_TO_MAIN,
                     'kitchen_request_id' => $original?->kitchen_request_id,
                     'original_transfer_id' => $original?->id,
@@ -232,7 +223,6 @@ class StockTransferService
                 }
 
                 $movement = $this->movements->post(
-                    $branchId,
                     StockMovement::KITCHEN_TO_MAIN,
                     $movementItems,
                     (int) $kitchen->id,
@@ -254,7 +244,7 @@ class StockTransferService
                 return $transfer->fresh($this->transferRelations());
             }, 5);
         } catch (QueryException $e) {
-            if ($existing = $this->existingByKey($branchId, $idempotencyKey)) {
+            if ($existing = $this->existingByKey($idempotencyKey)) {
                 return $existing;
             }
             throw $e;
@@ -262,19 +252,17 @@ class StockTransferService
     }
 
     private function createAndPost(
-        int $branchId,
         array $items,
         string $idempotencyKey,
         ?int $userId,
         ?string $notes,
         ?KitchenRequest $request
     ): StockTransfer {
-        $main = $this->locations->forBranchAndType($branchId, StockLocation::TYPE_MAIN);
-        $kitchen = $this->locations->forBranchAndType($branchId, StockLocation::TYPE_KITCHEN);
+        $main = $this->locations->forType(StockLocation::TYPE_MAIN);
+        $kitchen = $this->locations->forType(StockLocation::TYPE_KITCHEN);
 
-        $transfer = StockTransfer::query()->withoutGlobalScope(BranchScope::class)->create([
-            'branch_id' => $branchId,
-            'transfer_no' => $this->nextTransferNumber($branchId),
+        $transfer = StockTransfer::query()->create([
+            'transfer_no' => $this->nextTransferNumber(),
             'direction' => StockTransfer::DIRECTION_MAIN_TO_KITCHEN,
             'kitchen_request_id' => $request?->id,
             'source_location_id' => $main->id,
@@ -302,7 +290,6 @@ class StockTransferService
         }
 
         $movement = $this->movements->post(
-            $branchId,
             StockMovement::MAIN_TO_KITCHEN,
             $movementItems,
             (int) $main->id,
@@ -374,23 +361,21 @@ class StockTransferService
         return $normalized;
     }
 
-    private function existingByKey(int $branchId, string $idempotencyKey): ?StockTransfer
+    private function existingByKey(string $idempotencyKey): ?StockTransfer
     {
         return StockTransfer::query()
-            ->withoutGlobalScope(BranchScope::class)
-            ->where('branch_id', $branchId)
             ->where('idempotency_key', $idempotencyKey)
             ->where('status', StockTransfer::STATUS_POSTED)
             ->with($this->transferRelations())
             ->first();
     }
 
-    private function nextTransferNumber(int $branchId): string
+    private function nextTransferNumber(): string
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
-            $number = 'TRF-' . $branchId . '-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
-            if (!StockTransfer::query()->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)->where('transfer_no', $number)->exists()) {
+            $number = 'TRF-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
+            if (!StockTransfer::query()
+                ->where('transfer_no', $number)->exists()) {
                 return $number;
             }
         }
@@ -401,7 +386,6 @@ class StockTransferService
     private function transferRelations(): array
     {
         return [
-            'branch',
             'kitchenRequest',
             'originalTransfer',
             'sourceLocation',

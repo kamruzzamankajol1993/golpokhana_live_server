@@ -3,16 +3,14 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
 use App\Models\Ingredient;
 use App\Models\InventoryBalance;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\Unit;
 use App\Services\Inventory\DecimalQuantity;
 use App\Services\Inventory\StockMovementService;
 use App\Services\Inventory\UnitConversionService;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
@@ -22,27 +20,25 @@ class StockController extends Controller
     {
         $this->middleware('permission:inventory-view|inventory-kitchen-stock-view')->only('index');
         $this->middleware('permission:inventory-adjustment-post')->only('storeOpeningStock');
-        $this->middleware(RequireSpecificBranch::class)->only('storeOpeningStock');
     }
 
-    public function index(Request $request, BranchContext $context, DecimalQuantity $decimal)
+    public function index(Request $request, InventorySiteContext $site, DecimalQuantity $decimal)
     {
         $kitchenOnly = (bool) $request->user()?->isKitchenUser();
 
-        $locations = StockLocation::query()->with('branch')->active()
+        $locations = StockLocation::query()->active()
             ->when($kitchenOnly, fn ($q) => $q->where('type', StockLocation::TYPE_KITCHEN))
-            ->orderBy('branch_id')->orderBy('type')->get();
+            ->orderBy('type')->get();
         $allowedLocationIds = $locations->pluck('id');
 
         $balances = InventoryBalance::query()
-            ->with(['branch', 'location', 'ingredient.baseUnit'])
+            ->with(['location', 'ingredient.baseUnit'])
             ->when($kitchenOnly, fn ($q) => $q->whereIn('stock_location_id', $allowedLocationIds))
             ->when(!$kitchenOnly && $request->filled('location_id'), fn ($q) => $q->where('stock_location_id', (int) $request->location_id))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->whereHas('ingredient', fn ($q) => $q->where('name', 'like', $search)->orWhere('code', 'like', $search));
             })
-            ->orderBy('branch_id')
             ->orderBy('stock_location_id')
             ->orderBy('ingredient_id')
             ->paginate(30)
@@ -68,19 +64,17 @@ class StockController extends Controller
             'locations' => $locations,
             'ingredients' => $ingredients,
             'allUnits' => $allUnits,
-            'specificBranch' => !$context->isAllBranches(),
             'kitchenOnly' => $kitchenOnly,
         ]);
     }
 
     public function storeOpeningStock(
         Request $request,
-        BranchContext $context,
+        InventorySiteContext $site,
         UnitConversionService $conversion,
         StockMovementService $movements
     ) {
         $data = $request->validate([
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'location_id' => ['required', 'integer', 'exists:stock_locations,id'],
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'quantity' => ['required', 'numeric', 'gt:0'],
@@ -88,14 +82,12 @@ class StockController extends Controller
             'reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $branchId = $context->requireSpecificBranch();
+        $site->ensureDefaultLocations();
         $location = StockLocation::query()
-            ->withoutGlobalScope(BranchScope::class)
-            ->where('branch_id', $branchId)
             ->whereKey((int) $data['location_id'])
             ->first();
         if (!$location) {
-            throw ValidationException::withMessages(['location_id' => 'The stock location does not belong to the selected branch.']);
+            throw ValidationException::withMessages(['location_id' => 'The stock location is not available.']);
         }
 
         $ingredient = Ingredient::query()->with('unitConversions')->findOrFail((int) $data['ingredient_id']);
@@ -109,7 +101,6 @@ class StockController extends Controller
         );
 
         $movements->postOpeningStock(
-            $branchId,
             (int) $location->id,
             (int) $ingredient->id,
             $baseQuantity,

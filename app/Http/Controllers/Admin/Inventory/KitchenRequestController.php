@@ -3,22 +3,18 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
-use App\Models\Branch;
 use App\Models\FoodItem;
 use App\Models\Ingredient;
 use App\Models\InventoryBalance;
 use App\Models\KitchenRequest;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\Unit;
 use App\Services\Inventory\DecimalQuantity;
 use App\Services\Inventory\KitchenRequestService;
 use App\Services\Inventory\StockLocationService;
 use App\Services\Inventory\StockTransferService;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class KitchenRequestController extends Controller
 {
@@ -28,15 +24,15 @@ class KitchenRequestController extends Controller
         $this->middleware('permission:inventory-kitchen-request-create')->only(['create', 'store', 'edit', 'update', 'destroy', 'submit', 'cancel']);
         $this->middleware('permission:inventory-kitchen-request-review')->only(['close', 'issue']);
         $this->middleware('permission:inventory-transfer-post')->only('issue');
-        $this->middleware(RequireSpecificBranch::class)->only(['store', 'update', 'destroy', 'submit', 'cancel', 'close', 'issue']);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $kitchenOnly = (bool) $request->user()?->isKitchenUser();
+        $site->ensureDefaultLocations();
         $requests = KitchenRequest::query()
             ->when($kitchenOnly, fn ($q) => $q->where('requested_by', $request->user()->id))
-            ->with(['branch', 'requester', 'reviewer'])
+            ->with(['requester', 'reviewer'])
             ->withCount(['foodItems', 'ingredientItems', 'transfers'])
             ->withCount(['ingredientItems as direct_ingredient_items_count' => fn ($q) => $q->whereIn('source_kind', ['DIRECT', 'MIXED'])])
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -59,18 +55,18 @@ class KitchenRequestController extends Controller
         ]);
     }
 
-    public function create(BranchContext $context)
+    public function create(InventorySiteContext $site)
     {
-        return view('admin.inventory.kitchen_requests.form', $this->formData($context) + [
+        return view('admin.inventory.kitchen_requests.form', $this->formData($site) + [
             'kitchenRequest' => new KitchenRequest(),
         ]);
     }
 
-    public function store(Request $request, BranchContext $context, KitchenRequestService $service)
+    public function store(Request $request, InventorySiteContext $site, KitchenRequestService $service)
     {
         $data = $this->validated($request);
-        $branchId = $context->requireSpecificBranch();
-        $kitchenRequest = $service->saveDraft($branchId, $data, null, $request->user()?->id);
+        $site->ensureDefaultLocations();
+        $kitchenRequest = $service->saveDraft($data, null, $request->user()?->id);
 
         return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
             ->with('success', 'Kitchen request saved as Draft. Submit it when ready for Store review.');
@@ -79,13 +75,14 @@ class KitchenRequestController extends Controller
     public function show(
         KitchenRequest $kitchenRequest,
         StockLocationService $locationService,
-        DecimalQuantity $decimal
+        DecimalQuantity $decimal,
+        InventorySiteContext $site
     ) {
+        $this->assertSiteRequest($site, $kitchenRequest);
         $this->assertKitchenOwnership($kitchenRequest);
         $kitchenActor = (bool) request()->user()?->isKitchenUser();
 
         $kitchenRequest->load([
-            'branch',
             'requester',
             'reviewer',
             'foodItems.foodItem',
@@ -100,10 +97,8 @@ class KitchenRequestController extends Controller
         $main = null;
         $balances = collect();
         if (!$kitchenActor) {
-            $main = $locationService->forBranchAndType((int) $kitchenRequest->branch_id, StockLocation::TYPE_MAIN);
+            $main = $locationService->forType(StockLocation::TYPE_MAIN);
             $balances = InventoryBalance::query()
-                ->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $kitchenRequest->branch_id)
                 ->where('stock_location_id', $main->id)
                 ->whereIn('ingredient_id', $kitchenRequest->ingredientItems->pluck('ingredient_id'))
                 ->pluck('quantity_base', 'ingredient_id');
@@ -138,8 +133,9 @@ class KitchenRequestController extends Controller
         ));
     }
 
-    public function edit(KitchenRequest $kitchenRequest, BranchContext $context)
+    public function edit(KitchenRequest $kitchenRequest, InventorySiteContext $site)
     {
+        $this->assertSiteRequest($site, $kitchenRequest);
         $this->assertKitchenOwnership($kitchenRequest);
         if (!$kitchenRequest->isEditable()) {
             return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
@@ -147,23 +143,19 @@ class KitchenRequestController extends Controller
         }
         $kitchenRequest->load(['foodItems', 'ingredientItems']);
 
-        return view('admin.inventory.kitchen_requests.form', $this->formData($context) + compact('kitchenRequest'));
+        return view('admin.inventory.kitchen_requests.form', $this->formData($site) + compact('kitchenRequest'));
     }
 
     public function update(
         Request $request,
         KitchenRequest $kitchenRequest,
-        BranchContext $context,
+        InventorySiteContext $site,
         KitchenRequestService $service
     ) {
         $this->assertKitchenOwnership($kitchenRequest);
         $data = $this->validated($request);
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $kitchenRequest->branch_id !== $branchId) {
-            throw ValidationException::withMessages(['branch_id' => 'The selected branch does not match this kitchen request.']);
-        }
-
-        $kitchenRequest = $service->saveDraft($branchId, $data, $kitchenRequest, $request->user()?->id);
+        $site->ensureDefaultLocations();
+        $kitchenRequest = $service->saveDraft($data, $kitchenRequest, $request->user()?->id);
         return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
             ->with('success', 'Kitchen request updated successfully.');
     }
@@ -171,10 +163,10 @@ class KitchenRequestController extends Controller
     public function submit(
         Request $request,
         KitchenRequest $kitchenRequest,
-        BranchContext $context,
+        InventorySiteContext $site,
         KitchenRequestService $service
     ) {
-        $this->assertSelectedBranch($context, $kitchenRequest);
+        $this->assertSiteRequest($site, $kitchenRequest);
         $service->submit($kitchenRequest, $request->user()?->id);
 
         return back()->with('success', 'Kitchen request submitted for Store review.');
@@ -182,10 +174,10 @@ class KitchenRequestController extends Controller
 
     public function cancel(
         KitchenRequest $kitchenRequest,
-        BranchContext $context,
+        InventorySiteContext $site,
         KitchenRequestService $service
     ) {
-        $this->assertSelectedBranch($context, $kitchenRequest);
+        $this->assertSiteRequest($site, $kitchenRequest);
         $service->cancel($kitchenRequest);
 
         return back()->with('success', 'Kitchen request cancelled. No stock was changed.');
@@ -194,10 +186,10 @@ class KitchenRequestController extends Controller
     public function close(
         Request $request,
         KitchenRequest $kitchenRequest,
-        BranchContext $context,
+        InventorySiteContext $site,
         KitchenRequestService $service
     ) {
-        $this->assertSelectedBranch($context, $kitchenRequest);
+        $this->assertSiteRequest($site, $kitchenRequest);
         $service->close($kitchenRequest, $request->user()?->id);
 
         return back()->with('success', 'Kitchen request lifecycle closed.');
@@ -206,10 +198,10 @@ class KitchenRequestController extends Controller
     public function issue(
         Request $request,
         KitchenRequest $kitchenRequest,
-        BranchContext $context,
+        InventorySiteContext $site,
         StockTransferService $service
     ) {
-        $this->assertSelectedBranch($context, $kitchenRequest);
+        $this->assertSiteRequest($site, $kitchenRequest);
         $data = $request->validate([
             'idempotency_key' => ['required', 'string', 'max:80'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -230,10 +222,10 @@ class KitchenRequestController extends Controller
             ->with('success', 'Stock issued: Main Stock decreased and Kitchen Stock increased in one ledger transaction.');
     }
 
-    public function destroy(KitchenRequest $kitchenRequest, BranchContext $context)
+    public function destroy(KitchenRequest $kitchenRequest, InventorySiteContext $site)
     {
         $this->assertKitchenOwnership($kitchenRequest);
-        $this->assertSelectedBranch($context, $kitchenRequest);
+        $this->assertSiteRequest($site, $kitchenRequest);
         if (!$kitchenRequest->isEditable()) {
             throw ValidationException::withMessages(['request' => 'Only Draft or Submitted kitchen requests can be deleted before stock is issued.']);
         }
@@ -242,7 +234,7 @@ class KitchenRequestController extends Controller
         return redirect()->route('inventory.kitchen-requests.index')->with('success', 'Kitchen request deleted successfully.');
     }
 
-    private function formData(BranchContext $context): array
+    private function formData(InventorySiteContext $site): array
     {
         $foods = FoodItem::query()
             ->where('inventory_tracking', true)
@@ -262,17 +254,12 @@ class KitchenRequestController extends Controller
             'foods' => $foods,
             'ingredients' => $ingredients,
             'units' => Unit::query()->active()->orderBy('dimension')->orderBy('name')->get(),
-            'branches' => $context->user()?->isSuperAdmin()
-                ? Branch::query()->active()->orderByDesc('is_main')->orderBy('name')->get()
-                : collect(),
-            'currentBranchId' => $context->branchId(),
         ];
     }
 
     private function validated(Request $request): array
     {
         $data = $request->validate([
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'request_date' => ['required', 'date'],
             'notes' => ['nullable', 'string', 'max:3000'],
             'food_items' => ['nullable', 'array'],
@@ -299,12 +286,9 @@ class KitchenRequestController extends Controller
         }
     }
 
-    private function assertSelectedBranch(BranchContext $context, KitchenRequest $request): void
+    private function assertSiteRequest(InventorySiteContext $site, KitchenRequest $request): void
     {
+        $site->ensureDefaultLocations();
         $this->assertKitchenOwnership($request);
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $request->branch_id !== $branchId) {
-            throw ValidationException::withMessages(['branch_id' => 'The selected branch does not match this kitchen request.']);
-        }
     }
 }

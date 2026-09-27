@@ -266,11 +266,13 @@
                         <button type="button" class="progga-btn progga-btn-outline progga-btn-sm mt-2" onclick="addAddon()"><i class="bi bi-plus-lg"></i> Add Option</button>
                     </div>
                 </div>
+
+                @include('admin.food_item.partials.inventory_recipe')
             </div>
 
             <div class="col-lg-4">
                 <div class="af-card">
-                    <div class="af-card-head"><div class="af-card-num">06</div><div class="af-card-title">Item Photo</div></div>
+                    <div class="af-card-head"><div class="af-card-num">07</div><div class="af-card-title">Item Photo</div></div>
                     <div class="af-card-body">
                         <div class="af-upload" id="mainUploadZone" onclick="document.getElementById('mainThumb').click()">
                             <input type="file" id="mainThumb" name="main_image" class="d-none" accept="image/*" onchange="handleMainUpload(this)">
@@ -324,7 +326,7 @@
                 </div>
 
                 <div class="af-card">
-                    <div class="af-card-head"><div class="af-card-num">07</div><div class="af-card-title">Status & Visibility</div></div>
+                    <div class="af-card-head"><div class="af-card-num">08</div><div class="af-card-title">Status & Visibility</div></div>
                     <div class="af-card-body">
                         <div class="af-toggle-row"><div class="af-toggle-name">Available</div><label class="progga-toggle"><input type="checkbox" name="is_available" value="1" {{ $foodItem->is_available ? 'checked' : '' }}><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span></label></div>
                         <div class="af-toggle-row"><div class="af-toggle-name">Featured</div><label class="progga-toggle"><input type="checkbox" name="is_featured" value="1" {{ $foodItem->is_featured ? 'checked' : '' }}><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span></label></div>
@@ -335,7 +337,7 @@
                 </div>
 
                 <div class="af-card">
-                    <div class="af-card-head"><div class="af-card-num">08</div><div class="af-card-title">Availability Schedule</div></div>
+                    <div class="af-card-head"><div class="af-card-num">09</div><div class="af-card-title">Availability Schedule</div></div>
                     <div class="af-card-body">
                         <div class="progga-form-group">
                             <label class="progga-form-label" style="margin-bottom:10px;">Active Days</label>
@@ -483,4 +485,5 @@ $('#editFoodForm').on('submit', function(e) {
     });
 });
 </script>
+@include('admin.food_item.partials.inventory_recipe_script')
 @endsection

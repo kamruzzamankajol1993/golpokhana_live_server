@@ -44,6 +44,7 @@
                         </div>
                         <p style="font-size: 14px; color: var(--progga-text-muted); margin-bottom: 12px;">{{ $foodItem->short_description }}</p>
 
+
                         <div class="d-flex flex-wrap gap-2 mb-3">
                             <span class="progga-badge progga-badge-neutral"><i class="bi bi-tags me-1"></i> {{ $foodItem->category->name ?? 'N/A' }}</span>
                             @if($foodItem->subCategory)
@@ -69,6 +70,72 @@
                     <p style="font-size: 14px; color: var(--progga-text-muted); line-height: 1.6; margin:0;">
                         {{ $foodItem->description ?? 'No detailed description provided.' }}
                     </p>
+                </div>
+            </div>
+
+
+            <div class="progga-card mb-4">
+                <div class="progga-card-header bg-light d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                    <h5 class="m-0 fw-bold" style="font-size: 15px;"><i class="bi bi-journal-check me-2 text-success"></i>Inventory Recipe</h5>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span class="progga-badge {{ $foodItem->inventory_tracking ? 'progga-badge-success' : 'progga-badge-neutral' }}">
+                            Tracking {{ $foodItem->inventory_tracking ? 'ON' : 'OFF' }}
+                        </span>
+                        @if($foodItem->activeRecipe)
+                            <span class="progga-badge progga-badge-info">Version {{ $foodItem->activeRecipe->version_no }}</span>
+                        @endif
+                    </div>
+                </div>
+                <div class="progga-card-body p-0">
+                    @if($foodItem->activeRecipe && $foodItem->activeRecipe->items->count() > 0)
+                        <div class="progga-table-wrapper" style="border:0;border-radius:0;">
+                            <table class="progga-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th class="progga-col-serial">#</th>
+                                        <th>Ingredient</th>
+                                        <th style="width:130px;">Quantity</th>
+                                        <th>Unit / Package</th>
+                                        <th style="width:150px;">Base Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($foodItem->activeRecipe->items as $recipeItem)
+                                        @php
+                                            $baseSymbol = $recipeItem->ingredient?->baseUnit?->symbol ?? '';
+                                            $unitLabel = null;
+                                            if ($recipeItem->packageConversion) {
+                                                $unitLabel = $recipeItem->packageConversion->label;
+                                                if (!$unitLabel) {
+                                                    $packageName = $recipeItem->packageConversion->unit?->name ?? 'Package';
+                                                    $factor = rtrim(rtrim(number_format((float)$recipeItem->packageConversion->factor_to_base, 2, '.', ''), '0'), '.');
+                                                    $unitLabel = $packageName . ' (' . $factor . ($baseSymbol ? ' ' . $baseSymbol : '') . ')';
+                                                }
+                                            } elseif ($recipeItem->inputUnit) {
+                                                $unitLabel = $recipeItem->inputUnit->name . ($recipeItem->inputUnit->symbol ? ' (' . $recipeItem->inputUnit->symbol . ')' : '');
+                                            }
+                                        @endphp
+                                        <tr>
+                                            <td>{{ $loop->iteration }}</td>
+                                            <td>
+                                                <div class="fw-bold">{{ $recipeItem->ingredient?->name ?? 'Deleted ingredient' }}</div>
+                                            </td>
+                                            <td class="fw-bold">{{ number_format((float)$recipeItem->input_quantity, 2) }}</td>
+                                            <td>{{ $unitLabel ?: 'N/A' }}</td>
+                                            <td>{{ number_format((float)$recipeItem->base_quantity, 2) }}{{ $baseSymbol ? ' ' . $baseSymbol : '' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="px-3 py-2 border-top" style="font-size:12px;color:var(--progga-text-muted);">
+                            Recipe quantities are shown to 2 decimal places. Base quantity is the normalized inventory quantity used for stock consumption.
+                        </div>
+                    @else
+                        <div class="p-3 text-muted" style="font-size:13px;">
+                            <i class="bi bi-info-circle me-1"></i> No active inventory recipe is configured for this food item.
+                        </div>
+                    @endif
                 </div>
             </div>
 

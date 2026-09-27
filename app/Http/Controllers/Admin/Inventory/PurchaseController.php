@@ -3,17 +3,14 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
-use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\Purchase;
 use App\Models\RestaurantSetting;
 use App\Models\Unit;
 use App\Models\Vendor;
-use App\Services\BranchSettingResolver;
 use App\Services\Inventory\PurchaseReceivingService;
 use App\Services\Inventory\PurchaseService;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -28,13 +25,12 @@ class PurchaseController extends Controller
         $this->middleware('permission:inventory-purchase-create|inventory-purchase-receive')->only(['index', 'show', 'invoicePdf', 'downloadOriginalInvoice']);
         $this->middleware('permission:inventory-purchase-create')->only(['create', 'store', 'edit', 'update', 'destroy']);
         $this->middleware('permission:inventory-purchase-receive')->only('receive');
-        $this->middleware(RequireSpecificBranch::class)->only(['store', 'update', 'destroy', 'receive']);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $purchases = Purchase::query()
-            ->with(['vendor', 'branch', 'receiver'])
+            ->with(['vendor', 'receiver'])
             ->withCount('items')
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
@@ -51,15 +47,15 @@ class PurchaseController extends Controller
         return view('admin.inventory.purchases.index', compact('purchases', 'vendors'));
     }
 
-    public function create(BranchContext $context)
+    public function create(InventorySiteContext $site)
     {
-        return view('admin.inventory.purchases.form', $this->formData($context) + ['purchase' => new Purchase()]);
+        return view('admin.inventory.purchases.form', $this->formData($site) + ['purchase' => new Purchase()]);
     }
 
-    public function store(Request $request, BranchContext $context, PurchaseService $service, PurchaseReceivingService $receivingService)
+    public function store(Request $request, InventorySiteContext $site, PurchaseService $service, PurchaseReceivingService $receivingService)
     {
         $data = $this->validated($request);
-        $branchId = $context->requireSpecificBranch();
+        $site->ensureDefaultLocations();
         $vendor = Vendor::query()->findOrFail((int) $data['vendor_id']);
         $receiveNow = ($data['submit_action'] ?? 'draft') === 'receive';
 
@@ -70,8 +66,8 @@ class PurchaseController extends Controller
         $newStoredPath = null;
         $oldStoredPath = null;
         try {
-            $purchase = DB::transaction(function () use ($request, $service, $receivingService, $branchId, $vendor, $data, $receiveNow, &$newStoredPath, &$oldStoredPath) {
-                $purchase = $service->saveDraft($branchId, $vendor, $data, $data['items'], null, $request->user()?->id);
+            $purchase = DB::transaction(function () use ($request, $service, $receivingService, $vendor, $data, $receiveNow, &$newStoredPath, &$oldStoredPath) {
+                $purchase = $service->saveDraft($vendor, $data, $data['items'], null, $request->user()?->id);
                 $this->persistOriginalInvoice($request, $purchase, $newStoredPath, $oldStoredPath);
 
                 if ($receiveNow) {
@@ -97,28 +93,27 @@ class PurchaseController extends Controller
         );
     }
 
-    public function show(Purchase $purchase)
+    public function show(Purchase $purchase, InventorySiteContext $site)
     {
-        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'branch', 'creator', 'receiver', 'receivedMovement']);
+        $this->assertSitePurchase($purchase, $site);
+        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver', 'receivedMovement']);
         return view('admin.inventory.purchases.show', compact('purchase'));
     }
 
-    public function edit(Purchase $purchase, BranchContext $context)
+    public function edit(Purchase $purchase, InventorySiteContext $site)
     {
+        $this->assertSitePurchase($purchase, $site);
         if (!$purchase->isEditable()) {
             return redirect()->route('inventory.purchases.show', $purchase)->with('error', 'Received purchases are immutable. Use a return/reversal workflow in the control phase for corrections.');
         }
         $purchase->load(['items.ingredient.unitConversions.unit', 'items.unit', 'items.packageConversion']);
-        return view('admin.inventory.purchases.form', $this->formData($context) + compact('purchase'));
+        return view('admin.inventory.purchases.form', $this->formData($site) + compact('purchase'));
     }
 
-    public function update(Request $request, Purchase $purchase, BranchContext $context, PurchaseService $service, PurchaseReceivingService $receivingService)
+    public function update(Request $request, Purchase $purchase, InventorySiteContext $site, PurchaseService $service, PurchaseReceivingService $receivingService)
     {
         $data = $this->validated($request);
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $purchase->branch_id !== $branchId) {
-            throw ValidationException::withMessages(['branch_id' => 'The selected branch does not match this purchase.']);
-        }
+        $site->ensureDefaultLocations();
         $vendor = Vendor::query()->findOrFail((int) $data['vendor_id']);
         $receiveNow = ($data['submit_action'] ?? 'draft') === 'receive';
 
@@ -129,8 +124,8 @@ class PurchaseController extends Controller
         $newStoredPath = null;
         $oldStoredPath = null;
         try {
-            $purchase = DB::transaction(function () use ($request, $service, $receivingService, $branchId, $vendor, $data, $purchase, $receiveNow, &$newStoredPath, &$oldStoredPath) {
-                $purchase = $service->saveDraft($branchId, $vendor, $data, $data['items'], $purchase, $request->user()?->id);
+            $purchase = DB::transaction(function () use ($request, $service, $receivingService, $vendor, $data, $purchase, $receiveNow, &$newStoredPath, &$oldStoredPath) {
+                $purchase = $service->saveDraft($vendor, $data, $data['items'], $purchase, $request->user()?->id);
                 $this->persistOriginalInvoice($request, $purchase, $newStoredPath, $oldStoredPath);
 
                 if ($receiveNow) {
@@ -156,22 +151,19 @@ class PurchaseController extends Controller
         );
     }
 
-    public function receive(Request $request, Purchase $purchase, BranchContext $context, PurchaseReceivingService $service)
+    public function receive(Request $request, Purchase $purchase, InventorySiteContext $site, PurchaseReceivingService $service)
     {
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $purchase->branch_id !== $branchId) {
-            throw ValidationException::withMessages(['branch_id' => 'The selected branch does not match this purchase.']);
-        }
+        $site->ensureDefaultLocations();
 
         $purchase = $service->receive($purchase, $request->user()?->id);
         return redirect()->route('inventory.purchases.show', $purchase)->with('success', 'Purchase received and Main Stock increased through the immutable ledger.');
     }
 
-    public function destroy(Request $request, Purchase $purchase, BranchContext $context)
+    public function destroy(Request $request, Purchase $purchase, InventorySiteContext $site)
     {
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $purchase->branch_id !== $branchId || !$purchase->isEditable()) {
-            throw ValidationException::withMessages(['purchase' => 'Only a draft purchase from the selected branch can be deleted.']);
+        $site->ensureDefaultLocations();
+        if (!$purchase->isEditable()) {
+            throw ValidationException::withMessages(['purchase' => 'Only a draft purchase can be deleted.']);
         }
 
         $originalPath = $purchase->original_invoice_path;
@@ -183,16 +175,18 @@ class PurchaseController extends Controller
         return redirect()->route('inventory.purchases.index')->with('success', 'Draft purchase deleted. No stock was affected.');
     }
 
-    public function invoicePdf(Purchase $purchase, BranchSettingResolver $settings)
+    public function invoicePdf(Purchase $purchase, InventorySiteContext $site)
     {
-        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'branch', 'creator', 'receiver']);
-        $restaurant = $settings->get(RestaurantSetting::class, (int) $purchase->branch_id, true);
+        $this->assertSitePurchase($purchase, $site);
+        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver']);
+        $restaurant = RestaurantSetting::query()->first();
 
-        return $this->renderInvoicePdf($purchase, $restaurant, $purchase->branch);
+        return $this->renderInvoicePdf($purchase, $restaurant);
     }
 
-    public function downloadOriginalInvoice(Purchase $purchase)
+    public function downloadOriginalInvoice(Purchase $purchase, InventorySiteContext $site)
     {
+        $this->assertSitePurchase($purchase, $site);
         $path = (string) ($purchase->original_invoice_path ?? '');
         if ($path === '' || !Storage::disk('local')->exists($path)) {
             return redirect()->route('inventory.purchases.show', $purchase)->with('error', 'Original invoice file is not available.');
@@ -204,7 +198,12 @@ class PurchaseController extends Controller
         ]);
     }
 
-    private function renderInvoicePdf(Purchase $purchase, ?RestaurantSetting $restaurant, ?Branch $branch)
+    private function assertSitePurchase(Purchase $purchase, InventorySiteContext $site): void
+    {
+        $site->ensureDefaultLocations();
+    }
+
+    private function renderInvoicePdf(Purchase $purchase, ?RestaurantSetting $restaurant)
     {
         $tempDir = storage_path('app/mpdf-purchase-invoices');
         if (!is_dir($tempDir)) {
@@ -227,7 +226,7 @@ class PurchaseController extends Controller
         $fileName = 'purchase-invoice-' . preg_replace('/[^A-Za-z0-9._-]+/', '-', $purchase->purchase_no) . '.pdf';
         $mpdf->SetTitle('Purchase Invoice ' . $purchase->purchase_no);
         $mpdf->SetFooter('Purchase ' . $purchase->purchase_no . '||Page {PAGENO} of {nbpg}');
-        $mpdf->WriteHTML(view('admin.inventory.purchases.invoice_pdf', compact('purchase', 'restaurant', 'branch'))->render());
+        $mpdf->WriteHTML(view('admin.inventory.purchases.invoice_pdf', compact('purchase', 'restaurant'))->render());
 
         return response($mpdf->Output($fileName, 'S'), 200, [
             'Content-Type' => 'application/pdf',
@@ -242,7 +241,7 @@ class PurchaseController extends Controller
         }
 
         $file = $request->file('original_invoice_file');
-        $directory = 'inventory/purchase-original-invoices/branch-' . (int) $purchase->branch_id;
+        $directory = 'inventory/purchase-original-invoices';
         $newStoredPath = $file->store($directory, 'local');
         $oldStoredPath = $purchase->original_invoice_path ?: null;
 
@@ -254,7 +253,7 @@ class PurchaseController extends Controller
         ])->save();
     }
 
-    private function formData(BranchContext $context): array
+    private function formData(InventorySiteContext $site): array
     {
         $ingredients = Ingredient::query()
             ->active()
@@ -267,15 +266,12 @@ class PurchaseController extends Controller
             'vendors' => Vendor::query()->active()->orderBy('name')->get(),
             'ingredients' => $ingredients,
             'units' => Unit::query()->active()->orderBy('dimension')->orderBy('name')->get(),
-            'branches' => $context->user()?->isSuperAdmin() ? Branch::query()->active()->orderByDesc('is_main')->orderBy('name')->get() : collect(),
-            'currentBranchId' => $context->branchId(),
         ];
     }
 
     private function validated(Request $request): array
     {
         return $request->validate([
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'vendor_id' => ['required', 'integer', 'exists:vendors,id'],
             'purchase_date' => ['required', 'date'],
             'invoice_no' => ['nullable', 'string', 'max:120'],

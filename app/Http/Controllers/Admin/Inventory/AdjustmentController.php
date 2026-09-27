@@ -3,15 +3,13 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
 use App\Models\Ingredient;
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryBalance;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use App\Services\Inventory\InventoryAdjustmentService;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class AdjustmentController extends Controller
@@ -20,13 +18,12 @@ class AdjustmentController extends Controller
     {
         $this->middleware('permission:inventory-view|inventory-adjustment-post')->only(['index', 'show']);
         $this->middleware('permission:inventory-adjustment-post')->only(['create', 'store']);
-        $this->middleware(RequireSpecificBranch::class)->only(['create', 'store']);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $adjustments = InventoryAdjustment::query()
-            ->with(['branch', 'location', 'creator', 'approver'])
+            ->with(['location', 'creator', 'approver'])
             ->withCount('items')
             ->when($request->filled('search'), fn ($q) => $q->where('adjustment_no', 'like', '%' . trim((string) $request->search) . '%'))
             ->orderByDesc('posted_at')->orderByDesc('id')
@@ -35,18 +32,17 @@ class AdjustmentController extends Controller
         return view('admin.inventory.adjustments.index', compact('adjustments'));
     }
 
-    public function create(BranchContext $context)
+    public function create(InventorySiteContext $site)
     {
-        $branchId = $context->requireSpecificBranch();
-        $locations = StockLocation::query()->withoutGlobalScope(BranchScope::class)
-            ->where('branch_id', $branchId)->where('is_active', true)
+        $site->ensureDefaultLocations();
+        $locations = StockLocation::query()
+            ->where('is_active', true)
             ->whereIn('type', [StockLocation::TYPE_MAIN, StockLocation::TYPE_KITCHEN])
             ->orderBy('type')->get();
         $ingredients = Ingredient::query()->active()->where('track_inventory', true)
             ->with('baseUnit')->orderBy('name')->get();
 
-        $balances = InventoryBalance::query()->withoutGlobalScope(BranchScope::class)
-            ->where('branch_id', $branchId)
+        $balances = InventoryBalance::query()
             ->whereIn('stock_location_id', $locations->pluck('id'))->get();
         $systemBalances = [];
         foreach ($balances as $balance) {
@@ -56,7 +52,7 @@ class AdjustmentController extends Controller
         return view('admin.inventory.adjustments.form', compact('locations', 'ingredients', 'systemBalances'));
     }
 
-    public function store(Request $request, BranchContext $context, InventoryAdjustmentService $service)
+    public function store(Request $request, InventorySiteContext $site, InventoryAdjustmentService $service)
     {
         $data = $request->validate([
             'location_id' => ['required', 'integer', 'exists:stock_locations,id'],
@@ -66,8 +62,8 @@ class AdjustmentController extends Controller
             'items.*.physical_qty_base' => ['required', 'numeric', 'gte:0'],
         ]);
 
+        $site->ensureDefaultLocations();
         $adjustment = $service->postPhysicalCount(
-            $context->requireSpecificBranch(),
             (int) $data['location_id'],
             $data['items'],
             $data['reason'],
@@ -78,9 +74,10 @@ class AdjustmentController extends Controller
             ->with('success', 'Physical count adjustment posted through corrective ledger movements.');
     }
 
-    public function show(InventoryAdjustment $adjustment)
+    public function show(InventoryAdjustment $adjustment, InventorySiteContext $site)
     {
-        $adjustment->load(['branch', 'location', 'creator', 'approver', 'items.ingredient.baseUnit']);
+        $site->ensureDefaultLocations();
+        $adjustment->load(['location', 'creator', 'approver', 'items.ingredient.baseUnit']);
         $movements = StockMovement::query()
             ->where('reference_type', InventoryAdjustment::class)
             ->where('reference_id', $adjustment->id)

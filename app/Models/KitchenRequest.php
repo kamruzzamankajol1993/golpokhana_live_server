@@ -2,13 +2,12 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class KitchenRequest extends Model
 {
-    use HasFactory, BelongsToBranch;
+    use HasFactory;
 
     public const TYPE_FOOD = 'FOOD';
     public const TYPE_INGREDIENT = 'INGREDIENT';

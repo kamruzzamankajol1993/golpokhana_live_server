@@ -6,18 +6,20 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /** Permissions introduced specifically by this access-structure update. */
+    /**
+     * Granular wastage permissions added by this migration.
+     *
+     * inventory-wastage-post is kept in the permission table for backward
+     * compatibility, but inventory roles are moved to the granular permissions.
+     */
     private array $newPermissions = [
-        'inventory-dashboard-view',
-        'inventory-kitchen-stock-view',
+        'inventory-wastage-view',
+        'inventory-wastage-create',
+        'inventory-wastage-edit',
+        'inventory-wastage-delete',
     ];
 
-    /**
-     * Required inventory permissions for this project. Existing permissions are
-     * preserved; a missing permission is created so a partially seeded database
-     * can still receive the role structure safely.
-     */
-    private array $requiredPermissions = [
+    private array $requiredInventoryPermissions = [
         'inventory-dashboard-view',
         'inventory-kitchen-stock-view',
         'inventory-view',
@@ -31,17 +33,21 @@ return new class extends Migration
         'inventory-transfer-post',
         'inventory-return-post',
         'inventory-wastage-post',
+        'inventory-wastage-view',
+        'inventory-wastage-create',
+        'inventory-wastage-edit',
+        'inventory-wastage-delete',
         'inventory-adjustment-post',
         'inventory-reports-view',
     ];
 
-    private array $kitchenPermissions = [
-        'inventory-kitchen-stock-view',
-        'inventory-kitchen-request-create',
-        'inventory-return-post',
-        'inventory-wastage-post',
-    ];
-
+    /**
+     * Inventory Manager:
+     * - manages Main Inventory and reviews Kitchen requests
+     * - issues Main -> Kitchen stock
+     * - can record Main Stock wastage
+     * - does NOT create Kitchen requests or return Kitchen stock
+     */
     private array $inventoryManagerPermissions = [
         'inventory-dashboard-view',
         'inventory-view',
@@ -52,15 +58,42 @@ return new class extends Migration
         'inventory-purchase-receive',
         'inventory-kitchen-request-review',
         'inventory-transfer-post',
-        'inventory-return-post',
-        'inventory-wastage-post',
+        'inventory-wastage-view',
+        'inventory-wastage-create',
+        'inventory-wastage-edit',
+        'inventory-wastage-delete',
         'inventory-adjustment-post',
         'inventory-reports-view',
+    ];
+
+    /**
+     * Kitchen:
+     * - sees its own Kitchen Stock
+     * - creates/maintains Kitchen requests
+     * - returns unused Kitchen stock to Main
+     * - records Kitchen wastage
+     * - cannot issue Main Stock or adjust inventory
+     */
+    private array $kitchenPermissions = [
+        'inventory-kitchen-stock-view',
+        'inventory-kitchen-request-create',
+        'inventory-return-post',
+        'inventory-wastage-view',
+        'inventory-wastage-create',
+        'inventory-wastage-edit',
+        'inventory-wastage-delete',
     ];
 
     private array $storeManagerPermissions = [
         'inventory-kitchen-request-review',
         'inventory-transfer-post',
+    ];
+
+    private array $inventoryManagerFoodPermissions = [
+        'food-item-view',
+        'food-item-create',
+        'food-item-edit',
+        'food-item-update',
     ];
 
     public function up(): void
@@ -70,27 +103,29 @@ return new class extends Migration
         }
 
         $now = now();
-        $this->ensurePermissions($this->requiredPermissions, $now);
+        $this->ensurePermissions($this->requiredInventoryPermissions, 'Inventory', $now);
+        $this->ensurePermissions($this->inventoryManagerFoodPermissions, 'Food Item', $now);
 
-        $this->ensureRole('Super Admin', $now);
-        $this->ensureRole('Super Admin Limited', $now);
         $inventoryManagerId = $this->ensureRole('Inventory Manager', $now);
         $kitchenId = $this->ensureRole('Kitchen', $now);
         $storeManagerId = $this->ensureRole('Store Manager', $now);
+        $this->ensureRole('Super Admin', $now);
+        $this->ensureRole('Super Admin Limited', $now);
 
-        // Kitchen gets only its operational inventory surface. Existing non-inventory
-        // permissions (for example kitchen-view) are intentionally left untouched.
-        $this->syncInventoryPermissions($kitchenId, $this->kitchenPermissions);
-
-        // Inventory Manager owns all single-site inventory management/review work.
+        // Replace only Inventory permissions so unrelated application access is preserved.
         $this->syncInventoryPermissions($inventoryManagerId, $this->inventoryManagerPermissions);
-
-        // Store Manager may review and issue Kitchen Requests without becoming a
-        // full inventory administrator.
+        $this->syncInventoryPermissions($kitchenId, $this->kitchenPermissions);
         $this->syncInventoryPermissions($storeManagerId, $this->storeManagerPermissions);
 
-        // Both Super Admin roles receive every ordinary application permission.
-        // Existing application-level restrictions outside Inventory remain unchanged.
+        // Inventory Manager also owns Food add/edit access required for recipe setup.
+        $this->grantPermissions($inventoryManagerId, $this->inventoryManagerFoodPermissions);
+
+        // Keep the Kitchen screen permission without widening any other access.
+        if ($this->permissionExists('kitchen-view')) {
+            $this->grantPermissions($kitchenId, ['kitchen-view']);
+        }
+
+        // Both Super Admin roles keep every ordinary application permission.
         $allPermissionIds = DB::table('permissions')
             ->where('guard_name', 'web')
             ->pluck('id');
@@ -118,8 +153,8 @@ return new class extends Migration
             return;
         }
 
-        // Remove only the two permissions introduced by this migration. Existing
-        // inventory permissions/roles are never destroyed by a rollback.
+        // Only permissions introduced here are removed. Roles and older permissions
+        // are left intact so rollback does not unexpectedly destroy application access.
         $ids = DB::table('permissions')
             ->where('guard_name', 'web')
             ->whereIn('name', $this->newPermissions)
@@ -138,7 +173,7 @@ return new class extends Migration
         $this->forgetPermissionCache();
     }
 
-    private function ensurePermissions(array $names, $now): void
+    private function ensurePermissions(array $names, string $group, $now): void
     {
         $hasGroup = Schema::hasColumn('permissions', 'group_name');
 
@@ -151,7 +186,7 @@ return new class extends Migration
             if ($existing) {
                 if ($hasGroup && empty($existing->group_name)) {
                     DB::table('permissions')->where('id', $existing->id)->update([
-                        'group_name' => 'Inventory',
+                        'group_name' => $group,
                         'updated_at' => $now,
                     ]);
                 }
@@ -165,7 +200,7 @@ return new class extends Migration
                 'updated_at' => $now,
             ];
             if ($hasGroup) {
-                $row['group_name'] = 'Inventory';
+                $row['group_name'] = $group;
             }
 
             DB::table('permissions')->insert($row);
@@ -201,17 +236,30 @@ return new class extends Migration
                 ->delete();
         }
 
-        $allowedIds = DB::table('permissions')
+        $this->grantPermissions($roleId, $allowedNames);
+    }
+
+    private function grantPermissions(int $roleId, array $names): void
+    {
+        $ids = DB::table('permissions')
             ->where('guard_name', 'web')
-            ->whereIn('name', $allowedNames)
+            ->whereIn('name', array_values(array_unique($names)))
             ->pluck('id');
 
-        foreach ($allowedIds as $permissionId) {
+        foreach ($ids as $permissionId) {
             DB::table('role_has_permissions')->insertOrIgnore([
                 'permission_id' => (int) $permissionId,
                 'role_id' => $roleId,
             ]);
         }
+    }
+
+    private function permissionExists(string $name): bool
+    {
+        return DB::table('permissions')
+            ->where('name', $name)
+            ->where('guard_name', 'web')
+            ->exists();
     }
 
     private function forgetPermissionCache(): void

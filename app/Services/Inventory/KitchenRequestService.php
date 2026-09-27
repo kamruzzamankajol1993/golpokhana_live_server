@@ -7,7 +7,6 @@ use App\Models\Ingredient;
 use App\Models\KitchenRequest;
 use App\Models\KitchenRequestIngredientItem;
 use App\Models\MenuItemRecipe;
-use App\Models\Scopes\BranchScope;
 use App\Models\Unit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -22,32 +21,27 @@ class KitchenRequestService
     }
 
     public function saveDraft(
-        int $branchId,
         array $header,
         ?KitchenRequest $request = null,
         ?int $userId = null
     ): KitchenRequest {
-        return DB::transaction(function () use ($branchId, $header, $request, $userId) {
+        return DB::transaction(function () use ($header, $request, $userId) {
             $statusToKeep = KitchenRequest::STATUS_DRAFT;
 
             if ($request) {
                 $request = KitchenRequest::query()
-                    ->withoutGlobalScope(BranchScope::class)
+                    
                     ->whereKey($request->id)
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if ((int) $request->branch_id !== $branchId) {
-                    throw ValidationException::withMessages(['branch_id' => 'A kitchen request cannot be moved to another branch.']);
-                }
                 if (!$request->isEditable()) {
                     throw ValidationException::withMessages(['request' => 'Only Draft or Submitted kitchen requests can be edited before stock is issued.']);
                 }
                 $statusToKeep = $request->status;
             } else {
                 $request = new KitchenRequest();
-                $request->branch_id = $branchId;
-                $request->request_no = $this->nextRequestNumber($branchId);
+                $request->request_no = $this->nextRequestNumber();
                 $request->requested_by = $userId;
             }
 
@@ -86,7 +80,6 @@ class KitchenRequestService
             }
 
             return $request->fresh([
-                'branch',
                 'requester',
                 'foodItems.foodItem',
                 'foodItems.recipe',
@@ -192,10 +185,9 @@ class KitchenRequestService
             $food = $foodQuery
                 ->withoutGlobalScopes()
                 ->whereKey($foodId)
-                ->where('branch_id', $request->branch_id)
                 ->first();
             if (!$food) {
-                throw ValidationException::withMessages(["food_items.{$index}.menu_item_id" => 'The selected menu item does not belong to this request branch.']);
+                throw ValidationException::withMessages(["food_items.{$index}.menu_item_id" => 'The selected menu item is not available.']);
             }
             if (!$food->inventory_tracking) {
                 throw ValidationException::withMessages(["food_items.{$index}.menu_item_id" => "Inventory tracking is OFF for {$food->name}. Configure its recipe first."]);
@@ -342,18 +334,17 @@ class KitchenRequestService
     private function lockRequest(KitchenRequest $request): KitchenRequest
     {
         return KitchenRequest::query()
-            ->withoutGlobalScope(BranchScope::class)
+            
             ->whereKey($request->id)
             ->lockForUpdate()
             ->firstOrFail();
     }
 
-    private function nextRequestNumber(int $branchId): string
+    private function nextRequestNumber(): string
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
-            $number = 'KR-' . $branchId . '-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
-            if (!KitchenRequest::query()->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)->where('request_no', $number)->exists()) {
+            $number = 'KR-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
+            if (!KitchenRequest::query()->where('request_no', $number)->exists()) {
                 return $number;
             }
         }

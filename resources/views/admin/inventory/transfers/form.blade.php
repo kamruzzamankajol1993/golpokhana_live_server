@@ -1,5 +1,5 @@
 @extends('admin.master.master')
-@php $selectedBranch=old('branch_id',$currentBranchId); $oldItems=old('items',[['ingredient_id'=>'','quantity'=>'','unit_choice'=>'']]); @endphp
+@php $oldItems=old('items',[['ingredient_id'=>'','quantity'=>'','unit_choice'=>'']]); @endphp
 @section('title','Direct Main to Kitchen Transfer')
 @section('body')
 <main class="progga-content">
@@ -8,8 +8,7 @@
     <form method="POST" action="{{ route('inventory.transfers.store') }}" onsubmit="return confirm('Post this Main to Kitchen stock transfer?')">@csrf
         <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key',(string)\Illuminate\Support\Str::uuid()) }}">
         <div class="progga-card mb-4"><div class="p-4"><div class="row g-3">
-            @if(auth()->user()?->isSuperAdmin())<div class="col-md-4"><label class="progga-form-label">Branch <span class="progga-required">*</span></label><select id="transferBranch" name="branch_id" class="progga-form-control" onchange="refreshAvailable()" required><option value="">Select branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" @selected((int)$selectedBranch===(int)$branch->id)>{{ $branch->name }}</option>@endforeach</select></div>@else<input type="hidden" id="transferBranch" name="branch_id" value="{{ $selectedBranch }}">@endif
-            <div class="col-md-{{ auth()->user()?->isSuperAdmin()?'8':'12' }}"><label class="progga-form-label">Notes</label><input name="notes" value="{{ old('notes') }}" class="progga-form-control" placeholder="Reason / shift / prep note"></div>
+            <div class="col-md-12"><label class="progga-form-label">Notes</label><input name="notes" value="{{ old('notes') }}" class="progga-form-control" placeholder="Reason / shift / prep note"></div>
         </div></div></div>
         <div class="progga-card mb-4"><div class="progga-card-header d-flex justify-content-between align-items-center"><div><strong>Transfer Items</strong><div class="small text-muted">Available amount is shown in each ingredient's base unit. The server re-checks availability under a row lock when posting.</div></div><button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addTransferRow()"><i class="bi bi-plus-lg"></i> Add Item</button></div>
         <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th style="width:160px">Available Main</th><th style="width:170px">Quantity</th><th style="width:220px">Unit</th><th style="width:60px"></th></tr></thead><tbody id="transferRows">
@@ -23,7 +22,7 @@
 <script>
 const transferIngredients={{ \Illuminate\Support\Js::from($ingredients->map(fn($i)=>['id'=>(int)$i->id,'name'=>$i->name,'base'=>$i->baseUnit?->symbol,'base_unit_id'=>(int)$i->base_unit_id,'dimension'=>$i->measurement_dimension,'packages'=>$i->unitConversions->filter(fn($c)=>$c->is_active && $c->unit?->is_active)->map(fn($c)=>['id'=>(int)$c->id,'label'=>$c->label ?: ($c->unit?->name.' ('.rtrim(rtrim((string)$c->factor_to_base,'0'),'.').' '.$i->baseUnit?->symbol.')')])->values()])->values()) }};
 const transferUnits={{ \Illuminate\Support\Js::from($units->filter(fn($u)=>$u->dimension !== \App\Models\Unit::DIMENSION_PACKAGE)->map(fn($u)=>['id'=>(int)$u->id,'name'=>$u->name,'symbol'=>$u->symbol,'dimension'=>$u->dimension])->values()) }};
-const transferAvailability={{ \Illuminate\Support\Js::from($availableByBranchIngredient) }};
+const transferAvailability={{ \Illuminate\Support\Js::from($availableByIngredient) }};
 let transferRowIndex={{ count($oldItems) }};
 function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));}
 function trimQty(v){const n=String(v??'0');return n.includes('.')?(n.replace(/0+$/,'').replace(/\.$/,'')):(n||'0');}
@@ -33,7 +32,7 @@ function setTransferChoices(select){const row=select.closest('.transfer-row'),un
 function filterTransferUnits(select){setTransferChoices(select);}
 function addTransferRow(){const tr=document.createElement('tr');tr.className='transfer-row';tr.innerHTML=`<td><select name="items[${transferRowIndex}][ingredient_id]" class="progga-form-control transfer-ingredient" onchange="filterTransferUnits(this);refreshAvailable()" required>${ingredientOptions()}</select></td><td class="available-main text-muted">—</td><td><input type="number" step="0.00000001" min="0.00000001" name="items[${transferRowIndex}][quantity]" class="progga-form-control" required></td><td><select name="items[${transferRowIndex}][unit_choice]" class="progga-form-control transfer-unit" required><option value="">Select ingredient first</option></select></td><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeTransferRow(this)"><i class="bi bi-trash"></i></button></td>`;document.getElementById('transferRows').appendChild(tr);transferRowIndex++;refreshAvailable();}
 function removeTransferRow(btn){if(document.querySelectorAll('.transfer-row').length<=1)return;btn.closest('tr').remove();}
-function refreshAvailable(){const branch=document.getElementById('transferBranch')?.value||'';document.querySelectorAll('.transfer-row').forEach(row=>{const sel=row.querySelector('.transfer-ingredient'),id=sel.value,opt=sel.options[sel.selectedIndex],base=opt?.dataset.base||'',qty=(transferAvailability[branch]&&transferAvailability[branch][id])?transferAvailability[branch][id]:'0.00000000';row.querySelector('.available-main').textContent=id?`${trimQty(qty)} ${base}`:'—';});}
+function refreshAvailable(){document.querySelectorAll('.transfer-row').forEach(row=>{const sel=row.querySelector('.transfer-ingredient'),id=sel.value,opt=sel.options[sel.selectedIndex],base=opt?.dataset.base||'',qty=transferAvailability[id]||'0.00000000';row.querySelector('.available-main').textContent=id?`${trimQty(qty)} ${base}`:'—';});}
 document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.transfer-ingredient').forEach(setTransferChoices);refreshAvailable();});
 </script>
 @endsection

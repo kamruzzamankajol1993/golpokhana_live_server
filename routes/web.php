@@ -291,6 +291,62 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
     Route::resource('role', RoleController::class);
     Route::resource('user', UserController::class);
 
+    // ==========================================
+    // Inventory Reports
+    // ==========================================
+    Route::get('reports/inventory', [App\Http\Controllers\Admin\Inventory\InventoryReportController::class, 'index'])->name('reports.inventory.index');
+    Route::get('reports/inventory/usage', [App\Http\Controllers\Admin\Inventory\InventoryReportController::class, 'usage'])->name('reports.inventory.usage');
+    Route::get('reports/inventory/request-variance', [App\Http\Controllers\Admin\Inventory\InventoryReportController::class, 'requestVariance'])->name('reports.inventory.request-variance');
+    Route::get('reports/inventory/reconciliation', [App\Http\Controllers\Admin\Inventory\InventoryReportController::class, 'reconciliation'])->name('reports.inventory.reconciliation');
+    Route::get('reports/inventory/qa', [App\Http\Controllers\Admin\Inventory\InventoryReportController::class, 'qa'])->name('reports.inventory.qa');
+
+    // ==========================================
+    // Inventory - Phase 1 through Phase 8
+    // ==========================================
+    Route::prefix('inventory')->name('inventory.')->group(function () {
+        Route::get('/dashboard', [App\Http\Controllers\Admin\Inventory\InventoryDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/units', [App\Http\Controllers\Admin\Inventory\UnitController::class, 'index'])->name('units.index');
+        Route::post('/units', [App\Http\Controllers\Admin\Inventory\UnitController::class, 'store'])->name('units.store');
+        Route::put('/units/{unit}', [App\Http\Controllers\Admin\Inventory\UnitController::class, 'update'])->name('units.update');
+        Route::delete('/units/{unit}', [App\Http\Controllers\Admin\Inventory\UnitController::class, 'destroy'])->name('units.destroy');
+
+        Route::get('/ingredients', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'index'])->name('ingredients.index');
+        Route::get('/ingredients/create', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'create'])->name('ingredients.create');
+        Route::post('/ingredients', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'store'])->name('ingredients.store');
+        Route::get('/ingredients/{ingredient}/edit', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'edit'])->name('ingredients.edit');
+        Route::put('/ingredients/{ingredient}', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'update'])->name('ingredients.update');
+        Route::delete('/ingredients/{ingredient}', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'destroy'])->name('ingredients.destroy');
+
+        Route::resource('vendors', App\Http\Controllers\Admin\Inventory\VendorController::class)->except(['show']);
+
+        Route::get('/purchases/{purchase}/invoice-pdf', [App\Http\Controllers\Admin\Inventory\PurchaseController::class, 'invoicePdf'])->name('purchases.invoice-pdf');
+        Route::get('/purchases/{purchase}/original-invoice', [App\Http\Controllers\Admin\Inventory\PurchaseController::class, 'downloadOriginalInvoice'])->name('purchases.original-invoice');
+        Route::resource('purchases', App\Http\Controllers\Admin\Inventory\PurchaseController::class);
+        Route::post('/purchases/{purchase}/receive', [App\Http\Controllers\Admin\Inventory\PurchaseController::class, 'receive'])->name('purchases.receive');
+
+        Route::resource('kitchen-requests', App\Http\Controllers\Admin\Inventory\KitchenRequestController::class);
+        Route::post('/kitchen-requests/{kitchenRequest}/submit', [App\Http\Controllers\Admin\Inventory\KitchenRequestController::class, 'submit'])->name('kitchen-requests.submit');
+        Route::post('/kitchen-requests/{kitchenRequest}/cancel', [App\Http\Controllers\Admin\Inventory\KitchenRequestController::class, 'cancel'])->name('kitchen-requests.cancel');
+        Route::post('/kitchen-requests/{kitchenRequest}/close', [App\Http\Controllers\Admin\Inventory\KitchenRequestController::class, 'close'])->name('kitchen-requests.close');
+        Route::post('/kitchen-requests/{kitchenRequest}/issue', [App\Http\Controllers\Admin\Inventory\KitchenRequestController::class, 'issue'])->name('kitchen-requests.issue');
+
+        Route::get('/transfers/return/create', [App\Http\Controllers\Admin\Inventory\StockTransferController::class, 'returnCreate'])->name('transfers.return.create');
+        Route::post('/transfers/return', [App\Http\Controllers\Admin\Inventory\StockTransferController::class, 'returnStore'])->name('transfers.return.store');
+        Route::resource('transfers', App\Http\Controllers\Admin\Inventory\StockTransferController::class)->only(['index', 'create', 'store', 'show']);
+
+        Route::resource('consumptions', App\Http\Controllers\Admin\Inventory\OrderConsumptionController::class)->only(['index', 'show']);
+        Route::resource('wastages', App\Http\Controllers\Admin\Inventory\WastageController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);
+        Route::resource('adjustments', App\Http\Controllers\Admin\Inventory\AdjustmentController::class)->only(['index', 'create', 'store', 'show']);
+        Route::resource('exceptions', App\Http\Controllers\Admin\Inventory\ExceptionController::class)->only(['index', 'show']);
+        Route::post('/exceptions/{exception}/resolve', [App\Http\Controllers\Admin\Inventory\ExceptionController::class, 'resolve'])->name('exceptions.resolve');
+
+        Route::get('/locations', [App\Http\Controllers\Admin\Inventory\StockLocationController::class, 'index'])->name('locations.index');
+        Route::get('/stock', [App\Http\Controllers\Admin\Inventory\StockController::class, 'index'])->name('stock.index');
+        Route::post('/stock/opening', [App\Http\Controllers\Admin\Inventory\StockController::class, 'storeOpeningStock'])->name('stock.opening.store');
+        Route::get('/ledger', [App\Http\Controllers\Admin\Inventory\LedgerController::class, 'index'])->name('ledger.index');
+    });
+
+
     // Profile Routes
     Route::get('/my-profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/my-profile/update', [ProfileController::class, 'update'])->name('profile.update');

@@ -11,22 +11,19 @@ return new class extends Migration
         if (!Schema::hasTable('inventory_balances')) {
             Schema::create('inventory_balances', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
                 $table->foreignId('stock_location_id')->constrained('stock_locations')->restrictOnDelete();
                 $table->foreignId('ingredient_id')->constrained('ingredients')->restrictOnDelete();
                 $table->decimal('quantity_base', 24, 8)->default(0);
                 $table->timestamps();
-
-                $table->unique(['branch_id', 'stock_location_id', 'ingredient_id'], 'inventory_balances_branch_location_ingredient_unique');
-                $table->index(['branch_id', 'ingredient_id'], 'inventory_balances_branch_ingredient_idx');
+                $table->unique(['stock_location_id', 'ingredient_id'], 'inventory_balances_location_ingredient_unique');
+                $table->index('ingredient_id', 'inventory_balances_ingredient_idx');
             });
         }
 
         if (!Schema::hasTable('stock_movements')) {
             Schema::create('stock_movements', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
-                $table->string('movement_no', 80);
+                $table->string('movement_no', 80)->unique();
                 $table->string('movement_type', 40)->index();
                 $table->string('reference_type', 120)->nullable();
                 $table->unsignedBigInteger('reference_id')->nullable();
@@ -37,12 +34,10 @@ return new class extends Migration
                 $table->foreignId('performed_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->text('reason')->nullable();
                 $table->timestamps();
-
-                $table->unique(['branch_id', 'movement_no'], 'stock_movements_branch_number_unique');
-                $table->index(['branch_id', 'movement_type', 'occurred_at'], 'stock_movements_branch_type_time_idx');
-                $table->index(['branch_id', 'reference_type', 'reference_id', 'movement_type'], 'stock_movements_reference_idx');
-                $table->index(['branch_id', 'source_location_id', 'occurred_at'], 'stock_movements_source_time_idx');
-                $table->index(['branch_id', 'destination_location_id', 'occurred_at'], 'stock_movements_destination_time_idx');
+                $table->index(['movement_type', 'occurred_at'], 'stock_movements_type_time_idx');
+                $table->index(['reference_type', 'reference_id', 'movement_type'], 'stock_movements_reference_idx');
+                $table->index(['source_location_id', 'occurred_at'], 'stock_movements_source_time_idx');
+                $table->index(['destination_location_id', 'occurred_at'], 'stock_movements_destination_time_idx');
             });
         }
 
@@ -57,7 +52,6 @@ return new class extends Migration
                 $table->decimal('destination_before', 24, 8)->nullable();
                 $table->decimal('destination_after', 24, 8)->nullable();
                 $table->timestamps();
-
                 $table->index(['ingredient_id', 'stock_movement_id'], 'stock_movement_items_ingredient_movement_idx');
             });
         }

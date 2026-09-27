@@ -3,12 +3,10 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
 use App\Models\InventoryException;
 use App\Models\OrderInventoryConsumption;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class ExceptionController extends Controller
 {
@@ -16,13 +14,13 @@ class ExceptionController extends Controller
     {
         $this->middleware('permission:inventory-view|inventory-adjustment-post')->only(['index', 'show']);
         $this->middleware('permission:inventory-adjustment-post')->only('resolve');
-        $this->middleware(RequireSpecificBranch::class)->only('resolve');
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
+        $site->ensureDefaultLocations();
         $exceptions = InventoryException::query()
-            ->with(['branch', 'ingredient.baseUnit', 'location', 'resolver'])
+            ->with(['ingredient.baseUnit', 'location', 'resolver'])
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(function ($sub) use ($search) {
@@ -42,9 +40,10 @@ class ExceptionController extends Controller
         return view('admin.inventory.exceptions.index', compact('exceptions', 'types'));
     }
 
-    public function show(InventoryException $exception)
+    public function show(InventoryException $exception, InventorySiteContext $site)
     {
-        $exception->load(['branch', 'ingredient.baseUnit', 'location', 'resolver']);
+        $site->ensureDefaultLocations();
+        $exception->load(['ingredient.baseUnit', 'location', 'resolver']);
         $consumption = null;
         if ($exception->reference_type === OrderInventoryConsumption::class && $exception->reference_id) {
             $consumption = OrderInventoryConsumption::query()->find($exception->reference_id);
@@ -52,12 +51,9 @@ class ExceptionController extends Controller
         return view('admin.inventory.exceptions.show', compact('exception', 'consumption'));
     }
 
-    public function resolve(Request $request, InventoryException $exception, BranchContext $context)
+    public function resolve(Request $request, InventoryException $exception, InventorySiteContext $site)
     {
-        $branchId = $context->requireSpecificBranch();
-        if ((int) $exception->branch_id !== $branchId) {
-            throw ValidationException::withMessages(['branch_id' => 'The selected branch does not match this inventory exception.']);
-        }
+        $site->ensureDefaultLocations();
         $data = $request->validate(['resolution_note' => ['required', 'string', 'max:3000']]);
         if ($exception->status === InventoryException::STATUS_RESOLVED) {
             return back()->with('success', 'This inventory exception is already resolved.');

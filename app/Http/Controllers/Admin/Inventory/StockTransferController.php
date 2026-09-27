@@ -3,17 +3,14 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireSpecificBranch;
-use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\InventoryBalance;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockTransfer;
 use App\Models\Unit;
 use App\Services\Inventory\StockLocationService;
 use App\Services\Inventory\StockTransferService;
-use App\Support\BranchContext;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class StockTransferController extends Controller
@@ -23,15 +20,15 @@ class StockTransferController extends Controller
         $this->middleware('permission:inventory-view|inventory-transfer-post|inventory-return-post')->only(['index', 'show']);
         $this->middleware('permission:inventory-transfer-post')->only(['create', 'store']);
         $this->middleware('permission:inventory-return-post')->only(['returnCreate', 'returnStore']);
-        $this->middleware(RequireSpecificBranch::class)->only(['store', 'returnCreate', 'returnStore']);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
         $kitchenOnly = (bool) $request->user()?->isKitchenUser();
+        $site->ensureDefaultLocations();
         $transfers = StockTransfer::query()
             ->when($kitchenOnly, fn ($q) => $q->where('direction', StockTransfer::DIRECTION_KITCHEN_TO_MAIN)->where('created_by', $request->user()->id))
-            ->with(['branch', 'kitchenRequest', 'sourceLocation', 'destinationLocation', 'poster'])
+            ->with(['kitchenRequest', 'sourceLocation', 'destinationLocation', 'poster'])
             ->withCount('items')
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
@@ -49,45 +46,35 @@ class StockTransferController extends Controller
         return view('admin.inventory.transfers.index', compact('transfers'));
     }
 
-    public function create(BranchContext $context)
+    public function create(InventorySiteContext $site)
     {
         $ingredients = Ingredient::query()
             ->active()->where('track_inventory', true)
             ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
             ->orderBy('name')->get();
         $units = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
-        $branches = $context->user()?->isSuperAdmin()
-            ? Branch::query()->active()->orderByDesc('is_main')->orderBy('name')->get()
-            : collect();
-
+        $site->ensureDefaultLocations();
         $balanceQuery = InventoryBalance::query()
-            ->withoutGlobalScope(BranchScope::class)
             ->join('stock_locations', 'stock_locations.id', '=', 'inventory_balances.stock_location_id');
-        if (!$context->user()?->isSuperAdmin() && $context->branchId()) {
-            $balanceQuery->where('inventory_balances.branch_id', $context->branchId());
-        }
         $balanceRows = $balanceQuery
             ->where('stock_locations.type', StockLocation::TYPE_MAIN)
-            ->select('inventory_balances.branch_id', 'inventory_balances.ingredient_id', 'inventory_balances.quantity_base')
+            ->select('inventory_balances.ingredient_id', 'inventory_balances.quantity_base')
             ->get();
-        $availableByBranchIngredient = [];
+        $availableByIngredient = [];
         foreach ($balanceRows as $row) {
-            $availableByBranchIngredient[(int) $row->branch_id][(int) $row->ingredient_id] = (string) $row->quantity_base;
+            $availableByIngredient[(int) $row->ingredient_id] = (string) $row->quantity_base;
         }
 
         return view('admin.inventory.transfers.form', [
             'ingredients' => $ingredients,
             'units' => $units,
-            'branches' => $branches,
-            'currentBranchId' => $context->branchId(),
-            'availableByBranchIngredient' => $availableByBranchIngredient,
+            'availableByIngredient' => $availableByIngredient,
         ]);
     }
 
-    public function store(Request $request, BranchContext $context, StockTransferService $service)
+    public function store(Request $request, InventorySiteContext $site, StockTransferService $service)
     {
         $data = $request->validate([
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'idempotency_key' => ['required', 'string', 'max:80'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
@@ -96,9 +83,8 @@ class StockTransferController extends Controller
             'items.*.unit_choice' => ['required', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
 
-        $branchId = $context->requireSpecificBranch();
+        $site->ensureDefaultLocations();
         $transfer = $service->postDirect(
-            $branchId,
             $data['items'],
             $data['idempotency_key'],
             $request->user()?->id,
@@ -109,14 +95,12 @@ class StockTransferController extends Controller
             ->with('success', 'Direct Main to Kitchen transfer posted successfully.');
     }
 
-    public function returnCreate(Request $request, BranchContext $context)
+    public function returnCreate(Request $request, InventorySiteContext $site)
     {
-        $branchId = $context->requireSpecificBranch();
+        $site->ensureDefaultLocations();
         $original = null;
         if ($request->filled('transfer_id')) {
             $original = StockTransfer::query()
-                ->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)
                 ->whereKey((int) $request->transfer_id)
                 ->where('status', StockTransfer::STATUS_POSTED)
                 ->where('direction', StockTransfer::DIRECTION_MAIN_TO_KITCHEN)
@@ -130,9 +114,8 @@ class StockTransferController extends Controller
             ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
             ->orderBy('name')->get();
         $units = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
-        $kitchen = app(StockLocationService::class)->forBranchAndType($branchId, StockLocation::TYPE_KITCHEN);
-        $available = InventoryBalance::query()->withoutGlobalScope(BranchScope::class)
-            ->where('branch_id', $branchId)
+        $kitchen = app(StockLocationService::class)->forType(StockLocation::TYPE_KITCHEN);
+        $available = InventoryBalance::query()
             ->where('stock_location_id', $kitchen->id)
             ->pluck('quantity_base', 'ingredient_id')
             ->map(fn ($v) => (string) $v);
@@ -146,11 +129,11 @@ class StockTransferController extends Controller
             : [['ingredient_id' => '', 'quantity' => '', 'unit_choice' => '']];
 
         return view('admin.inventory.transfers.return_form', compact(
-            'ingredients', 'units', 'available', 'original', 'suggestedItems', 'branchId'
+            'ingredients', 'units', 'available', 'original', 'suggestedItems'
         ));
     }
 
-    public function returnStore(Request $request, BranchContext $context, StockTransferService $service)
+    public function returnStore(Request $request, InventorySiteContext $site, StockTransferService $service)
     {
         $data = $request->validate([
             'idempotency_key' => ['required', 'string', 'max:80'],
@@ -167,8 +150,8 @@ class StockTransferController extends Controller
             $data['original_transfer_id'] = null;
         }
 
+        $site->ensureDefaultLocations();
         $transfer = $service->postReturn(
-            $context->requireSpecificBranch(),
             $data['items'],
             $data['idempotency_key'],
             $request->user()?->id,
@@ -200,8 +183,9 @@ class StockTransferController extends Controller
         return $match ? 'c:' . $match->id : 'u:' . $item->unit_id;
     }
 
-    public function show(StockTransfer $transfer)
+    public function show(StockTransfer $transfer, InventorySiteContext $site)
     {
+        $site->ensureDefaultLocations();
         if (request()->user()?->isKitchenUser()) {
             abort_unless(
                 $transfer->direction === StockTransfer::DIRECTION_KITCHEN_TO_MAIN
@@ -212,7 +196,6 @@ class StockTransferController extends Controller
         }
 
         $transfer->load([
-            'branch',
             'kitchenRequest',
             'originalTransfer',
             'sourceLocation',

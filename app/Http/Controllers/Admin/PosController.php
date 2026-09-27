@@ -2066,6 +2066,9 @@ public function placeOrder(Request $request)
 
         DB::beginTransaction();
         try {
+            $inventoryReconciliation = null;
+            $inventoryConsumptionForOrderEdit = app(\App\Services\Inventory\OrderInventoryConsumptionService::class);
+
             // ইউজারের রোল অনুযায়ী স্ট্যাটাস নির্ধারণ
             $isWaiter = $isWaiterActor;
             $newStatus = $isWaiter ? 'Waiter_Hold' : 'Pending';
@@ -2098,7 +2101,12 @@ public function placeOrder(Request $request)
             }
 
             if ($request->filled('order_id')) {
-                $order = Order::findOrFail($request->order_id);
+                $order = Order::lockForUpdate()->findOrFail($request->order_id);
+
+                // If this order has already consumed inventory, reverse its current
+                // snapshot before changing lines and rebuild it after the edit.
+                $inventoryReconciliation = $inventoryConsumptionForOrderEdit
+                    ->beginOrderEditReconciliation($order, auth()->id());
 
                 // চেক করা হচ্ছে অর্ডারে আগে থেকেই কোনো একটিভ (Pending/Cooking/Ready) KOT আছে কি না
                 $hasActiveKots = OrderKot::where('order_id', $order->id)->where('kitchen_status', '!=', 'Hold')->exists();
@@ -2335,6 +2343,14 @@ public function placeOrder(Request $request)
                 }
 
                 OrderDetail::create($detailData);
+            }
+
+            if ($inventoryReconciliation) {
+                $inventoryConsumptionForOrderEdit->finishOrderEditReconciliation(
+                    $order,
+                    $inventoryReconciliation,
+                    auth()->id()
+                );
             }
 
             Session::forget($cartKey);
@@ -3220,6 +3236,8 @@ public function tableReservationStatuses()
 
                 $order->save();
 
+                $this->consumeInventoryAfterOrderCompletion($order, $request);
+
                 OrderKot::where('order_id', $order->id)
                     ->where('kitchen_status', '!=', 'Delivered')
                     ->update(['kitchen_status' => 'Delivered']);
@@ -3809,6 +3827,8 @@ public function tableReservationStatuses()
 
             $order->save();
 
+            $this->consumeInventoryAfterOrderCompletion($order, $request);
+
             // Payment completes the reservation lifecycle so the table becomes Available immediately,
             // while the original booking advance amount/payment details remain untouched for audit.
             if (Schema::hasColumn('orders', 'table_booking_id') && $order->table_booking_id) {
@@ -3835,6 +3855,34 @@ public function tableReservationStatuses()
             DB::rollBack();
             return response()->json(['status' => 'error', 'message' => 'Payment failed! '.$e->getMessage()]);
         }
+    }
+
+
+    /**
+     * Deduct recipe ingredients exactly once when an order becomes Completed.
+     * The setting defaults to enabled for backward-compatible inventory behavior.
+     */
+    private function consumeInventoryAfterOrderCompletion(Order $order, Request $request): void
+    {
+        if (!Schema::hasTable('pos_settings')
+            || !Schema::hasTable('order_inventory_consumptions')
+            || !Schema::hasTable('inventory_balances')) {
+            return;
+        }
+
+        // JK is single-site: use the same POS settings row that the Settings page edits.
+        $enabled = !Schema::hasColumn('pos_settings', 'deduct_inventory_on_order_complete')
+            || (bool) (DB::table('pos_settings')->orderBy('id')->value('deduct_inventory_on_order_complete') ?? true);
+
+        if (!$enabled) {
+            return;
+        }
+
+        app(\App\Services\Inventory\OrderInventoryConsumptionService::class)->consumeOrderInventory(
+            $order,
+            \App\Models\OrderInventoryConsumption::TRIGGER_PAYMENT_COMPLETE,
+            $request->user()?->id
+        );
     }
 
     private function logDeletedCartOrOrderItem(array $data)
@@ -4446,6 +4494,13 @@ public function tableReservationStatuses()
                 ], 422);
             }
 
+            // Keep stock ledger aligned when editing an order that has already
+            // posted its ingredient consumption. The service reverses the old
+            // snapshot now and posts the updated snapshot before commit.
+            $inventoryConsumption = app(\App\Services\Inventory\OrderInventoryConsumptionService::class);
+            $inventoryReconciliation = $inventoryConsumption
+                ->beginOrderEditReconciliation($order, auth()->id());
+
             $availableQty = $details->sum(fn ($detail) => max(0, (int) ($detail->quantity ?? 0)));
             $remainingDeleteQty = min((int) $request->qty, $availableQty);
             $requestedDeleteQty = $remainingDeleteQty;
@@ -4561,6 +4616,14 @@ public function tableReservationStatuses()
             $order->grand_total = $grandTotal;
             $order->due = max(0, $grandTotal - $totalPaid);
             $order->save();
+
+            if ($inventoryReconciliation) {
+                $inventoryConsumption->finishOrderEditReconciliation(
+                    $order,
+                    $inventoryReconciliation,
+                    auth()->id()
+                );
+            }
 
             DB::commit();
 

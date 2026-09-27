@@ -4,10 +4,8 @@ namespace App\Services\Inventory;
 
 use App\Models\Ingredient;
 use App\Models\InventoryWastage;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
-use App\Models\Unit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,24 +19,32 @@ class InventoryWastageService
     ) {
     }
 
-    public function post(int $branchId, int $locationId, string $reasonCode, array $rows, ?string $notes, ?int $userId): InventoryWastage
+    /**
+     * Existing one-click flow: create the document and post it immediately.
+     */
+    public function post(int $locationId, string $reasonCode, array $rows, ?string $notes, ?int $userId): InventoryWastage
     {
-        if (!in_array($reasonCode, InventoryWastage::reasons(), true)) {
-            throw ValidationException::withMessages(['reason_code' => 'Select a valid wastage reason.']);
-        }
-        if ($reasonCode === InventoryWastage::REASON_OTHER && trim((string) $notes) === '') {
-            throw ValidationException::withMessages(['notes' => 'Notes are required when the wastage reason is Other.']);
-        }
+        return DB::transaction(function () use ($locationId, $reasonCode, $rows, $notes, $userId) {
+            $draft = $this->createDraft($locationId, $reasonCode, $rows, $notes, $userId);
+            return $this->postDraft($draft, $userId);
+        }, 5);
+    }
 
-        return DB::transaction(function () use ($branchId, $locationId, $reasonCode, $rows, $notes, $userId) {
-            $location = StockLocation::query()->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)->whereKey($locationId)->where('is_active', true)->firstOrFail();
+    /**
+     * Save a wastage document without touching stock. Drafts may be edited or
+     * deleted by users who have the corresponding permissions.
+     */
+    public function createDraft(int $locationId, string $reasonCode, array $rows, ?string $notes, ?int $userId): InventoryWastage
+    {
+        $this->validateReason($reasonCode, $notes);
+
+        return DB::transaction(function () use ($locationId, $reasonCode, $rows, $notes, $userId) {
+            $location = $this->location($locationId);
             $normalized = $this->normalizeRows($rows);
 
-            $wastage = InventoryWastage::query()->withoutGlobalScope(BranchScope::class)->create([
-                'branch_id' => $branchId,
+            $wastage = InventoryWastage::query()->create([
                 'location_id' => $location->id,
-                'wastage_no' => $this->number($branchId),
+                'wastage_no' => $this->number(),
                 'reason_code' => $reasonCode,
                 'notes' => $notes,
                 'status' => InventoryWastage::STATUS_DRAFT,
@@ -49,29 +55,133 @@ class InventoryWastageService
                 $wastage->items()->create($item);
             }
 
-            $movement = $this->movements->post(
-                $branchId,
+            return $wastage->fresh(['location', 'creator', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion']);
+        }, 5);
+    }
+
+    /**
+     * Update a draft only. Posted wastage stays immutable and must be corrected
+     * with an adjustment/reversal workflow, preserving the stock audit trail.
+     */
+    public function updateDraft(
+        InventoryWastage $wastage,
+        int $locationId,
+        string $reasonCode,
+        array $rows,
+        ?string $notes
+    ): InventoryWastage {
+        $this->assertDraft($wastage);
+        $this->validateReason($reasonCode, $notes);
+
+        return DB::transaction(function () use ($wastage, $locationId, $reasonCode, $rows, $notes) {
+            $locked = InventoryWastage::query()
+                
+                ->whereKey($wastage->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertDraft($locked);
+            $location = $this->location($locationId);
+            $normalized = $this->normalizeRows($rows);
+
+            $locked->location_id = $location->id;
+            $locked->reason_code = $reasonCode;
+            $locked->notes = $notes;
+            $locked->save();
+
+            $locked->items()->delete();
+            foreach ($normalized as $item) {
+                $locked->items()->create($item);
+            }
+
+            return $locked->fresh(['location', 'creator', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion']);
+        }, 5);
+    }
+
+    /**
+     * Post an existing draft and deduct stock exactly once.
+     */
+    public function postDraft(InventoryWastage $wastage, ?int $userId): InventoryWastage
+    {
+        return DB::transaction(function () use ($wastage, $userId) {
+            $locked = InventoryWastage::query()
+                
+                ->whereKey($wastage->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertDraft($locked);
+            $location = $this->location((int) $locked->location_id);
+            $items = $locked->items()->get();
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages(['items' => 'Add at least one wastage item before posting.']);
+            }
+
+            $this->movements->post(
                 StockMovement::WASTAGE,
-                array_map(fn ($item) => [
-                    'ingredient_id' => $item['ingredient_id'],
-                    'quantity_base' => $item['base_quantity'],
-                ], $normalized),
+                $items->map(fn ($item) => [
+                    'ingredient_id' => (int) $item->ingredient_id,
+                    'quantity_base' => (string) $item->base_quantity,
+                ])->all(),
                 (int) $location->id,
                 null,
                 [
                     'reference_type' => InventoryWastage::class,
-                    'reference_id' => $wastage->id,
+                    'reference_id' => $locked->id,
                     'performed_by' => $userId,
-                    'reason' => $reasonCode . ($notes ? ': ' . $notes : ''),
+                    'reason' => $locked->reason_code . ($locked->notes ? ': ' . $locked->notes : ''),
                 ]
             );
 
-            $wastage->status = InventoryWastage::STATUS_POSTED;
-            $wastage->posted_at = now();
-            $wastage->save();
+            $locked->status = InventoryWastage::STATUS_POSTED;
+            $locked->posted_at = now();
+            $locked->save();
 
-            return $wastage->fresh(['branch', 'location', 'creator', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion']);
+            return $locked->fresh(['location', 'creator', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion']);
         }, 5);
+    }
+
+    public function deleteDraft(InventoryWastage $wastage): void
+    {
+        $this->assertDraft($wastage);
+
+        DB::transaction(function () use ($wastage) {
+            $locked = InventoryWastage::query()
+                
+                ->whereKey($wastage->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertDraft($locked);
+            $locked->delete();
+        }, 5);
+    }
+
+    private function validateReason(string $reasonCode, ?string $notes): void
+    {
+        if (!in_array($reasonCode, InventoryWastage::reasons(), true)) {
+            throw ValidationException::withMessages(['reason_code' => 'Select a valid wastage reason.']);
+        }
+        if ($reasonCode === InventoryWastage::REASON_OTHER && trim((string) $notes) === '') {
+            throw ValidationException::withMessages(['notes' => 'Notes are required when the wastage reason is Other.']);
+        }
+    }
+
+    private function assertDraft(InventoryWastage $wastage): void
+    {
+        if ($wastage->status !== InventoryWastage::STATUS_DRAFT) {
+            throw ValidationException::withMessages([
+                'wastage' => 'Posted wastage is immutable. Only DRAFT wastage can be edited or deleted.',
+            ]);
+        }
+    }
+
+    private function location(int $locationId): StockLocation
+    {
+        return StockLocation::query()
+            ->whereKey($locationId)
+            ->where('is_active', true)
+            ->firstOrFail();
     }
 
     private function normalizeRows(array $rows): array
@@ -117,8 +227,8 @@ class InventoryWastageService
         return $result;
     }
 
-    private function number(int $branchId): string
+    private function number(): string
     {
-        return 'WST-' . $branchId . '-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(5));
+        return 'WST-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(5));
     }
 }

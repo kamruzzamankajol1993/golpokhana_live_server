@@ -21,6 +21,7 @@ class FoodItem extends Model
         'is_dine_in' => 'boolean',
         'is_takeaway' => 'boolean',
        'is_draft' => 'boolean', // নতুন যোগ করা হলো
+        'inventory_tracking' => 'boolean',
     ];
 
     // Relationships
@@ -42,6 +43,16 @@ class FoodItem extends Model
     public function courseType()
     {
         return $this->belongsTo(CourseType::class, 'course_type_id');
+    }
+
+    public function recipes()
+    {
+        return $this->hasMany(MenuItemRecipe::class, 'menu_item_id')->orderByDesc('version_no');
+    }
+
+    public function activeRecipe()
+    {
+        return $this->hasOne(MenuItemRecipe::class, 'menu_item_id')->where('is_active', true);
     }
 
     // Addons Relationship

@@ -4,7 +4,6 @@ namespace App\Services\Inventory;
 
 use App\Models\Ingredient;
 use App\Models\Purchase;
-use App\Models\Scopes\BranchScope;
 use App\Models\Unit;
 use App\Models\Vendor;
 use App\Models\VendorIngredient;
@@ -21,7 +20,6 @@ class PurchaseService
     }
 
     public function saveDraft(
-        int $branchId,
         Vendor $vendor,
         array $header,
         array $itemRows,
@@ -48,24 +46,19 @@ class PurchaseService
         }
         $total = $this->decimal->add($this->decimal->subtract($subtotal, $discount, 4), $tax, 4);
 
-        return DB::transaction(function () use ($branchId, $vendor, $header, $items, $subtotal, $discount, $tax, $total, $purchase, $userId) {
+        return DB::transaction(function () use ($vendor, $header, $items, $subtotal, $discount, $tax, $total, $purchase, $userId) {
             if ($purchase) {
                 $purchase = Purchase::query()
-                    ->withoutGlobalScope(BranchScope::class)
                     ->whereKey($purchase->id)
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                if ((int) $purchase->branch_id !== $branchId) {
-                    throw ValidationException::withMessages(['branch_id' => 'A purchase cannot be moved to another branch after creation.']);
-                }
                 if (!$purchase->isEditable()) {
                     throw ValidationException::withMessages(['purchase' => 'Received or closed purchases cannot be edited.']);
                 }
             } else {
                 $purchase = new Purchase();
-                $purchase->branch_id = $branchId;
-                $purchase->purchase_no = $this->nextPurchaseNumber($branchId);
+                $purchase->purchase_no = $this->nextPurchaseNumber();
                 $purchase->created_by = $userId;
             }
 
@@ -92,7 +85,7 @@ class PurchaseService
                 );
             }
 
-            return $purchase->fresh(['items.ingredient.baseUnit', 'items.unit', 'vendor', 'branch']);
+            return $purchase->fresh(['items.ingredient.baseUnit', 'items.unit', 'vendor']);
         }, 5);
     }
 
@@ -162,15 +155,11 @@ class PurchaseService
         return $normalized;
     }
 
-    private function nextPurchaseNumber(int $branchId): string
+    private function nextPurchaseNumber(): string
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
-            $number = 'PUR-' . $branchId . '-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
-            $exists = Purchase::query()
-                ->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)
-                ->where('purchase_no', $number)
-                ->exists();
+            $number = 'PUR-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(5));
+            $exists = Purchase::query()->where('purchase_no', $number)->exists();
             if (!$exists) {
                 return $number;
             }

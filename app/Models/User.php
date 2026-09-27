@@ -62,6 +62,16 @@ class User extends Authenticatable
         return $this->hasOne(Waiter::class);
     }
 
+    public function isInventoryManager(): bool
+    {
+        return $this->hasRole('Inventory Manager');
+    }
+
+    public function isKitchenUser(): bool
+    {
+        return $this->hasRole('Kitchen User');
+    }
+
 
     /**
      * Check access for Offline POS Device Management.

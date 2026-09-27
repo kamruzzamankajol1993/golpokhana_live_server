@@ -202,6 +202,17 @@
                         </div></div>
                         <div class="col-md-6">
                             <div class="progga-form-group">
+                                <label class="progga-form-label">Deduct Ingredients When Order Completes</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" name="deduct_inventory_on_order_complete" value="1" {{ ($pos->deduct_inventory_on_order_complete ?? true) ? 'checked' : '' }} data-on="Yes" data-off="No">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->deduct_inventory_on_order_complete ?? true) ? 'Yes' : 'No' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Yes: when an order becomes Completed, recipe ingredients are deducted from Kitchen Stock once. No: completing an order does not reduce ingredient stock.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
                                 <label class="progga-form-label">Given Money Manual Toggle Button</label>
                                 <label class="progga-toggle" style="margin-top:8px;">
                                     <input type="checkbox"

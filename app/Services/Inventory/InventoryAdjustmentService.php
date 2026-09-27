@@ -5,7 +5,6 @@ namespace App\Services\Inventory;
 use App\Models\Ingredient;
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryBalance;
-use App\Models\Scopes\BranchScope;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
@@ -20,23 +19,21 @@ class InventoryAdjustmentService
     ) {
     }
 
-    public function postPhysicalCount(int $branchId, int $locationId, array $rows, string $reason, ?int $userId): InventoryAdjustment
+    public function postPhysicalCount(int $locationId, array $rows, string $reason, ?int $userId): InventoryAdjustment
     {
         $reason = trim($reason);
         if ($reason === '') {
             throw ValidationException::withMessages(['reason' => 'A reason is required for physical stock adjustment.']);
         }
 
-        return DB::transaction(function () use ($branchId, $locationId, $rows, $reason, $userId) {
-            $location = StockLocation::query()->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)->whereKey($locationId)->where('is_active', true)->firstOrFail();
+        return DB::transaction(function () use ($locationId, $rows, $reason, $userId) {
+            $location = StockLocation::query()->whereKey($locationId)->where('is_active', true)->firstOrFail();
 
             $physicalByIngredient = $this->normalizeRows($rows);
             $ingredientIds = array_keys($physicalByIngredient);
 
             foreach ($ingredientIds as $ingredientId) {
                 DB::table('inventory_balances')->insertOrIgnore([
-                    'branch_id' => $branchId,
                     'stock_location_id' => $location->id,
                     'ingredient_id' => $ingredientId,
                     'quantity_base' => '0.00000000',
@@ -45,8 +42,7 @@ class InventoryAdjustmentService
                 ]);
             }
 
-            $balances = InventoryBalance::query()->withoutGlobalScope(BranchScope::class)
-                ->where('branch_id', $branchId)
+            $balances = InventoryBalance::query()
                 ->where('stock_location_id', $location->id)
                 ->whereIn('ingredient_id', $ingredientIds)
                 ->orderBy('ingredient_id')
@@ -54,10 +50,9 @@ class InventoryAdjustmentService
                 ->get()
                 ->keyBy('ingredient_id');
 
-            $adjustment = InventoryAdjustment::query()->withoutGlobalScope(BranchScope::class)->create([
-                'branch_id' => $branchId,
+            $adjustment = InventoryAdjustment::query()->create([
                 'location_id' => $location->id,
-                'adjustment_no' => $this->number($branchId),
+                'adjustment_no' => $this->number(),
                 'reason' => $reason,
                 'status' => InventoryAdjustment::STATUS_DRAFT,
                 'created_by' => $userId,
@@ -87,7 +82,6 @@ class InventoryAdjustmentService
 
             if ($positive !== []) {
                 $this->movements->post(
-                    $branchId,
                     StockMovement::POSITIVE_ADJUSTMENT,
                     $positive,
                     null,
@@ -102,7 +96,6 @@ class InventoryAdjustmentService
             }
             if ($negative !== []) {
                 $this->movements->post(
-                    $branchId,
                     StockMovement::NEGATIVE_ADJUSTMENT,
                     $negative,
                     (int) $location->id,
@@ -120,7 +113,7 @@ class InventoryAdjustmentService
             $adjustment->posted_at = now();
             $adjustment->save();
 
-            return $adjustment->fresh(['branch', 'location', 'creator', 'approver', 'items.ingredient.baseUnit']);
+            return $adjustment->fresh(['location', 'creator', 'approver', 'items.ingredient.baseUnit']);
         }, 5);
     }
 
@@ -156,8 +149,8 @@ class InventoryAdjustmentService
         return $result;
     }
 
-    private function number(int $branchId): string
+    private function number(): string
     {
-        return 'ADJ-' . $branchId . '-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(5));
+        return 'ADJ-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(5));
     }
 }

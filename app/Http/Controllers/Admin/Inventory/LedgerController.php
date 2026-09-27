@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
+use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class LedgerController extends Controller
@@ -15,10 +16,11 @@ class LedgerController extends Controller
         $this->middleware('permission:inventory-view');
     }
 
-    public function index(Request $request)
+    public function index(Request $request, InventorySiteContext $site)
     {
+        $site->ensureDefaultLocations();
         $movements = StockMovement::query()
-            ->with(['branch', 'sourceLocation', 'destinationLocation', 'performer', 'items.ingredient.baseUnit'])
+            ->with(['sourceLocation', 'destinationLocation', 'performer', 'items.ingredient.baseUnit'])
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(function ($sub) use ($search) {
@@ -43,7 +45,7 @@ class LedgerController extends Controller
         return view('admin.inventory.ledger.index', [
             'movements' => $movements,
             'movementTypes' => StockMovement::types(),
-            'locations' => StockLocation::query()->with('branch')->active()->orderBy('branch_id')->orderBy('type')->get(),
+            'locations' => StockLocation::query()->active()->orderBy('type')->get(),
             'ingredients' => Ingredient::query()->orderBy('name')->get(),
         ]);
     }

@@ -11,8 +11,7 @@ return new class extends Migration
         if (!Schema::hasTable('kitchen_requests')) {
             Schema::create('kitchen_requests', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
-                $table->string('request_no', 100);
+                $table->string('request_no', 100)->unique();
                 $table->string('request_type', 20)->index();
                 $table->date('request_date')->index();
                 $table->string('status', 30)->default('DRAFT')->index();
@@ -22,10 +21,8 @@ return new class extends Migration
                 $table->timestamp('submitted_at')->nullable()->index();
                 $table->timestamp('closed_at')->nullable();
                 $table->timestamps();
-
-                $table->unique(['branch_id', 'request_no'], 'kitchen_requests_branch_number_unique');
-                $table->index(['branch_id', 'status', 'request_date'], 'kitchen_requests_branch_status_date_idx');
-                $table->index(['branch_id', 'request_type', 'request_date'], 'kitchen_requests_branch_type_date_idx');
+                $table->index(['status', 'request_date'], 'kitchen_requests_status_date_idx');
+                $table->index(['request_type', 'request_date'], 'kitchen_requests_type_date_idx');
             });
         }
 
@@ -38,7 +35,6 @@ return new class extends Migration
                 $table->foreignId('recipe_id')->constrained('menu_item_recipes')->restrictOnDelete();
                 $table->unsignedInteger('recipe_version_no');
                 $table->timestamps();
-
                 $table->unique(['kitchen_request_id', 'menu_item_id'], 'kitchen_request_food_request_menu_unique');
                 $table->index(['recipe_id', 'kitchen_request_id'], 'kitchen_request_food_recipe_request_idx');
             });
@@ -57,7 +53,6 @@ return new class extends Migration
                 $table->decimal('issued_base_qty', 24, 8)->default(0);
                 $table->foreignId('display_unit_id')->constrained('units')->restrictOnDelete();
                 $table->timestamps();
-
                 $table->unique(['kitchen_request_id', 'ingredient_id'], 'kitchen_request_ingredient_request_unique');
                 $table->index(['ingredient_id', 'kitchen_request_id'], 'kitchen_request_ingredient_request_idx');
             });
@@ -66,24 +61,20 @@ return new class extends Migration
         if (!Schema::hasTable('stock_transfers')) {
             Schema::create('stock_transfers', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('branch_id')->constrained('branches')->restrictOnDelete();
-                $table->string('transfer_no', 100);
+                $table->string('transfer_no', 100)->unique();
                 $table->string('direction', 30)->index();
                 $table->foreignId('kitchen_request_id')->nullable()->constrained('kitchen_requests')->restrictOnDelete();
                 $table->foreignId('source_location_id')->constrained('stock_locations')->restrictOnDelete();
                 $table->foreignId('destination_location_id')->constrained('stock_locations')->restrictOnDelete();
                 $table->string('status', 20)->default('DRAFT')->index();
-                $table->string('idempotency_key', 80)->nullable();
+                $table->string('idempotency_key', 80)->nullable()->unique();
                 $table->foreignId('posted_movement_id')->nullable()->unique()->constrained('stock_movements')->restrictOnDelete();
                 $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->foreignId('posted_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamp('posted_at')->nullable()->index();
                 $table->text('notes')->nullable();
                 $table->timestamps();
-
-                $table->unique(['branch_id', 'transfer_no'], 'stock_transfers_branch_number_unique');
-                $table->unique(['branch_id', 'idempotency_key'], 'stock_transfers_branch_idempotency_unique');
-                $table->index(['branch_id', 'direction', 'posted_at'], 'stock_transfers_branch_direction_time_idx');
+                $table->index(['direction', 'posted_at'], 'stock_transfers_direction_time_idx');
                 $table->index(['kitchen_request_id', 'status'], 'stock_transfers_request_status_idx');
             });
         }
@@ -98,7 +89,6 @@ return new class extends Migration
                 $table->decimal('conversion_factor_snapshot', 24, 8);
                 $table->decimal('base_quantity', 24, 8);
                 $table->timestamps();
-
                 $table->unique(['stock_transfer_id', 'ingredient_id'], 'stock_transfer_items_transfer_ingredient_unique');
                 $table->index(['ingredient_id', 'stock_transfer_id'], 'stock_transfer_items_ingredient_transfer_idx');
             });
