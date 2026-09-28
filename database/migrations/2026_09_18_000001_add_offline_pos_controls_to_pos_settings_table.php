@@ -32,10 +32,10 @@ return new class extends Migration
                 $table->boolean('offline_pos_auto_push_enabled')->default(true);
             }
             if (!Schema::hasColumn('pos_settings', 'offline_pos_sync_interval_seconds')) {
-                $table->unsignedInteger('offline_pos_sync_interval_seconds')->default(30);
+                $table->unsignedInteger('offline_pos_sync_interval_seconds')->default(180);
             }
             if (!Schema::hasColumn('pos_settings', 'offline_pos_retry_interval_seconds')) {
-                $table->unsignedInteger('offline_pos_retry_interval_seconds')->default(15);
+                $table->unsignedInteger('offline_pos_retry_interval_seconds')->default(180);
             }
         });
     }

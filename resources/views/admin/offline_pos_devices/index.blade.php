@@ -91,7 +91,13 @@
                                 <br><small class="text-muted">Offline terminal</small>
                             </td>
                             <td><code>{{ $device->device_key }}</code></td>
-                            <td><small class="text-muted">{{ $device->device_uuid }}</small></td>
+                            <td>
+                                @if($device->last_seen_at)
+                                    <small class="text-muted">{{ $device->device_uuid }}</small>
+                                @else
+                                    <span class="badge bg-warning text-dark">Pending first bind</span>
+                                @endif
+                            </td>
                             <td>
                                 @if($device->status)
                                     <span class="badge bg-success">Active</span>

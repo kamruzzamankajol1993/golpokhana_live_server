@@ -31,7 +31,14 @@ class OfflinePosInitializeController extends Controller
         $givenUuid = trim((string) ($request->device_uuid ?? ''));
         $storedUuid = trim((string) ($device->device_uuid ?? ''));
 
-        if ($givenUuid !== '' && $storedUuid !== '' && !hash_equals($storedUuid, $givenUuid)) {
+        // Device records are created in the Main RMS before the physical/native
+        // Offline POS exists, so the admin-created UUID is only a provisional value.
+        // The first successful initialize request is the authoritative device bind.
+        // After the device has connected once (last_seen_at is set), UUID mismatches
+        // are rejected to prevent the same key being reused by another terminal.
+        $hasBeenBound = !is_null($device->last_seen_at);
+
+        if ($givenUuid !== '' && $storedUuid !== '' && !hash_equals($storedUuid, $givenUuid) && $hasBeenBound) {
             return response()->json([
                 'success' => false,
                 'message' => 'This device key is already bound to another device UUID.'
@@ -39,7 +46,7 @@ class OfflinePosInitializeController extends Controller
         }
 
         $deviceUpdate = ['last_seen_at' => now()];
-        if ($givenUuid !== '' && $storedUuid === '') {
+        if ($givenUuid !== '' && ($storedUuid === '' || !$hasBeenBound || !hash_equals($storedUuid, $givenUuid))) {
             $deviceUpdate['device_uuid'] = $givenUuid;
         }
         $device->update($deviceUpdate);
@@ -57,6 +64,10 @@ class OfflinePosInitializeController extends Controller
 
         return response()->json([
             'success' => true,
+            // Current offline clients authenticate subsequent sync calls with
+            // X-OFFLINE-POS-KEY. Expose the same value as sync_token as well for
+            // compatibility with the bootstrap client state gate.
+            'sync_token' => $device->device_key,
             'settings' => $settings,
             'users' => User::with('roles')->get()->map(function($user){
                 return [

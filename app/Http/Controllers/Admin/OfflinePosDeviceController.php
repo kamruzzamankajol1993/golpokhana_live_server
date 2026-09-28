@@ -35,7 +35,7 @@ class OfflinePosDeviceController extends Controller
         ]);
 
         return redirect()->route('offline-pos-devices.index')
-            ->with('success', 'Offline POS device created. Device ID: ' . $device->device_uuid);
+            ->with('success', 'Offline POS device created. Use the generated Device Key on the Offline POS; its UUID will bind on first initialization.');
     }
 
     public function toggle(Request $request, OfflinePosDevice $device)

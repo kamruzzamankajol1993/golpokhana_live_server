@@ -138,8 +138,8 @@ class OfflinePosSettingController extends Controller
             'show_push_button' => (bool) ($pos?->offline_pos_show_push_button ?? true),
             'auto_pull_enabled' => (bool) ($pos?->offline_pos_auto_pull_enabled ?? true),
             'auto_push_enabled' => (bool) ($pos?->offline_pos_auto_push_enabled ?? true),
-            'sync_interval_seconds' => max(5, (int) ($pos?->offline_pos_sync_interval_seconds ?? 30)),
-            'retry_interval_seconds' => max(5, (int) ($pos?->offline_pos_retry_interval_seconds ?? 15)),
+            'sync_interval_seconds' => max(5, (int) ($pos?->offline_pos_sync_interval_seconds ?? 180)),
+            'retry_interval_seconds' => max(5, (int) ($pos?->offline_pos_retry_interval_seconds ?? 180)),
         ];
     }
 

@@ -189,7 +189,9 @@ class OfflinePosSyncController extends Controller
 
             DB::beginTransaction();
             try {
-                $results[] = $this->upsertOrder($payload);
+                $results[] = (($payload['_sync_action'] ?? null) === 'delete')
+                    ? $this->deleteOfflineOrder($payload)
+                    : $this->upsertOrder($payload);
                 DB::commit();
             } catch (Throwable $e) {
                 DB::rollBack();
@@ -204,6 +206,28 @@ class OfflinePosSyncController extends Controller
         }
 
         return $results;
+    }
+
+    private function deleteOfflineOrder(array $payload): array
+    {
+        $offlineUuid = trim((string) ($payload['local_uuid'] ?? $payload['offline_uuid'] ?? ''));
+        $serverId = (int) ($payload['server_id'] ?? 0);
+        $order = $serverId > 0 ? Order::find($serverId) : null;
+        if (!$order && $offlineUuid !== '' && $this->hasColumn('orders','offline_uuid')) {
+            $order = Order::where('offline_uuid',$offlineUuid)->first();
+        }
+        $deletedServerId = $order?->id ?: ($serverId ?: null);
+        if ($order) {
+            $tableId = $order->table_id;
+            OrderDetail::where('order_id',$order->id)->delete();
+            OrderKot::where('order_id',$order->id)->delete();
+            $order->delete();
+            if ($tableId && Schema::hasTable('tables') && Schema::hasColumn('tables','initial_status')) {
+                $stillBusy = Order::where('table_id',$tableId)->whereIn('status',['Pending','Waiter_Hold','QR_Pending','QR_Hold','Cooking','Ready'])->exists();
+                if (!$stillBusy) Table::whereKey($tableId)->update(['initial_status'=>'Available']);
+            }
+        }
+        return ['local_uuid'=>$offlineUuid!==''?$offlineUuid:null,'server_id'=>$deletedServerId,'status'=>'synced','deleted'=>true];
     }
 
     private function upsertOrder(array $payload): array
@@ -242,10 +266,21 @@ class OfflinePosSyncController extends Controller
         $tableId = $payload['table_server_id'] ?? $payload['table_id'] ?? null;
         $waiterId = $payload['waiter_server_id'] ?? $payload['waiter_id'] ?? null;
         $deliveryPartnerId = $payload['delivery_partner_server_id'] ?? $payload['delivery_partner_id'] ?? null;
-        $tableBookingId = $payload['table_booking_server_id'] ?? $payload['table_booking_id'] ?? null;
+        $tableBookingId = $payload['table_booking_server_id'] ?? null;
         $tableBookingLocalUuid = trim((string) ($payload['table_booking_local_uuid'] ?? $payload['table_booking_offline_uuid'] ?? ''));
         if (!$tableBookingId && $tableBookingLocalUuid !== '' && Schema::hasTable('table_bookings') && Schema::hasColumn('table_bookings', 'offline_uuid')) {
             $tableBookingId = DB::table('table_bookings')->where('offline_uuid', $tableBookingLocalUuid)->value('id');
+            if (!$tableBookingId) {
+                throw new \InvalidArgumentException('Selected table booking has not synced to the main server yet. Retry after booking sync.');
+            }
+        }
+        // Backward compatibility for older offline clients that did not send a booking UUID.
+        // Only then may table_booking_id be treated as a main-server ID.
+        if (!$tableBookingId && $tableBookingLocalUuid === '') {
+            $tableBookingId = $payload['table_booking_id'] ?? null;
+        }
+        if ($tableBookingId && Schema::hasTable('table_bookings') && !DB::table('table_bookings')->where('id', $tableBookingId)->exists()) {
+            throw new \InvalidArgumentException('Selected table booking does not exist on the main server.');
         }
 
         if ($deliveryPartnerId && Schema::hasTable('delivery_partners')) {
@@ -599,44 +634,9 @@ class OfflinePosSyncController extends Controller
             throw new \InvalidArgumentException('Selected table already has an active order. Pull the latest table state and retry.');
         }
 
-        if (!Schema::hasTable('table_bookings')) {
-            return;
-        }
-
-        $now = Carbon::now('Asia/Dhaka');
-        $time = $now->format('H:i:s');
-        $bookingQuery = DB::table('table_bookings')
-            ->whereIn(DB::raw('LOWER(status)'), ['pending', 'upcoming', 'confirmed', 'seated'])
-            ->whereDate('booking_date', $now->toDateString())
-            ->where(function ($query) use ($time) {
-                if (Schema::hasColumn('table_bookings', 'booking_start_time')) {
-                    $query->whereNull('booking_start_time')->orWhereTime('booking_start_time', '<=', $time);
-                }
-            })
-            ->where(function ($query) use ($time) {
-                if (Schema::hasColumn('table_bookings', 'booking_end_time')) {
-                    $query->whereNull('booking_end_time')->orWhereTime('booking_end_time', '>=', $time);
-                }
-            })
-            ->where(function ($query) use ($tableId) {
-                $query->where('table_id', $tableId);
-                if (Schema::hasTable('table_booking_tables')) {
-                    $query->orWhereExists(function ($subQuery) use ($tableId) {
-                        $subQuery->select(DB::raw(1))
-                            ->from('table_booking_tables')
-                            ->whereColumn('table_booking_tables.table_booking_id', 'table_bookings.id')
-                            ->where('table_booking_tables.table_id', $tableId);
-                    });
-                }
-            });
-
-        if ($tableBookingId) {
-            $bookingQuery->where('id', '!=', $tableBookingId);
-        }
-
-        if ($bookingQuery->exists()) {
-            throw new \InvalidArgumentException('Selected table is currently reserved by another booking. Pull the latest table state and retry.');
-        }
+        // Table booking is a separate reservation workflow. Ordinary offline POS table
+        // orders must not be rejected just because the table also has a booking record.
+        // Active orders remain the only operational occupancy conflict here.
     }
 
     private function generateGlobalKotNumber(): string

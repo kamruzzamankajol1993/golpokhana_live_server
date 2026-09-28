@@ -75,13 +75,15 @@ class OfflinePosDeviceApiController extends Controller
         $givenUuid = trim((string) $deviceUuid);
         $storedUuid = trim((string) $device->device_uuid);
 
-        // Backward compatible: old clients may omit UUID. When a UUID is supplied,
-        // bind an unbound device or reject a mismatched UUID.
+        // Backward compatible: old clients may omit UUID. A never-connected
+        // device may adopt the UUID supplied by its first real Offline POS. Once it
+        // has connected, a mismatched UUID is rejected.
         if ($givenUuid !== '') {
-            if ($storedUuid !== '' && !hash_equals($storedUuid, $givenUuid)) {
+            $hasBeenBound = !is_null($device->last_seen_at);
+            if ($storedUuid !== '' && !hash_equals($storedUuid, $givenUuid) && $hasBeenBound) {
                 return null;
             }
-            if ($storedUuid === '') {
+            if ($storedUuid === '' || !$hasBeenBound || !hash_equals($storedUuid, $givenUuid)) {
                 $device->forceFill(['device_uuid' => $givenUuid])->save();
                 $device->refresh();
             }

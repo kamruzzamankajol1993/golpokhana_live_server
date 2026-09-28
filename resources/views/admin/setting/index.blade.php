@@ -500,16 +500,16 @@
                         <div class="col-md-6">
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Background Sync Interval (seconds)</label>
-                                <input type="number" min="5" max="3600" name="offline_pos_sync_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_sync_interval_seconds', (int) ($pos->offline_pos_sync_interval_seconds ?? 30)) }}" required>
-                                <small class="d-block text-muted mt-2">Normal interval used while internet and the main RMS are reachable.</small>
+                                <input type="number" min="5" max="3600" name="offline_pos_sync_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_sync_interval_seconds', (int) ($pos->offline_pos_sync_interval_seconds ?? 180)) }}" required>
+                                <small class="d-block text-muted mt-2">Normal interval used while internet and the main RMS are reachable. Default: 180 seconds (3 minutes).</small>
                             </div>
                         </div>
 
                         <div class="col-md-6">
                             <div class="progga-form-group">
                                 <label class="progga-form-label">Retry Interval After Failure (seconds)</label>
-                                <input type="number" min="5" max="3600" name="offline_pos_retry_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_retry_interval_seconds', (int) ($pos->offline_pos_retry_interval_seconds ?? 15)) }}" required>
-                                <small class="d-block text-muted mt-2">Retry delay after a failed API request or when the main RMS becomes unreachable.</small>
+                                <input type="number" min="5" max="3600" name="offline_pos_retry_interval_seconds" class="progga-form-control" value="{{ old('offline_pos_retry_interval_seconds', (int) ($pos->offline_pos_retry_interval_seconds ?? 180)) }}" required>
+                                <small class="d-block text-muted mt-2">Retry delay after a failed API request or when the main RMS becomes unreachable. Default: 180 seconds (3 minutes).</small>
                             </div>
                         </div>
                     </div>
