@@ -303,7 +303,7 @@
 @canany(['systemsetting-view','profile-view','user-view','permission-view','role-view','offline-pos-device-view'])
 <div class="progga-nav-item">
     @php
-        $settingsMenuOpen = request()->routeIs('settings.*') || request()->routeIs('profile.*') || request()->routeIs('user.*') || request()->routeIs('permission.*') || request()->routeIs('role.*') || request()->routeIs('offline-pos-devices.*');
+        $settingsMenuOpen = request()->routeIs('settings.*') || request()->routeIs('profile.*') || request()->routeIs('user.*') || request()->routeIs('permission.*') || request()->routeIs('role.*') || request()->routeIs('offline-pos-devices.*') || request()->routeIs('offline-sync-logs.*');
     @endphp
     <a class="progga-nav-link {{ $settingsMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#settingsDropdown" role="button" aria-expanded="{{ $settingsMenuOpen ? 'true' : 'false' }}">
         <i class="bi bi-gear-fill progga-nav-icon"></i><span>Settings</span>
@@ -316,6 +316,7 @@
         @can('permission-view')<a class="progga-nav-link {{ request()->routeIs('permission.*') ? 'active' : '' }}" href="{{ route('permission.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-shield-lock progga-nav-icon"></i><span>Permissions</span></a>@endcan
         @can('role-view')<a class="progga-nav-link {{ request()->routeIs('role.*') ? 'active' : '' }}" href="{{ route('role.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-person-badge progga-nav-icon"></i><span>Role Management</span></a>@endcan
         @can('offline-pos-device-view')<a class="progga-nav-link {{ request()->routeIs('offline-pos-devices.*') ? 'active' : '' }}" href="{{ route('offline-pos-devices.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-pc-display progga-nav-icon"></i><span>Offline POS Devices</span></a>@endcan
+        @can('offline-pos-device-view')<a class="progga-nav-link {{ request()->routeIs('offline-sync-logs.*') ? 'active' : '' }}" href="{{ route('offline-sync-logs.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-arrow-left-right progga-nav-icon"></i><span>Offline Sync Logs</span></a>@endcan
     </div>
 </div>
 @endcanany

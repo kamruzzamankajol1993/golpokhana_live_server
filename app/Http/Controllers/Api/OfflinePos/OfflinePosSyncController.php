@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class OfflinePosSyncController extends Controller
@@ -85,7 +86,25 @@ class OfflinePosSyncController extends Controller
     public function pushOrders(Request $request): JsonResponse
     {
         $request->validate(['orders' => ['required', 'array']]);
-        $results = $this->syncOrders($request->input('orders', []));
+        $orders = $request->input('orders', []);
+        $device = $request->attributes->get('offline_pos_device');
+
+        Log::info('OFFLINE POS ORDER PUSH REQUEST', [
+            'device_id'=>$device?->id,
+            'device_name'=>$device?->device_name,
+            'count'=>count($orders),
+            'local_uuids'=>array_values(array_filter(array_map(fn($row)=>is_array($row)?($row['local_uuid']??$row['offline_uuid']??null):null,$orders))),
+        ]);
+
+        $results = $this->syncOrders($orders);
+        $failed = $this->countStatus($results, 'failed');
+        Log::log($failed ? 'error' : 'info', 'OFFLINE POS ORDER PUSH RESULT', [
+            'device_id'=>$device?->id,
+            'count'=>count($orders),
+            'synced'=>$this->countStatus($results,'synced'),
+            'failed'=>$failed,
+            'results'=>$results,
+        ]);
 
         return $this->syncResponse('orders', $results);
     }
@@ -196,6 +215,14 @@ class OfflinePosSyncController extends Controller
             } catch (Throwable $e) {
                 DB::rollBack();
                 report($e);
+                Log::error('OFFLINE POS ORDER ROW SYNC FAILED', [
+                    'local_uuid'=>$payload['local_uuid'] ?? $payload['offline_uuid'] ?? null,
+                    'server_id'=>$payload['server_id'] ?? null,
+                    'order_number'=>$payload['order_number'] ?? null,
+                    'message'=>$e->getMessage(),
+                    'file'=>$e->getFile(),
+                    'line'=>$e->getLine(),
+                ]);
                 $results[] = [
                     'local_uuid' => $payload['local_uuid'] ?? $payload['offline_uuid'] ?? null,
                     'server_id' => $payload['server_id'] ?? null,
@@ -297,6 +324,7 @@ class OfflinePosSyncController extends Controller
         if (!$completedAt && strtolower($status) === 'completed') {
             $completedAt = now();
         }
+        $completedAt = $this->normalizeIncomingDateTime($completedAt, 'completed_at');
 
         $orderData = [
             'offline_uuid' => $offlineUuid !== '' ? $offlineUuid : null,
@@ -333,7 +361,7 @@ class OfflinePosSyncController extends Controller
             'is_complimentary_order' => $payload['is_complimentary_order'] ?? 0,
             'user_id' => $payload['user_server_id'] ?? $payload['user_id'] ?? null,
             'waiter_id' => $waiterId,
-            'order_time' => $payload['order_time'] ?? $payload['created_at'] ?? now(),
+            'order_time' => $this->normalizeIncomingDateTime($payload['order_time'] ?? null, 'order_time', $payload['created_at'] ?? now()),
             'completed_at' => $completedAt,
             'preparation_time' => $payload['preparation_time'] ?? null,
             'kitchen_to_payment_minutes' => $payload['kitchen_to_payment_minutes'] ?? null,
@@ -347,10 +375,10 @@ class OfflinePosSyncController extends Controller
             'notes' => $payload['notes'] ?? null,
             'booking_advance' => $payload['booking_advance'] ?? 0,
             'pre_invoice_snapshot' => $payload['pre_invoice_snapshot'] ?? null,
-            'pre_invoice_printed_at' => $payload['pre_invoice_printed_at'] ?? null,
+            'pre_invoice_printed_at' => $this->normalizeIncomingDateTime($payload['pre_invoice_printed_at'] ?? null, 'pre_invoice_printed_at'),
             // Preserve the original offline business timestamp. updated_at remains
             // server-controlled so timestamp-based background pull still detects this sync.
-            'created_at' => $payload['created_at'] ?? $payload['order_time'] ?? ($order->created_at ?? now()),
+            'created_at' => $this->normalizeIncomingDateTime($payload['created_at'] ?? null, 'created_at', $payload['order_time'] ?? ($order->created_at ?? now())),
         ];
 
         $order->fill($this->filterColumns('orders', $orderData));
@@ -478,7 +506,7 @@ class OfflinePosSyncController extends Controller
             'kot_number' => $kotNumber,
             'kitchen_status' => $payload['kitchen_status'] ?? ($kot->kitchen_status ?? 'Pending'),
             'is_add_more' => $payload['is_add_more'] ?? ($kot->is_add_more ?? 0),
-            'created_at' => $payload['created_at'] ?? ($kot->created_at ?? $order->order_time ?? now()),
+            'created_at' => $this->normalizeIncomingDateTime($payload['created_at'] ?? null, 'kot.created_at', $kot->created_at ?? $order->order_time ?? now()),
         ]));
         $kot->save();
 
@@ -530,7 +558,7 @@ class OfflinePosSyncController extends Controller
             'product_discount_amount' => $payload['product_discount_amount'] ?? 0,
             'is_completed' => $payload['is_completed'] ?? 0,
             'is_unavailable' => $payload['is_unavailable'] ?? 0,
-            'created_at' => $payload['created_at'] ?? ($detail->created_at ?? $order->order_time ?? now()),
+            'created_at' => $this->normalizeIncomingDateTime($payload['created_at'] ?? null, 'order_detail.created_at', $detail->created_at ?? $order->order_time ?? now()),
         ]));
         $detail->save();
 
@@ -686,7 +714,7 @@ class OfflinePosSyncController extends Controller
             $customerData['points'] = 0;
             $customerData['total_orders'] = 0;
             if (!empty($row['created_at'])) {
-                $customerData['created_at'] = $row['created_at'];
+                $customerData['created_at'] = $this->normalizeIncomingDateTime($row['created_at'], 'customer.created_at');
             }
         }
 
@@ -700,16 +728,54 @@ class OfflinePosSyncController extends Controller
         return $customer;
     }
 
+
+    /**
+     * MySQL DATETIME does not accept ISO-8601 strings such as
+     * 2026-09-24T18:05:13.000000Z directly. Offline/NativePHP can serialize
+     * Carbon instances in that format, so normalize every inbound business
+     * timestamp before it reaches Eloquent/MySQL. The parsed wall-clock value
+     * is preserved; only the database representation is changed.
+     */
+    private function normalizeIncomingDateTime(mixed $value, string $field, mixed $fallback = null): ?string
+    {
+        $candidate = $value;
+        if ($candidate === null || $candidate === '') {
+            $candidate = $fallback;
+        }
+        if ($candidate === null || $candidate === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($candidate)->format('Y-m-d H:i:s');
+        } catch (Throwable $e) {
+            throw new \InvalidArgumentException(
+                sprintf('Invalid datetime for %s: %s', $field, is_scalar($candidate) ? (string) $candidate : get_debug_type($candidate)),
+                0,
+                $e
+            );
+        }
+    }
+
     private function syncResponse(string $key, array $results): JsonResponse
     {
+        $synced=$this->countStatus($results,'synced');
+        $failed=$this->countStatus($results,'failed');
+        Log::log($failed ? 'error' : 'info','OFFLINE POS PUSH RESPONSE', [
+            'module'=>$key,
+            'synced'=>$synced,
+            'failed'=>$failed,
+            'results'=>$failed ? $results : null,
+        ]);
+
         return response()->json([
             'status' => true,
             'server_time' => now()->toDateTimeString(),
             'sync_token' => now()->toIso8601String(),
             $key => $results,
             'summary' => [
-                'synced' => $this->countStatus($results, 'synced'),
-                'failed' => $this->countStatus($results, 'failed'),
+                'synced' => $synced,
+                'failed' => $failed,
             ],
         ]);
     }

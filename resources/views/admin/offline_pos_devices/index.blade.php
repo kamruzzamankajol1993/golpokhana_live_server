@@ -12,6 +12,11 @@
                 <span class="progga-breadcrumb-item active">Offline POS Devices</span>
             </div>
         </div>
+        <div>
+            <a href="{{ route('offline-sync-logs.index') }}" class="progga-btn progga-btn-primary">
+                <i class="bi bi-arrow-left-right"></i> Offline Sync Logs
+            </a>
+        </div>
     </div>
 
     @if(session('success'))
