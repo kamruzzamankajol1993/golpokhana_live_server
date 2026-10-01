@@ -18,6 +18,8 @@
     .report-filter-line .progga-form-group{margin:0;min-width:145px}
     .report-filter-line .progga-form-label{margin-bottom:4px;font-size:11px;font-weight:800;color:#66736c;text-transform:uppercase;letter-spacing:.025em}
     .report-filter-line .progga-form-control,.report-filter-line .progga-select{height:38px;min-width:145px;font-size:12px}
+    /* Flatpickr must never render a Select2 widget inside its calendar. */
+    .flatpickr-calendar .select2-container{display:none!important}
     .report-filter-line .report-search-field{min-width:260px;flex:1 1 260px}
     .report-filter-line .report-filter-actions{display:flex;align-items:center;gap:7px;margin-left:auto}
     .report-filter-period{padding:7px 11px;border-radius:9px;background:rgba(33,53,42,.055);font-size:11px;font-weight:800;color:var(--progga-primary);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -161,114 +163,197 @@
     <div class="report-filter-period" id="activeFilterLabel">{{ $filterLabel ?? '' }}</div>
 </form>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
-(function($){
-    if (!$) return;
-    const $form = $('#reportFilterForm');
-    if (!$form.length) return;
-    let reportRequest = null;
-    let searchTimer = null;
-
-    if (window.flatpickr) {
-        flatpickr('.report-datepicker', {dateFormat:'d-m-Y', allowInput:true});
-    }
-
-    function toggleReportFilterFields(){
-        const type = $('#filterType').val();
-        $('.filter-field').hide();
-        if (type === 'year') $('.filter-year').show();
-        if (type === 'month') $('.filter-year,.filter-month').show();
-        if (type === 'day') $('.filter-report-date').show();
-        if (type === 'range') $('.filter-range-start,.filter-range-end').show();
-        if (type === 'hour') $('.filter-report-date,.filter-start-time,.filter-end-time').show();
-        if (type === 'business_day') $('.filter-business-date').show();
-    }
-
-    function openReportLoader(){
-        if (window.Swal) {
-            Swal.fire({
-                title:'Loading report...',
-                text:'Please wait while the filtered data is loading.',
-                allowOutsideClick:false,
-                allowEscapeKey:false,
-                showConfirmButton:false,
-                didOpen:()=>Swal.showLoading()
-            });
-        }
-        $('[data-report-card], #salesReportCard, #sessionListCard, #kotListCard, #kotReportCard, #posSessionReportCard').addClass('report-loading');
-    }
-    function closeReportLoader(){
-        $('[data-report-card], #salesReportCard, #sessionListCard, #kotListCard, #kotReportCard, #posSessionReportCard').removeClass('report-loading');
-        if (window.Swal && Swal.isVisible()) Swal.close();
-    }
-
-    window.reportAjaxRequest = function(url, historyMode){
-        historyMode = historyMode || 'push';
-        if (reportRequest && reportRequest.readyState !== 4) reportRequest.abort();
-        openReportLoader();
-        reportRequest = $.ajax({
-            url:url,
-            method:'GET',
-            headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},
-            success:function(data){
-                if (typeof window.updateReportDOM === 'function') window.updateReportDOM(data);
-                if (data && data.filter_label) $('#activeFilterLabel').text(data.filter_label);
-                if (historyMode === 'push') window.history.pushState({},'',url);
-                if (historyMode === 'replace') window.history.replaceState({},'',url);
-            },
-            error:function(xhr,status){
-                if (status === 'abort') return;
-                if (window.Swal) Swal.fire('Unable to load report', (xhr.responseJSON && xhr.responseJSON.message) || 'Please try the filter again.', 'error');
-                else console.error('Unable to load report', xhr);
-            },
-            complete:function(){ reportRequest=null; closeReportLoader(); }
-        });
-        return reportRequest;
-    };
-
-    window.reportFilterUrl = function(baseUrl){
-        const target = new URL(baseUrl || window.location.pathname, window.location.origin);
-        const params = new URLSearchParams($form.serialize());
-        params.delete('page');
-        target.search = params.toString();
-        return target.toString();
-    };
-
-    window.triggerReportFetch = function(historyMode){
-        return window.reportAjaxRequest(window.reportFilterUrl(window.location.pathname), historyMode || 'replace');
-    };
-
-    $form.on('submit', function(e){
-        e.preventDefault();
-
-        const combinedPreviewUrl = $form.attr('data-combined-preview-url');
-        const isCombined = $('#reportViewFilter').length && $('#reportViewFilter').val() === 'combined';
-
-        // POS Session Report: Combined + Filter opens a dedicated printable
-        // Work Period Closing Report Blade instead of replacing the table via AJAX.
-        if (combinedPreviewUrl && isCombined) {
-            window.location.href = window.reportFilterUrl(combinedPreviewUrl);
+(function () {
+    function bootReportFilters() {
+        const $ = window.jQuery;
+        if (!$) {
+            console.error('[ReportFilter] jQuery is not available.');
             return;
         }
 
-        window.triggerReportFetch('push');
-    });
-    $('#filterType').on('change', function(){ toggleReportFilterFields(); });
-    $('#reportViewFilter').on('change', function(){
-        // Combined starts on the current restaurant Business Day. All other
-        // filter types remain available and can still be selected afterwards.
-        if ($(this).val() === 'combined' && $('#filterType').val() === 'all') {
-            $('#filterType').val('business_day');
-            toggleReportFilterFields();
-        }
-        window.triggerReportFetch('replace');
-    });
-    $('#filterYear,#filterMonth,#paymentMethod,#deliveryPartnerFilter,#waiterFilter').on('change', function(){ window.triggerReportFetch('replace'); });
-    $('.report-datepicker,#filterStartTime,#filterEndTime').on('change', function(){ /* Filter button applies exact date/time selection. */ });
-    $('#reportSearchInput').on('input', function(){ clearTimeout(searchTimer); searchTimer=setTimeout(function(){ window.triggerReportFetch('replace'); },450); });
+        const $form = $('#reportFilterForm');
+        if (!$form.length) return;
+        if ($form.data('report-filter-booted')) return;
+        $form.data('report-filter-booted', true);
 
-    toggleReportFilterFields();
-})(window.jQuery);
+        let reportRequest = null;
+        let searchTimer = null;
+
+        // IMPORTANT: Select2 is scoped to the actual report form only.
+        // Flatpickr creates its own <select> for the month inside a calendar
+        // outside this form, so it can never be converted into Select2.
+        function initReportSelect2() {
+            if (!$.fn.select2) {
+                console.warn('[ReportFilter] Select2 is unavailable; using native selects.');
+                return;
+            }
+
+            $form.find('select.progga-select').each(function () {
+                const $select = $(this);
+                if (this.hasAttribute('data-no-select2')) return;
+                if ($select.hasClass('select2-hidden-accessible')) return;
+
+                $select.select2({
+                    width: '100%',
+                    minimumResultsForSearch: 8,
+                    dropdownAutoWidth: false
+                });
+            });
+        }
+
+        function initReportDatepickers() {
+            if (!window.flatpickr) {
+                console.error('[ReportFilter] Flatpickr is unavailable.');
+                return;
+            }
+
+            document.querySelectorAll('#reportFilterForm .report-datepicker').forEach(function (input) {
+                // Avoid duplicate Flatpickr instances when report HTML/scripts are reused.
+                if (input._flatpickr) {
+                    try { input._flatpickr.destroy(); } catch (e) {}
+                }
+
+                window.flatpickr(input, {
+                    dateFormat: 'd-m-Y',
+                    allowInput: true,
+                    clickOpens: true,
+                    disableMobile: true,
+                    // Keep the Flatpickr month header as plain text + arrows.
+                    // Using "dropdown" creates an internal <select>; any global
+                    // Select2 initializer can mistakenly enhance that select.
+                    // "static" guarantees there is no month <select> to collide with.
+                    monthSelectorType: 'static'
+                });
+            });
+        }
+
+        function toggleReportFilterFields() {
+            const type = $('#filterType').val();
+            $form.find('.filter-field').hide();
+            if (type === 'year') $form.find('.filter-year').show();
+            if (type === 'month') $form.find('.filter-year,.filter-month').show();
+            if (type === 'day') $form.find('.filter-report-date').show();
+            if (type === 'range') $form.find('.filter-range-start,.filter-range-end').show();
+            if (type === 'hour') $form.find('.filter-report-date,.filter-start-time,.filter-end-time').show();
+            if (type === 'business_day') $form.find('.filter-business-date').show();
+        }
+
+        function openReportLoader() {
+            if (window.Swal) {
+                Swal.fire({
+                    title: 'Loading report...',
+                    text: 'Please wait while the filtered data is loading.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => Swal.showLoading()
+                });
+            }
+            $('[data-report-card], #salesReportCard, #sessionListCard, #kotListCard, #kotReportCard, #posSessionReportCard').addClass('report-loading');
+        }
+
+        function closeReportLoader() {
+            $('[data-report-card], #salesReportCard, #sessionListCard, #kotListCard, #kotReportCard, #posSessionReportCard').removeClass('report-loading');
+            if (window.Swal && Swal.isVisible()) Swal.close();
+        }
+
+        window.reportAjaxRequest = function (url, historyMode) {
+            historyMode = historyMode || 'push';
+            if (reportRequest && reportRequest.readyState !== 4) reportRequest.abort();
+            openReportLoader();
+
+            reportRequest = $.ajax({
+                url: url,
+                method: 'GET',
+                headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+                success: function (data) {
+                    if (typeof window.updateReportDOM === 'function') window.updateReportDOM(data);
+                    if (data && data.filter_label) $('#activeFilterLabel').text(data.filter_label);
+                    if (historyMode === 'push') window.history.pushState({}, '', url);
+                    if (historyMode === 'replace') window.history.replaceState({}, '', url);
+                },
+                error: function (xhr, status) {
+                    if (status === 'abort') return;
+                    if (window.Swal) {
+                        Swal.fire('Unable to load report', (xhr.responseJSON && xhr.responseJSON.message) || 'Please try the filter again.', 'error');
+                    } else {
+                        console.error('Unable to load report', xhr);
+                    }
+                },
+                complete: function () {
+                    reportRequest = null;
+                    closeReportLoader();
+                }
+            });
+
+            return reportRequest;
+        };
+
+        window.reportFilterUrl = function (baseUrl) {
+            const target = new URL(baseUrl || window.location.pathname, window.location.origin);
+            const params = new URLSearchParams($form.serialize());
+            params.delete('page');
+            target.search = params.toString();
+            return target.toString();
+        };
+
+        window.triggerReportFetch = function (historyMode) {
+            return window.reportAjaxRequest(window.reportFilterUrl(window.location.pathname), historyMode || 'replace');
+        };
+
+        $form.on('submit.reportFilter', function (e) {
+            e.preventDefault();
+
+            const combinedPreviewUrl = $form.attr('data-combined-preview-url');
+            const isCombined = $('#reportViewFilter').length && $('#reportViewFilter').val() === 'combined';
+
+            if (combinedPreviewUrl && isCombined) {
+                window.location.href = window.reportFilterUrl(combinedPreviewUrl);
+                return;
+            }
+
+            window.triggerReportFetch('push');
+        });
+
+        $form.on('change.reportFilter', '#filterType', function () {
+            toggleReportFilterFields();
+        });
+
+        $form.on('change.reportFilter', '#reportViewFilter', function () {
+            if ($(this).val() === 'combined' && $('#filterType').val() === 'all') {
+                $('#filterType').val('business_day').trigger('change.select2');
+                toggleReportFilterFields();
+            }
+            window.triggerReportFetch('replace');
+        });
+
+        $form.on('change.reportFilter', '#filterYear,#filterMonth,#paymentMethod,#deliveryPartnerFilter,#waiterFilter', function () {
+            window.triggerReportFetch('replace');
+        });
+
+        // Exact date/date-range/time values are applied only when Filter is clicked.
+        // Do not fire AJAX while the user is navigating the Flatpickr calendar.
+        $form.on('change.reportFilter', '.report-datepicker,#filterStartTime,#filterEndTime', function () {});
+
+        $form.on('input.reportFilter', '#reportSearchInput', function () {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () {
+                window.triggerReportFetch('replace');
+            }, 450);
+        });
+
+        // Libraries are loaded by the master layout. Initializing here (after
+        // DOMContentLoaded) prevents the previous Select2/Flatpickr load-order clash.
+        initReportSelect2();
+        initReportDatepickers();
+        toggleReportFilterFields();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootReportFilters, {once: true});
+    } else {
+        bootReportFilters();
+    }
+})();
 </script>

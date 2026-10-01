@@ -12,6 +12,7 @@ use App\Support\OrderVisibility;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use Mpdf\Mpdf;
 
@@ -147,30 +148,32 @@ class HomeController extends Controller
 
     /**
      * Convert an order timestamp to the opening date of its restaurant business day.
-     * Closed-period timestamps return null and are excluded from Dashboard calculations.
+     * Historical/imported rows are never discarded solely because the current
+     * restaurant opening/closing setting differs from the old setting.
      */
     private function businessDateForTimestamp(Carbon $timestamp, array $hours): ?Carbon
     {
         $time = $timestamp->format('H:i:s');
         $date = $timestamp->copy()->startOfDay();
 
+        // A 24-hour business day changes at the configured opening time.
         if ($hours['opening'] === $hours['closing']) {
             return $time >= $hours['opening'] ? $date : $date->subDay();
         }
 
+        // Same-day shifts keep the sale on its calendar date. We intentionally
+        // do not drop legacy rows that are outside today's configured hours.
         if ($hours['opening'] < $hours['closing']) {
-            return ($time >= $hours['opening'] && $time <= $hours['closing']) ? $date : null;
-        }
-
-        if ($time >= $hours['opening']) {
             return $date;
         }
 
+        // Overnight shift: after-midnight sales through closing belong to the
+        // previous opening date. All other timestamps remain on their date.
         if ($time <= $hours['closing']) {
             return $date->subDay();
         }
 
-        return null;
+        return $date;
     }
 
     /**
@@ -204,6 +207,124 @@ class HomeController extends Controller
             'start' => $this->businessWindowForDate($firstDate, $hours)['start'],
             'end' => $this->businessWindowForDate($lastDate, $hours)['end'],
         ];
+    }
+
+    /**
+     * Return all timestamp columns that may identify when an order belongs to a
+     * business month. `created_at` is used by the POS/Combined business-day
+     * reports, while `order_time` preserves the original sale time for synced
+     * historical orders. `completed_at` is used when available as an additional
+     * compatibility source.
+     */
+    private function dashboardOrderTimestampColumns(): array
+    {
+        $columns = ['created_at', 'order_time'];
+
+        if (Schema::hasColumn('orders', 'completed_at')) {
+            $columns[] = 'completed_at';
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Resolve the business date for an order specifically inside the requested
+     * calendar month. We intentionally try every available historical timestamp
+     * instead of trusting only one field, because imported/offline orders can
+     * have a sync timestamp in one column and the real transaction date in another.
+     */
+    private function businessDateForOrderMonth($order, string $periodKey, array $hours): ?Carbon
+    {
+        foreach ($this->dashboardOrderTimestampColumns() as $column) {
+            $value = $order->{$column} ?? null;
+            if (!$value) {
+                continue;
+            }
+
+            try {
+                $businessDate = $this->businessDateForTimestamp(Carbon::parse($value), $hours);
+            } catch (\Throwable $exception) {
+                Log::warning('[SalesCalendar] Unable to parse historical order timestamp', [
+                    'column' => $column,
+                    'value' => $value,
+                    'message' => $exception->getMessage(),
+                ]);
+                continue;
+            }
+
+            if ($businessDate !== null && $businessDate->format('Y-m') === $periodKey) {
+                return $businessDate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Completed order rows for one restaurant business month.
+     *
+     * The month selector itself is calendar based (October -> September), but
+     * each row is assigned to a restaurant business date. Candidate rows are
+     * accepted when ANY supported order timestamp belongs to the target month.
+     * This makes the dashboard resilient to historical/offline sync differences
+     * between created_at, order_time and completed_at.
+     */
+    private function businessMonthCompletedOrderRows(Carbon $monthDate, array $hours)
+    {
+        $periodKey = $monthDate->format('Y-m');
+        $queryStart = $monthDate->copy()->startOfMonth()->startOfDay()->subDay();
+        $queryEnd = $monthDate->copy()->endOfMonth()->endOfDay()->addDay();
+        $timestampColumns = $this->dashboardOrderTimestampColumns();
+
+        $candidateQuery = Order::query()
+            ->whereRaw('LOWER(TRIM(orders.status)) = ?', ['completed'])
+            ->where(function ($dateQuery) use ($timestampColumns, $queryStart, $queryEnd) {
+                foreach ($timestampColumns as $index => $column) {
+                    $qualified = 'orders.' . $column;
+                    if ($index === 0) {
+                        $dateQuery->whereBetween($qualified, [$queryStart, $queryEnd]);
+                    } else {
+                        $dateQuery->orWhereBetween($qualified, [$queryStart, $queryEnd]);
+                    }
+                }
+            });
+
+        $selectColumns = ['orders.id', 'orders.grand_total', 'orders.created_at', 'orders.order_time'];
+        if (in_array('completed_at', $timestampColumns, true)) {
+            $selectColumns[] = 'orders.completed_at';
+        }
+
+        $candidateRows = $candidateQuery
+            ->get($selectColumns)
+            ->filter(function ($order) use ($hours, $periodKey) {
+                return $this->businessDateForOrderMonth($order, $periodKey, $hours) !== null;
+            })
+            ->values();
+
+        if (!OrderVisibility::isRandomHalfEnabled() || $candidateRows->isEmpty()) {
+            return $candidateRows;
+        }
+
+        // Keep Dashboard Order Visibility behavior, but apply it only after the
+        // exact business-month candidate set has been established.
+        $visibleIds = OrderVisibility::visibleIds(
+            Order::query()->whereIn('orders.id', $candidateRows->pluck('id')->all()),
+            [
+                'dashboard_metric' => 'monthly_revenue',
+                'period' => $periodKey,
+            ]
+        );
+
+        return $candidateRows
+            ->whereIn('id', $visibleIds)
+            ->values();
+    }
+
+    /** Completed revenue for one restaurant business month. */
+    private function businessMonthCompletedSales(Carbon $monthDate, array $hours): float
+    {
+        return (float) $this->businessMonthCompletedOrderRows($monthDate, $hours)
+            ->sum('grand_total');
     }
 
     private function businessYearRange(Carbon $businessDate, array $hours): array
@@ -771,72 +892,221 @@ class HomeController extends Controller
     private function salesCalendarChartPayload(Request $request, array $reportingWindow): array
     {
         $filter = (string) $request->get('sales_filter', 'this_month');
-        $allowed = ['this_month', 'previous_month', 'custom'];
-        if (!in_array($filter, $allowed, true)) {
+        if (!in_array($filter, ['this_month', 'previous_month'], true)) {
             $filter = 'this_month';
         }
 
         $hours = $reportingWindow['hours'];
-        $businessDate = $reportingWindow['business_date']->copy();
 
-        if ($filter === 'previous_month') {
-            $startDate = $businessDate->copy()->subMonthNoOverflow()->startOfMonth();
-            $endDate = $businessDate->copy()->subMonthNoOverflow()->endOfMonth();
-        } elseif ($filter === 'custom') {
-            $from = $request->get('from_date');
-            $to = $request->get('to_date');
+        // The selector is calendar-month based: October => previous month is September.
+        $calendarMonth = Carbon::now('Asia/Dhaka')->startOfMonth();
+        $periodDate = $filter === 'previous_month'
+            ? $calendarMonth->copy()->subMonthNoOverflow()
+            : $calendarMonth;
 
-            if (!$from || !$to) {
-                $startDate = $businessDate->copy()->startOfMonth();
-                $endDate = $businessDate->copy()->endOfMonth();
-            } else {
-                $startDate = Carbon::parse($from)->startOfDay();
-                $endDate = Carbon::parse($to)->endOfDay();
+        $periodKey = $periodDate->format('Y-m');
+        $queryStart = $periodDate->copy()->startOfMonth()->startOfDay()->subDay();
+        $queryEnd = $periodDate->copy()->endOfMonth()->endOfDay()->addDay();
+        $timestampColumns = $this->dashboardOrderTimestampColumns();
 
-                if ($startDate->gt($endDate)) {
-                    $tmp = $startDate;
-                    $startDate = $endDate;
-                    $endDate = $tmp;
-                }
+        // Diagnostic counts are intentionally logged even on successful requests.
+        // This lets us identify "HTTP 200 but empty chart" cases from laravel.log.
+        $timestampCandidateCounts = [];
+        foreach ($timestampColumns as $column) {
+            try {
+                $timestampCandidateCounts[$column] = [
+                    'all_statuses' => Order::query()
+                        ->whereBetween('orders.' . $column, [$queryStart, $queryEnd])
+                        ->count(),
+                    'completed' => Order::query()
+                        ->whereRaw('LOWER(TRIM(orders.status)) = ?', ['completed'])
+                        ->whereBetween('orders.' . $column, [$queryStart, $queryEnd])
+                        ->count(),
+                ];
+            } catch (\Throwable $exception) {
+                $timestampCandidateCounts[$column] = ['query_error' => $exception->getMessage()];
             }
-        } else {
-            $startDate = $businessDate->copy()->startOfMonth();
-            $endDate = $businessDate->copy()->endOfMonth();
         }
 
-        $start = $this->businessWindowForDate($startDate, $hours)['start'];
-        $end = $this->businessWindowForDate($endDate, $hours)['end'];
+        $rangeAnyStatusQuery = Order::query()
+            ->where(function ($dateQuery) use ($timestampColumns, $queryStart, $queryEnd) {
+                foreach ($timestampColumns as $index => $column) {
+                    $qualified = 'orders.' . $column;
+                    if ($index === 0) {
+                        $dateQuery->whereBetween($qualified, [$queryStart, $queryEnd]);
+                    } else {
+                        $dateQuery->orWhereBetween($qualified, [$queryStart, $queryEnd]);
+                    }
+                }
+            });
+        $rangeStatusCounts = (clone $rangeAnyStatusQuery)
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status')
+            ->toArray();
 
-        $orders = OrderVisibility::constrain(Order::query(), $this->dashboardVisibleOrderIds())
-            ->where('status', 'Completed')
-            ->whereBetween('created_at', [$start, $end])
-            ->get(['created_at', 'grand_total']);
+        $rawCandidates = Order::query()
+            ->whereRaw('LOWER(TRIM(orders.status)) = ?', ['completed'])
+            ->where(function ($dateQuery) use ($timestampColumns, $queryStart, $queryEnd) {
+                foreach ($timestampColumns as $index => $column) {
+                    $qualified = 'orders.' . $column;
+                    if ($index === 0) {
+                        $dateQuery->whereBetween($qualified, [$queryStart, $queryEnd]);
+                    } else {
+                        $dateQuery->orWhereBetween($qualified, [$queryStart, $queryEnd]);
+                    }
+                }
+            });
+
+        $rawCandidateCount = (clone $rawCandidates)->count();
+        $sampleColumns = ['orders.id', 'orders.status', 'orders.grand_total', 'orders.created_at', 'orders.order_time'];
+        if (in_array('completed_at', $timestampColumns, true)) {
+            $sampleColumns[] = 'orders.completed_at';
+        }
+        $rawCandidateSamples = (clone $rawCandidates)
+            ->orderByDesc('orders.id')
+            ->limit(8)
+            ->get($sampleColumns)
+            ->map(fn ($row) => $row->only(['id', 'status', 'grand_total', 'created_at', 'order_time', 'completed_at']))
+            ->values()
+            ->all();
+
+        $orders = $this->businessMonthCompletedOrderRows($periodDate, $hours);
 
         $days = [];
-        $cursor = $startDate->copy()->startOfDay();
-        while ($cursor->lte($endDate)) {
-            $key = $cursor->format('Y-m-d');
-            $days[$key] = 0;
+        $cursor = $periodDate->copy()->startOfMonth()->startOfDay();
+        $lastDay = $periodDate->copy()->endOfMonth()->startOfDay();
+        while ($cursor->lte($lastDay)) {
+            $days[$cursor->format('Y-m-d')] = 0.0;
             $cursor->addDay();
         }
 
+        $mappedCount = 0;
+        $unmappedCount = 0;
+        $mappedSamples = [];
         foreach ($orders as $order) {
-            $key = Carbon::parse($order->created_at)->format('Y-m-d');
+            $businessDate = $this->businessDateForOrderMonth($order, $periodKey, $hours);
+            if ($businessDate === null) {
+                $unmappedCount++;
+                continue;
+            }
+
+            $key = $businessDate->format('Y-m-d');
             if (array_key_exists($key, $days)) {
                 $days[$key] += (float) $order->grand_total;
+                $mappedCount++;
+                if (count($mappedSamples) < 8) {
+                    $mappedSamples[] = [
+                        'id' => $order->id,
+                        'created_at' => $order->created_at ?? null,
+                        'order_time' => $order->order_time ?? null,
+                        'completed_at' => $order->completed_at ?? null,
+                        'business_date' => $key,
+                        'grand_total' => (float) $order->grand_total,
+                    ];
+                }
+            } else {
+                $unmappedCount++;
             }
         }
 
+        $salesCalendarTotal = round((float) array_sum($days), 2);
+        $nonZeroDays = collect($days)->filter(fn ($value) => (float) $value != 0.0)->count();
+
+        Log::info('[SalesCalendar] payload built', [
+            'sales_filter' => $filter,
+            'period_key' => $periodKey,
+            'period_label' => $periodDate->format('F Y'),
+            'business_hours' => $hours,
+            'query_start' => $queryStart->toDateTimeString(),
+            'query_end' => $queryEnd->toDateTimeString(),
+            'timestamp_columns' => $timestampColumns,
+            'timestamp_candidate_counts' => $timestampCandidateCounts,
+            'range_status_counts' => $rangeStatusCounts,
+            'random_half_visibility_enabled' => OrderVisibility::isRandomHalfEnabled(),
+            'raw_candidate_count' => $rawCandidateCount,
+            'raw_candidate_samples' => $rawCandidateSamples,
+            'resolved_order_count' => $orders->count(),
+            'mapped_order_count' => $mappedCount,
+            'unmapped_order_count' => $unmappedCount,
+            'non_zero_days' => $nonZeroDays,
+            'sales_calendar_total' => $salesCalendarTotal,
+            'mapped_samples' => $mappedSamples,
+        ]);
+
         return [
             'salesCalendarFilter' => $filter,
-            'salesCalendarLabels' => array_map(fn($d) => Carbon::parse($d)->format('d M'), array_keys($days)),
-            'salesCalendarData' => array_values(array_map(fn($v) => round($v, 2), $days)),
-            'salesCalendarTotal' => round(array_sum($days), 2),
+            'salesCalendarPeriodLabel' => $periodDate->format('F Y') . ' · Business day',
+            'salesCalendarLabels' => array_map(fn ($date) => Carbon::parse($date)->format('d M'), array_keys($days)),
+            'salesCalendarData' => array_values(array_map(fn ($value) => round((float) $value, 2), $days)),
+            'salesCalendarTotal' => $salesCalendarTotal,
+            'debug' => [
+                'period_key' => $periodKey,
+                'raw_candidate_count' => $rawCandidateCount,
+                'range_status_counts' => $rangeStatusCounts,
+                'resolved_order_count' => $orders->count(),
+                'mapped_order_count' => $mappedCount,
+                'non_zero_days' => $nonZeroDays,
+                'total' => $salesCalendarTotal,
+            ],
         ];
     }
 
     public function chartData(Request $request)
     {
+        // Sales Calendar AJAX filter request. Log both success and failure so
+        // an empty HTTP-200 response can be diagnosed from storage/logs/laravel.log.
+        if ($request->has('sales_filter')) {
+            $requestId = 'sales-calendar-' . now()->format('YmdHisv') . '-' . substr(md5((string) microtime(true)), 0, 6);
+            Log::info('[SalesCalendar] AJAX request received', [
+                'request_id' => $requestId,
+                'sales_filter' => $request->get('sales_filter'),
+                'event_source' => $request->get('event_source'),
+                'is_ajax' => $request->ajax(),
+                'user_id' => optional($request->user())->id,
+                'url' => $request->fullUrl(),
+            ]);
+
+            try {
+                $activeWindow = $this->currentBusinessWindow();
+                $reportingWindow = $activeWindow ?? $this->reportingBusinessWindow();
+                $payload = $this->salesCalendarChartPayload($request, $reportingWindow);
+                $payload['request_id'] = $requestId;
+
+                Log::info('[SalesCalendar] AJAX response ready', [
+                    'request_id' => $requestId,
+                    'sales_filter' => $payload['salesCalendarFilter'] ?? null,
+                    'event_source' => $request->get('event_source'),
+                    'period_label' => $payload['salesCalendarPeriodLabel'] ?? null,
+                    'labels_count' => count($payload['salesCalendarLabels'] ?? []),
+                    'data_count' => count($payload['salesCalendarData'] ?? []),
+                    'non_zero_days' => collect($payload['salesCalendarData'] ?? [])->filter(fn ($value) => (float) $value != 0.0)->count(),
+                    'total' => $payload['salesCalendarTotal'] ?? null,
+                    'debug' => $payload['debug'] ?? null,
+                ]);
+
+                return response()->json($payload)
+                    ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                    ->header('Pragma', 'no-cache');
+            } catch (\Throwable $exception) {
+                Log::error('[SalesCalendar] AJAX request failed', [
+                    'request_id' => $requestId,
+                    'sales_filter' => $request->get('sales_filter'),
+                    'event_source' => $request->get('event_source'),
+                    'message' => $exception->getMessage(),
+                    'file' => $exception->getFile(),
+                    'line' => $exception->getLine(),
+                    'trace' => $exception->getTraceAsString(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Sales Calendar data loading failed.',
+                    'request_id' => $requestId,
+                    'error' => app()->environment('local') ? $exception->getMessage() : null,
+                ], 500)->header('Cache-Control', 'no-store');
+            }
+        }
+
         if (!$this->isSuperAdminUser()) {
             $todayWindow = $this->todayDashboardWindow();
             $todayVisibleIds = $this->rangeVisibleOrderIds(
@@ -1170,43 +1440,22 @@ class HomeController extends Controller
             $ordersChange = $todayOrdersCount - $yesterdayOrdersCount;
         }
 
+        // Revenue month selection follows the calendar month, while each order
+        // is still grouped by restaurant business day. In October, Last Month is
+        // always September and its comparison month is always August.
+        $calendarMonth = Carbon::now('Asia/Dhaka')->startOfMonth();
+        $lastMonthBusinessDate = $calendarMonth->copy()->subMonthNoOverflow();
+        $previousMonthBusinessDate = $calendarMonth->copy()->subMonthsNoOverflow(2);
+
+        $lastMonthSales = $this->businessMonthCompletedSales($lastMonthBusinessDate, $hours);
+        $previousMonthSales = $this->businessMonthCompletedSales($previousMonthBusinessDate, $hours);
+        $lastMonthChange = $previousMonthSales > 0
+            ? (($lastMonthSales - $previousMonthSales) / $previousMonthSales) * 100
+            : ($lastMonthSales > 0 ? 100 : 0);
+        $lastMonthComparisonLabel = $previousMonthBusinessDate->format('M Y');
+
         if ($isSuperAdmin) {
-            $thisMonthRange = $this->businessMonthRange($businessDate, $hours);
-            $lastMonthBusinessDate = $businessDate->copy()->subMonthNoOverflow();
-            $lastMonthRange = $this->businessMonthRange($lastMonthBusinessDate, $hours);
-
-            $thisMonthVisibleIds = $this->rangeVisibleOrderIds(
-                $thisMonthRange['start'],
-                $thisMonthRange['end'],
-                [
-                    'dashboard_metric' => 'monthly_revenue',
-                    'period' => $businessDate->format('Y-m'),
-                ]
-            );
-
-            $lastMonthVisibleIds = $this->rangeVisibleOrderIds(
-                $lastMonthRange['start'],
-                $lastMonthRange['end'],
-                [
-                    'dashboard_metric' => 'monthly_revenue',
-                    'period' => $lastMonthBusinessDate->format('Y-m'),
-                ]
-            );
-
-            $monthlySalesQuery = OrderVisibility::constrain(Order::query(), $thisMonthVisibleIds)
-                ->whereBetween('created_at', [$thisMonthRange['start'], $thisMonthRange['end']])
-                ->where('status', 'Completed');
-
-            $monthlySales = $this->applyBusinessHoursFilter($monthlySalesQuery, 'created_at', $hours)
-                ->sum('grand_total');
-
-            $lastMonthSalesQuery = OrderVisibility::constrain(Order::query(), $lastMonthVisibleIds)
-                ->whereBetween('created_at', [$lastMonthRange['start'], $lastMonthRange['end']])
-                ->where('status', 'Completed');
-
-            $lastMonthSales = $this->applyBusinessHoursFilter($lastMonthSalesQuery, 'created_at', $hours)
-                ->sum('grand_total');
-
+            $monthlySales = $this->businessMonthCompletedSales($calendarMonth, $hours);
             $monthlyChange = $lastMonthSales > 0
                 ? (($monthlySales - $lastMonthSales) / $lastMonthSales) * 100
                 : ($monthlySales > 0 ? 100 : 0);
@@ -1226,6 +1475,23 @@ class HomeController extends Controller
         }
 
         extract($chartPayload);
+
+        // Initial page load renders ONLY This Month. Any later filter change,
+        // including Previous Month, is loaded through dashboard.chart_data via AJAX.
+        if ($isSuperAdmin) {
+            $thisMonthSalesCalendarRequest = Request::create(request()->path(), 'GET', ['sales_filter' => 'this_month']);
+            $salesCalendarPayload = $this->salesCalendarChartPayload($thisMonthSalesCalendarRequest, $reportingWindow);
+        } else {
+            $salesCalendarPayload = [
+                'salesCalendarFilter' => 'this_month',
+                'salesCalendarPeriodLabel' => Carbon::now('Asia/Dhaka')->format('F Y') . ' · Business day',
+                'salesCalendarLabels' => [],
+                'salesCalendarData' => [],
+                'salesCalendarTotal' => 0,
+            ];
+        }
+
+        extract($salesCalendarPayload);
 
         $incomePayload = $isSuperAdmin
             ? $this->dashboardIncomeChartPayload(
@@ -1315,6 +1581,9 @@ class HomeController extends Controller
             'todaySales',
             'salesChange',
             'monthlySales',
+            'lastMonthSales',
+            'lastMonthChange',
+            'lastMonthComparisonLabel',
             'monthlyChange',
             'todayOrdersCount',
             'ordersChange',
@@ -1334,6 +1603,11 @@ class HomeController extends Controller
             'incomeCashData',
             'incomeCardData',
             'incomeMfsData',
+            'salesCalendarFilter',
+            'salesCalendarPeriodLabel',
+            'salesCalendarLabels',
+            'salesCalendarData',
+            'salesCalendarTotal',
             'topSellingItems',
             'kitchenQueue',
             'recentOrders',

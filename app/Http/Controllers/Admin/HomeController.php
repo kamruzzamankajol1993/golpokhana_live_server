@@ -202,6 +202,31 @@ class HomeController extends Controller
         ];
     }
 
+    /**
+     * Completed revenue for one restaurant business month.
+     * The month is defined by business-day opening dates, so an overnight sale
+     * after midnight still belongs to the previous opening/business date.
+     */
+    private function businessMonthCompletedSales(Carbon $monthDate, array $hours): float
+    {
+        $range = $this->businessMonthRange($monthDate, $hours);
+        $visibleIds = $this->rangeVisibleOrderIds(
+            $range['start'],
+            $range['end'],
+            [
+                'dashboard_metric' => 'monthly_revenue',
+                'period' => $monthDate->format('Y-m'),
+            ]
+        );
+
+        $query = OrderVisibility::constrain(Order::query(), $visibleIds)
+            ->whereBetween('orders.created_at', [$range['start'], $range['end']])
+            ->whereRaw('LOWER(TRIM(orders.status)) = ?', ['completed']);
+
+        return (float) $this->applyBusinessHoursFilter($query, 'orders.created_at', $hours)
+            ->sum('orders.grand_total');
+    }
+
     private function businessYearRange(Carbon $businessDate, array $hours): array
     {
         $firstDate = $businessDate->copy()->startOfYear();
@@ -670,43 +695,19 @@ class HomeController extends Controller
             $ordersChange = $todayOrdersCount - $yesterdayOrdersCount;
         }
 
+        // Revenue cards use restaurant business-day month boundaries.
+        $lastMonthBusinessDate = $businessDate->copy()->subMonthNoOverflow();
+        $previousMonthBusinessDate = $businessDate->copy()->subMonthsNoOverflow(2);
+
+        $lastMonthSales = $this->businessMonthCompletedSales($lastMonthBusinessDate, $hours);
+        $previousMonthSales = $this->businessMonthCompletedSales($previousMonthBusinessDate, $hours);
+        $lastMonthChange = $previousMonthSales > 0
+            ? (($lastMonthSales - $previousMonthSales) / $previousMonthSales) * 100
+            : ($lastMonthSales > 0 ? 100 : 0);
+        $lastMonthComparisonLabel = $previousMonthBusinessDate->format('M Y');
+
         if ($isSuperAdmin) {
-            $thisMonthRange = $this->businessMonthRange($businessDate, $hours);
-            $lastMonthBusinessDate = $businessDate->copy()->subMonthNoOverflow();
-            $lastMonthRange = $this->businessMonthRange($lastMonthBusinessDate, $hours);
-
-            $thisMonthVisibleIds = $this->rangeVisibleOrderIds(
-                $thisMonthRange['start'],
-                $thisMonthRange['end'],
-                [
-                    'dashboard_metric' => 'monthly_revenue',
-                    'period' => $businessDate->format('Y-m'),
-                ]
-            );
-
-            $lastMonthVisibleIds = $this->rangeVisibleOrderIds(
-                $lastMonthRange['start'],
-                $lastMonthRange['end'],
-                [
-                    'dashboard_metric' => 'monthly_revenue',
-                    'period' => $lastMonthBusinessDate->format('Y-m'),
-                ]
-            );
-
-            $monthlySalesQuery = OrderVisibility::constrain(Order::query(), $thisMonthVisibleIds)
-                ->whereBetween('created_at', [$thisMonthRange['start'], $thisMonthRange['end']])
-                ->where('status', 'Completed');
-
-            $monthlySales = $this->applyBusinessHoursFilter($monthlySalesQuery, 'created_at', $hours)
-                ->sum('grand_total');
-
-            $lastMonthSalesQuery = OrderVisibility::constrain(Order::query(), $lastMonthVisibleIds)
-                ->whereBetween('created_at', [$lastMonthRange['start'], $lastMonthRange['end']])
-                ->where('status', 'Completed');
-
-            $lastMonthSales = $this->applyBusinessHoursFilter($lastMonthSalesQuery, 'created_at', $hours)
-                ->sum('grand_total');
-
+            $monthlySales = $this->businessMonthCompletedSales($businessDate, $hours);
             $monthlyChange = $lastMonthSales > 0
                 ? (($monthlySales - $lastMonthSales) / $lastMonthSales) * 100
                 : ($monthlySales > 0 ? 100 : 0);
@@ -782,6 +783,9 @@ class HomeController extends Controller
             'todaySales',
             'salesChange',
             'monthlySales',
+            'lastMonthSales',
+            'lastMonthChange',
+            'lastMonthComparisonLabel',
             'monthlyChange',
             'todayOrdersCount',
             'ordersChange',
