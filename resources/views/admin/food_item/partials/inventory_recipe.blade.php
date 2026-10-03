@@ -1,19 +1,13 @@
 @php
     $recipeInputRows = session()->hasOldInput() ? old('recipe', []) : ($recipeRows ?? []);
     if (empty($recipeInputRows)) $recipeInputRows = [['ingredient_id'=>'','quantity'=>'','unit_choice'=>'']];
-    $trackingChecked = session()->hasOldInput() ? (bool)old('inventory_tracking') : (bool)($foodItem->inventory_tracking ?? false);
 @endphp
-<div class="af-card" style="margin-top:20px;">
-    <div class="af-card-head"><div class="af-card-num">06</div><div class="af-card-title">Inventory Recipe</div></div>
+<div class="af-card" id="inventory-recipe" style="margin-top:20px;">
+    <div class="af-card-head"><div class="af-card-num">06</div><div class="af-card-title">Food Recipe</div></div>
     <div class="af-card-body">
-        <div class="af-toggle-row" style="padding-top:0;margin-bottom:14px;">
-            <div class="af-toggle-info"><div class="af-toggle-name">Inventory Tracking</div><div class="af-toggle-hint">Existing items stay OFF until a recipe is configured. You can save a recipe while tracking is OFF.</div></div>
-            <label class="progga-toggle"><input type="checkbox" name="inventory_tracking" value="1" {{ $trackingChecked ? 'checked' : '' }}><span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span></label>
+        <div class="alert alert-info py-2 px-3 small mb-3">
+            Add the ingredients used for <strong>1 sold item / 1 portion</strong>. Inventory tracking turns on automatically when a recipe is saved. Recipe history/versioning is maintained automatically in the background.
         </div>
-        @if(isset($foodItem) && $foodItem->activeRecipe)
-            <div class="alert alert-light border py-2 px-3 small mb-3"><strong>Active recipe:</strong> Version {{ $foodItem->activeRecipe->version_no }}. Changing ingredient, quantity or unit creates a new version; the old version remains historical.</div>
-        @endif
-        <div class="small text-muted mb-2">Quantities are saved in the selected input unit and also normalized to each ingredient's base unit. Package units require an ingredient-specific recipe conversion.</div>
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-2">
                 <thead><tr><th style="min-width:210px;">Ingredient</th><th style="width:130px;">Quantity</th><th style="min-width:150px;">Unit</th><th style="width:54px;"></th></tr></thead>

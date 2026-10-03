@@ -10,7 +10,7 @@ class StockLocationService
     {
         $locations = [];
         foreach ([
-            StockLocation::TYPE_MAIN => 'Main Stock',
+            StockLocation::TYPE_MAIN => 'Store Stock',
             StockLocation::TYPE_KITCHEN => 'Kitchen Stock',
         ] as $code => $name) {
             $locations[$code] = StockLocation::query()->updateOrCreate(

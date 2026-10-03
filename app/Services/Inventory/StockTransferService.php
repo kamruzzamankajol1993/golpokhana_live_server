@@ -43,7 +43,7 @@ class StockTransferService
                     ->firstOrFail();
 
                 if (!$request->canIssue()) {
-                    throw ValidationException::withMessages(['request' => 'Only submitted or partially issued requests can issue stock.']);
+                    throw ValidationException::withMessages(['request' => 'Only submitted or partially assigned requests can receive an ingredient assignment.']);
                 }
 
                 $requestItems = KitchenRequestIngredientItem::query()
@@ -66,7 +66,7 @@ class StockTransferService
                         throw ValidationException::withMessages(['items' => 'An issue row does not belong to this kitchen request.']);
                     }
                     if ($unitChoice === '') {
-                        throw ValidationException::withMessages(["items.{$requestItemId}.unit_choice" => 'Select a unit or package variant for each issued quantity.']);
+                        throw ValidationException::withMessages(["items.{$requestItemId}.unit_choice" => 'Select a unit or package variant for each assigned quantity.']);
                     }
 
                     $requestItem = $requestItems->get($requestItemId);
@@ -76,7 +76,7 @@ class StockTransferService
                     $packageConversion = $resolved['conversion'];
                     $quantity = $this->decimal->normalize($quantityRaw);
                     if (!$this->decimal->isPositive($quantity)) {
-                        throw ValidationException::withMessages(["items.{$requestItemId}.quantity" => 'Issue quantity must be greater than zero.']);
+                        throw ValidationException::withMessages(["items.{$requestItemId}.quantity" => 'Assigned quantity must be greater than zero.']);
                     }
 
                     $factor = $resolved['factor'];
@@ -84,7 +84,7 @@ class StockTransferService
                     $remaining = $this->decimal->subtract((string) $requestItem->required_base_qty, (string) $requestItem->issued_base_qty);
                     if ($this->decimal->compare($base, $remaining) > 0) {
                         throw ValidationException::withMessages([
-                            "items.{$requestItemId}.quantity" => "Issue quantity for {$ingredient->name} exceeds the remaining requested quantity.",
+                            "items.{$requestItemId}.quantity" => "Assigned quantity for {$ingredient->name} exceeds the remaining requested quantity.",
                         ]);
                     }
 
@@ -116,8 +116,8 @@ class StockTransferService
                     $requestItem = $item['request_item'];
                     $newIssued = $this->decimal->add((string) $requestItem->issued_base_qty, $item['base_quantity']);
                     $requestItem->issued_base_qty = $newIssued;
-                    // In the current one-step Store review flow, approval equals the cumulative
-                    // quantity the reviewer has actually authorized for transfer.
+                    // In the simplified assignment flow, approval equals the cumulative
+                    // quantity the Inventory Manager has actually assigned to Kitchen.
                     $requestItem->approved_base_qty = $newIssued;
                     $requestItem->save();
                 }
@@ -231,7 +231,7 @@ class StockTransferService
                         'reference_type' => StockTransfer::class,
                         'reference_id' => $transfer->id,
                         'performed_by' => $userId,
-                        'reason' => $notes ?: ($original ? "Unused kitchen stock return from {$original->transfer_no}" : 'Unused Kitchen to Main return'),
+                        'reason' => $notes ?: ($original ? "Unused kitchen stock return from {$original->transfer_no}" : 'Unused Kitchen to Store return'),
                     ]
                 );
 
@@ -299,8 +299,8 @@ class StockTransferService
                 'reference_id' => $transfer->id,
                 'performed_by' => $userId,
                 'reason' => $request
-                    ? "Kitchen request {$request->request_no} issue"
-                    : ($notes ?: 'Direct Main to Kitchen transfer'),
+                    ? "Kitchen request {$request->request_no} ingredient assignment"
+                    : ($notes ?: 'Direct Store to Kitchen assignment'),
             ]
         );
 

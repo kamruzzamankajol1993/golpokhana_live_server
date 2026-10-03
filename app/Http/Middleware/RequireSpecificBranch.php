@@ -132,10 +132,6 @@ class RequireSpecificBranch
             'user.*',
             'users.*',
             'hr.*',
-            'inventory.stock.opening.*',
-            'inventory.purchases.*',
-            'inventory.kitchen-requests.*',
-            'inventory.transfers.*'
         );
     }
 

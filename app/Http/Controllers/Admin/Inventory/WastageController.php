@@ -142,7 +142,7 @@ class WastageController extends Controller
                 $wastage->location?->type === StockLocation::TYPE_KITCHEN
                 && (int) $wastage->created_by === (int) request()->user()->id,
                 403,
-                'Kitchen users can view only their own Kitchen wastage records.'
+                'Kitchen Manager can view only their own Kitchen wastage records.'
             );
         }
 
@@ -180,7 +180,7 @@ class WastageController extends Controller
         }
 
         if ($request->user()?->isInventoryManager()) {
-            // Main Inventory wastage is recorded by Inventory Manager. Kitchen
+            // Store inventory wastage is recorded by Inventory Manager. Kitchen
             // wastage stays inside the Kitchen role to keep responsibility clear.
             return (int) app(StockLocationService::class)
                 ->forType(StockLocation::TYPE_MAIN)
@@ -199,7 +199,7 @@ class WastageController extends Controller
                 $wastage->location?->type === StockLocation::TYPE_KITCHEN
                 && (int) $wastage->created_by === (int) $request->user()->id,
                 403,
-                'Kitchen users can edit/delete only their own Kitchen wastage drafts.'
+                'Kitchen Manager can edit/delete only their own Kitchen wastage drafts.'
             );
         }
 
@@ -207,7 +207,7 @@ class WastageController extends Controller
             abort_unless(
                 $wastage->location?->type === StockLocation::TYPE_MAIN,
                 403,
-                'Inventory Manager can edit/delete only Main Stock wastage drafts.'
+                'Inventory Manager can edit/delete only Store Stock wastage drafts.'
             );
         }
     }

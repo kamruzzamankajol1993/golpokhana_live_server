@@ -20,6 +20,11 @@ class Vendor extends Model
         return $this->hasMany(Purchase::class);
     }
 
+    public function purchaseVouchers()
+    {
+        return $this->hasMany(PurchaseVoucher::class);
+    }
+
     public function ingredients()
     {
         return $this->belongsToMany(Ingredient::class, 'vendor_ingredients')

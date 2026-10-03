@@ -104,7 +104,6 @@ class BlockAllBranchWrites
             'settings.*',
             'reward-points.*',
             'hr.*',
-            'inventory.stock.opening.*'
         );
     }
 }

@@ -1364,6 +1364,14 @@ class HomeController extends Controller
 
     public function index(Request $request)
     {
+        if (auth()->user()?->isInventoryManager()) {
+            return redirect()->route('inventory.dashboard');
+        }
+
+        if (auth()->user()?->isKitchenManager()) {
+            return redirect()->route('inventory.kitchen-dashboard');
+        }
+
         $isSuperAdmin = $this->isSuperAdminUser();
         $activeWindow = $this->currentBusinessWindow();
         $reportingWindow = $activeWindow ?? $this->reportingBusinessWindow();

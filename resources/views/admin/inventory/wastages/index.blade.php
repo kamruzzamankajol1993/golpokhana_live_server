@@ -5,7 +5,7 @@
     <div class="progga-page-header">
         <div>
             <h1 class="progga-page-title">Wastage</h1>
-            <p class="text-muted mb-0">Main Stock and Kitchen Stock wastage are recorded by the responsible role. Drafts can be edited/deleted; posted entries stay audited.</p>
+            <p class="text-muted mb-0">Store Stock and Kitchen Stock wastage are recorded by the responsible role. Drafts can be edited/deleted; posted entries stay audited.</p>
         </div>
         @can('inventory-wastage-create')
             <a href="{{ route('inventory.wastages.create') }}" class="progga-btn progga-btn-primary"><i class="bi bi-plus-lg"></i> New Wastage</a>
@@ -39,7 +39,7 @@
         <div id="inventoryListContent">
             <div class="progga-table-wrapper" style="border:none;border-radius:0;">
                 <table class="progga-table">
-                    <thead><tr><th style="width:70px;">SL</th><th>No.</th><th>Location</th><th>Reason</th><th>Items</th><th>Status</th><th>Posted / Updated</th><th style="width:140px;">Actions</th></tr></thead>
+                    <thead><tr><th style="width:70px;">SL</th><th>No.</th><th>Stock Area</th><th>Reason</th><th>Items</th><th>Status</th><th>Posted / Updated</th><th style="width:140px;">Actions</th></tr></thead>
                     <tbody>
                     @forelse($wastages as $w)
                         @php
@@ -51,7 +51,7 @@
                         <tr>
                             <td>{{ ($wastages->firstItem() ?? 1)+$loop->index }}</td>
                             <td><strong>{{ $w->wastage_no }}</strong></td>
-                            <td>{{ $w->location?->name }}</td>
+                            <td>{{ $w->location?->type === \App\Models\StockLocation::TYPE_MAIN ? 'Store Stock' : 'Kitchen Stock' }}</td>
                             <td><span class="progga-badge progga-badge-neutral">{{ ucfirst(strtolower($w->reason_code)) }}</span></td>
                             <td>{{ $w->items_count }}</td>
                             <td><span class="progga-badge progga-badge-{{ $isDraft ? 'warning' : 'success' }}">{{ $w->status }}</span></td>

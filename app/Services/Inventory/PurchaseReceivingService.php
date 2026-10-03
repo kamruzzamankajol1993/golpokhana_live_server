@@ -3,6 +3,7 @@
 namespace App\Services\Inventory;
 
 use App\Models\Purchase;
+use App\Models\PurchaseVoucher;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +13,8 @@ class PurchaseReceivingService
 {
     public function __construct(
         private StockLocationService $locations,
-        private StockMovementService $movements
+        private StockMovementService $movements,
+        private PurchaseVoucherService $vouchers
     ) {
     }
 
@@ -22,7 +24,7 @@ class PurchaseReceivingService
 
         return DB::transaction(function () use ($purchaseId, $userId) {
             $purchase = Purchase::query()
-                ->with(['items.ingredient', 'vendor', 'receivedMovement'])
+                ->with(['items.ingredient', 'vendor', 'receivedMovement', 'voucher.items'])
                 ->whereKey($purchaseId)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -41,6 +43,10 @@ class PurchaseReceivingService
                 throw ValidationException::withMessages([
                     'items' => 'A purchase must contain at least one item before receiving.',
                 ]);
+            }
+
+            if ($purchase->voucher) {
+                $this->vouchers->assertPurchaseWithinApproval($purchase->voucher, $purchase);
             }
 
             $main = $this->locations->forType(StockLocation::TYPE_MAIN);
@@ -68,7 +74,11 @@ class PurchaseReceivingService
                 'received_stock_movement_id' => $movement->id,
             ])->save();
 
-            return $purchase->fresh(['items.ingredient.baseUnit', 'vendor', 'receivedMovement.items']);
+            if ($purchase->voucher) {
+                $this->vouchers->markCompleted($purchase->voucher, $purchase);
+            }
+
+            return $purchase->fresh(['items.ingredient.baseUnit', 'vendor', 'receivedMovement.items', 'voucher']);
         }, 5);
     }
 }

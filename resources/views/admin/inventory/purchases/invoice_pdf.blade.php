@@ -55,6 +55,7 @@
                 <td style="width:50%">
                     <div><span class="muted">Supplier Invoice No:</span> {{ $purchase->invoice_no ?: '—' }}</div>
                     <div><span class="muted">Reference:</span> {{ $purchase->reference_no ?: '—' }}</div>
+                    @if($purchase->voucher)<div><span class="muted">Approved Voucher:</span> {{ $purchase->voucher->voucher_no }} / R{{ $purchase->voucher->revision_no }}</div>@endif
                     <div><span class="muted">Created By:</span> {{ $purchase->creator?->name ?: '—' }}</div>
                     @if($purchase->status === \App\Models\Purchase::STATUS_RECEIVED)
                         <div><span class="muted">Received By:</span> {{ $purchase->receiver?->name ?: '—' }}</div>
@@ -107,6 +108,6 @@
     </div>
     @endif
 
-    <div class="footer-note">System-generated purchase invoice. Generated {{ now()->format('d M Y, h:i A') }}.</div>
+    <div class="footer-note">System-generated supplier purchase invoice linked to the approved purchase workflow. Generated {{ now()->format('d M Y, h:i A') }}.</div>
 </body>
 </html>

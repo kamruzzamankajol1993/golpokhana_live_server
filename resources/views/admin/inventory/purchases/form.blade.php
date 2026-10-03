@@ -1,11 +1,13 @@
 @extends('admin.master.master')
-@section('title', $purchase->exists ? 'Edit Purchase' : 'New Purchase')
+@section('title', $purchase->exists ? 'Edit Supplier Receipt' : 'Receive Supplier Delivery')
 @section('body')
 @php
     $isEdit = $purchase->exists;
+    $sourceVoucher = $sourceVoucher ?? $purchase->voucher ?? null;
     $oldItems = old('items');
     if ($oldItems === null) {
-        $oldItems = $isEdit ? $purchase->items->map(function($i){
+        $sourceItems = $isEdit ? $purchase->items : ($sourceVoucher?->items ?? collect());
+        $oldItems = $sourceItems->isNotEmpty() ? $sourceItems->map(function($i){
             $choice = $i->package_conversion_id ? 'c:'.$i->package_conversion_id : 'u:'.$i->unit_id;
             if (!$i->package_conversion_id && $i->unit?->dimension === 'PACKAGE') {
                 $match = $i->ingredient?->unitConversions?->first(fn($c) => (int)$c->unit_id === (int)$i->unit_id && (string)$c->factor_to_base === (string)$i->conversion_factor_snapshot);
@@ -17,7 +19,7 @@
 @endphp
 <main class="progga-content">
     <div class="progga-page-header">
-        <div><h1 class="progga-page-title">{{ $isEdit ? 'Edit Draft Purchase' : 'New Purchase' }}</h1><p class="text-muted mb-0">Enter the quantity you actually bought and the price you actually paid. Standard units use total price; package variants use price per package.</p></div>
+        <div><h1 class="progga-page-title">{{ $isEdit ? 'Edit Supplier Receipt' : 'Receive Supplier Delivery' }}</h1><p class="text-muted mb-0">Enter the actual supplier invoice, delivered quantity and actual price against the approved Purchase Voucher.</p></div>
         <a href="{{ route('inventory.purchases.index') }}" class="progga-btn progga-btn-outline">Back</a>
     </div>
     @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
@@ -25,8 +27,10 @@
     <form method="POST" id="purchaseForm" enctype="multipart/form-data" action="{{ $isEdit ? route('inventory.purchases.update',$purchase) : route('inventory.purchases.store') }}">
         @csrf @if($isEdit) @method('PUT') @endif
         <input type="hidden" name="submit_action" id="purchaseSubmitAction" value="draft">
+        @if($sourceVoucher)<input type="hidden" name="purchase_voucher_id" value="{{ $sourceVoucher->id }}">@endif
+        @if($sourceVoucher)<div class="alert alert-info"><strong>Approved Voucher:</strong> <a href="{{ route('inventory.purchase-vouchers.show',$sourceVoucher) }}">{{ $sourceVoucher->voucher_no }} / R{{ $sourceVoucher->revision_no }}</a> · Approved limit ৳{{ number_format((float)$sourceVoucher->total,2) }}. If actual quantity or value exceeds approval, the system will stop stock receiving and automatically start re-approval.</div>@endif
         <div class="progga-card mb-4"><div class="p-4"><div class="row g-3">
-            <div class="col-md-4"><label class="progga-form-label">Vendor <span class="progga-required">*</span></label><select name="vendor_id" class="progga-form-control" required><option value="">Select vendor</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}" @selected((string)old('vendor_id',$purchase->vendor_id)===(string)$vendor->id)>{{ $vendor->name }}</option>@endforeach</select>@can('inventory-vendors-manage')<small><a href="{{ route('inventory.vendors.create') }}">Add vendor</a></small>@endcan</div>
+            @if($sourceVoucher)<div class="col-md-4"><label class="progga-form-label">Vendor</label><input type="hidden" name="vendor_id" value="{{ $sourceVoucher->vendor_id }}"><input class="progga-form-control" value="{{ $sourceVoucher->vendor?->name ?? $vendors->firstWhere('id',$sourceVoucher->vendor_id)?->name }}" disabled><small class="text-muted">Locked by approved voucher {{ $sourceVoucher->voucher_no }}</small></div>@else<div class="col-md-4"><label class="progga-form-label">Vendor <span class="progga-required">*</span></label><select name="vendor_id" class="progga-form-control" required><option value="">Select vendor</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}" @selected((string)old('vendor_id',$purchase->vendor_id)===(string)$vendor->id)>{{ $vendor->name }}</option>@endforeach</select></div>@endif
             <div class="col-md-3"><label class="progga-form-label">Purchase Date <span class="progga-required">*</span></label><input type="text" name="purchase_date" value="{{ old('purchase_date',$isEdit ? optional($purchase->purchase_date)->format('Y-m-d') : now()->format('Y-m-d')) }}" class="progga-form-control progga-datepicker" required></div>
             <div class="col-md-3"><label class="progga-form-label">Invoice No.</label><input name="invoice_no" value="{{ old('invoice_no',$purchase->invoice_no) }}" class="progga-form-control"></div>
             <div class="col-md-3"><label class="progga-form-label">Reference</label><input name="reference_no" value="{{ old('reference_no',$purchase->reference_no) }}" class="progga-form-control"></div>
@@ -41,7 +45,7 @@
         </div></div></div>
 
         <div class="progga-card mb-4">
-            <div class="progga-card-header d-flex justify-content-between align-items-center"><div><strong>Purchase Items</strong><div class="small text-muted">For Gram/Kg/ml/L/pcs, enter the total price paid for that quantity. For Packet/Box/Bag/Carton variants, enter the price of one package.</div></div><button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addPurchaseRow()"><i class="bi bi-plus-lg"></i> Add Item</button></div>
+            <div class="progga-card-header d-flex justify-content-between align-items-center"><div><strong>Actual Supplied Items</strong><div class="small text-muted">Enter what the vendor actually supplied. Lower quantity/value is allowed; higher quantity/value triggers re-approval before stock can increase.</div></div><button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addPurchaseRow()"><i class="bi bi-plus-lg"></i> Add Item</button></div>
             <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th style="min-width:230px">Ingredient</th><th style="width:130px">Quantity</th><th style="min-width:150px">Unit</th><th style="width:190px">Purchase Price</th><th style="width:150px">Line Total</th><th style="width:60px"></th></tr></thead><tbody id="purchaseRows">
                 @foreach($oldItems as $idx=>$row)
                 <tr class="purchase-row">
@@ -60,18 +64,18 @@
             <div class="col-lg-5"><div class="progga-card"><div class="p-4">
                 <div class="d-flex justify-content-between mb-3"><span>Subtotal</span><strong id="subtotalText">৳0.00</strong></div>
                 <div class="row g-2 mb-3"><div class="col-6"><label class="progga-form-label">Discount</label><input type="number" step="0.0001" min="0" name="discount" value="{{ old('discount',$purchase->discount ?? 0) }}" class="progga-form-control" id="discountInput" oninput="recalcPurchase()"></div><div class="col-6"><label class="progga-form-label">Tax</label><input type="number" step="0.0001" min="0" name="tax" value="{{ old('tax',$purchase->tax ?? 0) }}" class="progga-form-control" id="taxInput" oninput="recalcPurchase()"></div></div>
-                <div class="d-flex justify-content-between border-top pt-3 mb-4"><span class="fw-semibold">Estimated Total</span><strong id="totalText" class="fs-5">৳0.00</strong></div>
+                <div class="d-flex justify-content-between border-top pt-3 mb-4"><span class="fw-semibold">Actual Invoice Total</span><strong id="totalText" class="fs-5">৳0.00</strong></div>
                 <div class="d-grid gap-2">
                     <button type="submit" class="progga-btn progga-btn-outline w-100" onclick="document.getElementById('purchaseSubmitAction').value='draft'">
                         <i class="bi bi-file-earmark-text"></i> {{ $isEdit ? 'Update Draft' : 'Save Draft' }}
                     </button>
                     @can('inventory-purchase-receive')
                     <button type="button" class="progga-btn progga-btn-primary w-100" onclick="confirmPurchaseAndReceive()">
-                        <i class="bi bi-box-arrow-in-down"></i> {{ $isEdit ? 'Update & Receive' : 'Purchase & Receive' }}
+                        <i class="bi bi-box-arrow-in-down"></i> {{ $isEdit ? 'Update & Receive Supply' : 'Receive Supply & Add Stock' }}
                     </button>
                     @endcan
                 </div>
-                <div class="small text-muted mt-2 text-center">Save Draft does not change stock. Purchase & Receive saves the purchase and immediately adds it to stock.</div>
+                <div class="small text-muted mt-2 text-center">Save Draft does not change stock. Receive Supply checks the approved voucher first, then increases Store Stock only when approval limits are satisfied.</div>
             </div></div></div>
         </div>
     </form>
@@ -106,7 +110,7 @@ function filterPurchaseUnits(ingredientSelect){const row=ingredientSelect.closes
 function purchaseUnitChanged(unitSelect){const row=unitSelect.closest('.purchase-row');updatePurchasePriceHelp(row);recalcPurchase();}
 function updatePurchasePriceHelp(row){const choice=row.querySelector('.purchase-unit')?.value||'';const help=row.querySelector('.purchase-price-help');if(!help)return;if(choice.startsWith('c:')){help.textContent='Price of 1 selected package';}else if(choice.startsWith('u:')){help.textContent='Total price paid for this entered quantity';}else{help.textContent='Select a unit first';}}
 function recalcPurchase(){let subtotal=0;document.querySelectorAll('.purchase-row').forEach(row=>{const q=parseFloat(row.querySelector('.purchase-qty')?.value||0);const p=parseFloat(row.querySelector('.purchase-price')?.value||0);const choice=row.querySelector('.purchase-unit')?.value||'';const hasValidInput=q>0&&p>=0&&choice!=='';const line=hasValidInput?(choice.startsWith('c:')?q*p:p):0;subtotal+=line;row.querySelector('.purchase-line-total').textContent=line.toFixed(2);});const discount=parseFloat(document.getElementById('discountInput')?.value||0);const tax=parseFloat(document.getElementById('taxInput')?.value||0);document.getElementById('subtotalText').textContent='৳'+subtotal.toFixed(2);document.getElementById('totalText').textContent='৳'+Math.max(0,subtotal-discount+tax).toFixed(2);}
-function confirmPurchaseAndReceive(){const form=document.getElementById('purchaseForm');if(!form)return;document.getElementById('purchaseSubmitAction').value='receive';if(typeof Swal==='undefined'){if(confirm('Save this purchase and add it to stock now?'))form.requestSubmit();else document.getElementById('purchaseSubmitAction').value='draft';return;}Swal.fire({title:'Purchase & Receive?',text:'This will save the purchase and immediately increase stock.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, receive purchase',cancelButtonText:'Cancel'}).then(result=>{if(result.isConfirmed){form.requestSubmit();}else{document.getElementById('purchaseSubmitAction').value='draft';}});}
+function confirmPurchaseAndReceive(){const form=document.getElementById('purchaseForm');if(!form)return;document.getElementById('purchaseSubmitAction').value='receive';if(typeof Swal==='undefined'){if(confirm('Receive this supplier delivery and add approved stock now?'))form.requestSubmit();else document.getElementById('purchaseSubmitAction').value='draft';return;}Swal.fire({title:'Receive supplier delivery?',text:'Approved quantities and values will be checked before Store Stock is increased. Any overrun starts re-approval instead.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, receive supply',cancelButtonText:'Cancel'}).then(result=>{if(result.isConfirmed){form.requestSubmit();}else{document.getElementById('purchaseSubmitAction').value='draft';}});}
 document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.purchase-ingredient').forEach(filterPurchaseUnits);document.querySelectorAll('.purchase-row').forEach(updatePurchasePriceHelp);recalcPurchase();});
 </script>
 @endsection

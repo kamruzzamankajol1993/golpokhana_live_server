@@ -38,18 +38,18 @@
             <div class="p-4">
                 <div class="row g-3">
                     <div class="col-md-4">
-                        <label class="progga-form-label">Stock Location</label>
+                        <label class="progga-form-label">Stock Area</label>
                         @if($fixedLocation)
                             <input type="hidden" id="wasteLocation" name="location_id" value="{{ $fixedLocation?->id }}">
-                            <div class="progga-form-control bg-light">{{ $fixedLocation?->name ?: ($kitchenActor ? 'Kitchen Stock' : 'Main Stock') }} ({{ $fixedLocation?->type }})</div>
+                            <div class="progga-form-control bg-light">{{ $kitchenActor ? 'Kitchen Stock' : 'Store Stock' }}</div>
                             <small class="text-muted">
-                                {{ $kitchenActor ? 'Kitchen user can record wastage only from Kitchen Stock.' : 'Inventory Manager can record wastage only from Main Stock.' }}
+                                {{ $kitchenActor ? 'Kitchen Manager can record wastage only from Kitchen Stock.' : 'Inventory Manager can record wastage only from Store Stock.' }}
                             </small>
                         @else
                             <select id="wasteLocation" name="location_id" class="progga-form-control" onchange="refreshWasteAvailable()" required>
-                                <option value="">Select location</option>
+                                <option value="">Select stock area</option>
                                 @foreach($locations as $location)
-                                    <option value="{{ $location->id }}" @selected((string)$selectedLocation===(string)$location->id)>{{ $location->name }} ({{ $location->type }})</option>
+                                    <option value="{{ $location->id }}" @selected((string)$selectedLocation===(string)$location->id)>{{ $location->type === \App\Models\StockLocation::TYPE_MAIN ? 'Store Stock' : 'Kitchen Stock' }}</option>
                                 @endforeach
                             </select>
                         @endif

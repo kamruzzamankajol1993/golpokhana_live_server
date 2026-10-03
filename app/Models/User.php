@@ -67,9 +67,16 @@ class User extends Authenticatable
         return $this->hasRole('Inventory Manager');
     }
 
+    public function isKitchenManager(): bool
+    {
+        // Step 1 migration upgrades the legacy Kitchen role in-place so existing assignments remain valid.
+        // Legacy names are retained here until the migration has been run on every environment.
+        return $this->hasAnyRole(['Kitchen Manager', 'Kitchen', 'Kitchen User']);
+    }
+
     public function isKitchenUser(): bool
     {
-        return $this->hasRole('Kitchen User');
+        return $this->isKitchenManager();
     }
 
 

@@ -149,7 +149,7 @@ class InventoryReportService
         $requiredPermissions = [
             'inventory-view', 'inventory-units-manage', 'inventory-ingredients-manage', 'inventory-vendors-manage',
             'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create',
-            'inventory-kitchen-request-review', 'inventory-transfer-post', 'inventory-return-post',
+            'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-transfer-post', 'inventory-return-post',
             'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete',
             'inventory-adjustment-post', 'inventory-reports-view',
         ];

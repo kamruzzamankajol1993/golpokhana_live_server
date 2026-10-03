@@ -79,7 +79,6 @@ class UnitConversionService
                 ]);
             }
 
-            $this->assertUsageAllowed($conversion, $usage, $conversion->unit, $ingredient);
 
             return [
                 'unit' => $conversion->unit,
@@ -133,11 +132,8 @@ class UnitConversionService
             ->where('unit_id', $unit->id)
             ->where('is_active', true);
 
-        if ($usage === 'purchase') {
-            $query->where('purchase_allowed', true);
-        } elseif ($usage === 'recipe') {
-            $query->where('recipe_allowed', true);
-        }
+        // Step 1 simplification: one active package conversion works everywhere.
+        // Legacy purchase_allowed/recipe_allowed columns are retained only for data compatibility.
 
         if ($packageConversionId) {
             $conversion = (clone $query)->whereKey($packageConversionId)->first();
@@ -166,15 +162,6 @@ class UnitConversionService
 
     private function assertUsageAllowed(IngredientUnitConversion $conversion, ?string $usage, Unit $unit, Ingredient $ingredient): void
     {
-        if ($usage === 'purchase' && !$conversion->purchase_allowed) {
-            throw ValidationException::withMessages([
-                'unit_id' => "{$unit->name} is not allowed for purchasing {$ingredient->name}.",
-            ]);
-        }
-        if ($usage === 'recipe' && !$conversion->recipe_allowed) {
-            throw ValidationException::withMessages([
-                'unit_id' => "{$unit->name} is not allowed in recipes for {$ingredient->name}.",
-            ]);
-        }
+        // Kept for backward compatibility. Active package conversions are valid for both Purchase and Recipe.
     }
 }

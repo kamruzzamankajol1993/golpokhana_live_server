@@ -31,6 +31,9 @@
         <div class="progga-tab-item" data-settings-tab="invoice">Invoice Settings</div>
         <div class="progga-tab-item" data-settings-tab="pos">POS Preferences</div>
         <div class="progga-tab-item" data-settings-tab="offline">Offline POS</div>
+        @can('inventory-purchase-approval-settings')
+        <div class="progga-tab-item" data-settings-tab="purchase-approval">Purchase Approval</div>
+        @endcan
         <div class="progga-tab-item" data-settings-tab="roles">User Roles</div>
     </div>
 
@@ -567,16 +570,26 @@
         </div>
       </div>
 
+    @include('admin.setting.partials.purchase_approval')
+
 </main>
 @endsection
 
 @section('script')
 <script>
     // Tab Map and Logic
-    var tabMap = { restaurant:'settingsRestaurant', tax:'settingsTax', invoice:'settingsInvoice', pos:'settingsPos', offline:'settingsOfflinePos', roles:'settingsRoles' };
+    var tabMap = {
+        restaurant:'settingsRestaurant',
+        tax:'settingsTax',
+        invoice:'settingsInvoice',
+        pos:'settingsPos',
+        offline:'settingsOfflinePos',
+        'purchase-approval':'settingsPurchaseApproval',
+        roles:'settingsRoles'
+    };
 
     function activateSettingsTab(tabName, updateUrl) {
-        if (!tabMap[tabName]) tabName = 'restaurant';
+        if (!tabMap[tabName] || !document.querySelector('[data-settings-tab="' + tabName + '"]')) tabName = 'restaurant';
 
         document.querySelectorAll('[data-settings-tab]').forEach(function (tab) {
             tab.classList.toggle('active', tab.dataset.settingsTab === tabName);
@@ -592,7 +605,8 @@
 
         if (updateUrl && window.history && window.history.replaceState) {
             var url = new URL(window.location.href);
-            url.searchParams.set('tab', tabName);
+            if (tabName === 'restaurant') url.searchParams.delete('tab');
+            else url.searchParams.set('tab', tabName);
             window.history.replaceState({}, '', url.toString());
         }
     }
@@ -605,6 +619,65 @@
 
     var requestedSettingsTab = new URLSearchParams(window.location.search).get('tab') || 'restaurant';
     activateSettingsTab(requestedSettingsTab, false);
+
+    @can('inventory-purchase-approval-settings')
+    var approvalUsers = {{ \Illuminate\Support\Js::from($purchaseApprovalUserOptions ?? []) }};
+    var approverIndex = document.querySelectorAll('#approverRows .approver-row').length;
+
+    function escapeApprovalHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>'"]/g, function(character) {
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'})[character];
+        });
+    }
+
+    function approvalUserOptions() {
+        var options = '<option value="">Select user</option>';
+        approvalUsers.forEach(function(user) {
+            var suffix = user.user_id ? ' · ' + escapeApprovalHtml(user.user_id) : '';
+            options += '<option value="' + escapeApprovalHtml(user.id) + '" data-email="' + escapeApprovalHtml(user.email) + '">' + escapeApprovalHtml(user.name) + suffix + '</option>';
+        });
+        return options;
+    }
+
+    window.addApproverRow = function() {
+        var tbody = document.getElementById('approverRows');
+        if (!tbody) return;
+        var level = tbody.querySelectorAll('.approver-row').length + 1;
+        var tr = document.createElement('tr');
+        tr.className = 'approver-row';
+        tr.innerHTML = '<td><input type="number" min="1" max="10" name="approvers[' + approverIndex + '][approval_order]" value="' + level + '" class="progga-form-control approval-order" required></td>'
+            + '<td><select name="approvers[' + approverIndex + '][user_id]" class="progga-form-control approver-user" onchange="syncApproverEmail(this)" required>' + approvalUserOptions() + '</select></td>'
+            + '<td class="approver-email text-muted">—</td>'
+            + '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeApproverRow(this)" title="Remove officer"><i class="bi bi-trash"></i></button></td>';
+        tbody.appendChild(tr);
+        approverIndex++;
+        syncApprovalRequiredState();
+    };
+
+    window.removeApproverRow = function(button) {
+        var row = button.closest('tr');
+        if (row) row.remove();
+    };
+
+    window.syncApproverEmail = function(select) {
+        var option = select.options[select.selectedIndex];
+        var emailCell = select.closest('tr').querySelector('.approver-email');
+        if (emailCell) emailCell.textContent = option && option.dataset ? (option.dataset.email || '—') : '—';
+    };
+
+    function syncApprovalRequiredState() {
+        var enabled = document.getElementById('approvalEnabled');
+        var isEnabled = enabled ? enabled.checked : false;
+        document.querySelectorAll('.approver-user,.approval-order').forEach(function(element) {
+            element.required = isEnabled;
+        });
+    }
+
+    document.querySelectorAll('.approver-user').forEach(function(select) { syncApproverEmail(select); });
+    syncApprovalRequiredState();
+    var approvalEnabled = document.getElementById('approvalEnabled');
+    if (approvalEnabled) approvalEnabled.addEventListener('change', syncApprovalRequiredState);
+    @endcan
 
     var randomHalfToggle = document.getElementById('orderListRandomHalfEnabled');
     var randomHideInput = document.getElementById('randomOrderHidePercentage');

@@ -135,8 +135,8 @@ class StockMovementService
         if (in_array($movementType, $outgoingOnly, true) && (!$source || $destination)) throw ValidationException::withMessages(['location' => "{$movementType} requires a source location only."]);
         if (in_array($movementType, $transfer, true) && (!$source || !$destination || $source->id === $destination->id)) throw ValidationException::withMessages(['location' => "{$movementType} requires different source and destination locations."]);
         if ($movementType === StockMovement::REVERSAL && !$source && !$destination) throw ValidationException::withMessages(['location' => 'A reversal requires a source or destination location.']);
-        if ($movementType === StockMovement::MAIN_TO_KITCHEN && ($source?->type !== StockLocation::TYPE_MAIN || $destination?->type !== StockLocation::TYPE_KITCHEN)) throw ValidationException::withMessages(['location' => 'MAIN_TO_KITCHEN must move stock from Main Stock to Kitchen Stock.']);
-        if ($movementType === StockMovement::KITCHEN_TO_MAIN && ($source?->type !== StockLocation::TYPE_KITCHEN || $destination?->type !== StockLocation::TYPE_MAIN)) throw ValidationException::withMessages(['location' => 'KITCHEN_TO_MAIN must move stock from Kitchen Stock to Main Stock.']);
+        if ($movementType === StockMovement::MAIN_TO_KITCHEN && ($source?->type !== StockLocation::TYPE_MAIN || $destination?->type !== StockLocation::TYPE_KITCHEN)) throw ValidationException::withMessages(['location' => 'MAIN_TO_KITCHEN must move stock from Store Stock to Kitchen Stock.']);
+        if ($movementType === StockMovement::KITCHEN_TO_MAIN && ($source?->type !== StockLocation::TYPE_KITCHEN || $destination?->type !== StockLocation::TYPE_MAIN)) throw ValidationException::withMessages(['location' => 'KITCHEN_TO_MAIN must move stock from Kitchen Stock to Store Stock.']);
         return [$source, $destination];
     }
 

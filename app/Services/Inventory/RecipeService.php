@@ -84,7 +84,21 @@ class RecipeService
     public function syncRecipe(FoodItem $food, array $normalizedRows, ?int $userId = null): ?MenuItemRecipe
     {
         if ($normalizedRows === []) {
-            return $food->activeRecipe()->with('items')->first();
+            return DB::transaction(function () use ($food) {
+                FoodItem::query()->withoutGlobalScopes()->whereKey($food->id)->lockForUpdate()->firstOrFail();
+
+                $active = MenuItemRecipe::query()
+                    ->where('menu_item_id', $food->id)
+                    ->where('is_active', true)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($active) {
+                    $active->forceFill(['is_active' => false])->save();
+                }
+
+                return null;
+            }, 5);
         }
 
         return DB::transaction(function () use ($food, $normalizedRows, $userId) {

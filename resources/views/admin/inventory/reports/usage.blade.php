@@ -3,19 +3,22 @@
 @section('body')
 <main class="progga-content">
 <div class="progga-page-header"><div><h1 class="progga-page-title">Purchase & Ingredient Usage</h1><p class="text-muted mb-0">All quantities stay in each ingredient's base unit. Incompatible units are never added together.</p></div><a href="{{ route('reports.inventory.index', []) }}" class="progga-btn progga-btn-light">Report Home</a></div>
-<div class="progga-card mb-4"><div class="p-3"><form method="GET" class="row g-2 align-items-end">
+<div class="progga-card mb-4"><div class="p-3"><form method="GET" id="inventoryFilterForm" class="row g-2 align-items-end">
 
 <div class="col-md-3"><label class="progga-form-label">From</label><input type="text" name="date_from" value="{{ request('date_from',$start->toDateString()) }}" class="progga-form-control progga-datepicker"></div>
 <div class="col-md-3"><label class="progga-form-label">To</label><input type="text" name="date_to" value="{{ request('date_to',$end->toDateString()) }}" class="progga-form-control progga-datepicker"></div>
 <div class="col-md-3"><button class="progga-btn progga-btn-primary">Apply</button></div>
 </form></div></div>
 
-<div class="progga-card mb-4"><div class="progga-card-header"><div><strong>Ingredient-wise Purchase & Usage</strong><div class="text-muted small">{{ $start->format('d M Y') }} - {{ $end->format('d M Y') }}</div></div></div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th class="text-end">Purchased</th><th class="text-end">Order Consumption</th><th class="text-end">Wastage</th></tr></thead><tbody>
-@forelse($rows as $row)<tr><td><strong>{{ $row->ingredient_name }}</strong></td><td class="text-end">{{ rtrim(rtrim((string)$row->purchased_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->consumed_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->wastage_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td></tr>@empty<tr><td colspan="4" class="text-center text-muted py-5">No posted purchase/consumption/wastage movement in this period.</td></tr>@endforelse
-</tbody></table></div><div class="p-3">{{ $rows->links() }}</div></div>
+<div class="progga-card mb-4"><div class="progga-card-header"><div><strong>Ingredient-wise Purchase & Usage</strong><div class="text-muted small">{{ $start->format('d M Y') }} - {{ $end->format('d M Y') }}</div></div></div><div id="inventoryListContent"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th class="text-end">Purchased</th><th class="text-end">Sale Usage</th><th class="text-end">Wastage</th></tr></thead><tbody>
+@forelse($rows as $row)<tr><td><strong>{{ $row->ingredient_name }}</strong></td><td class="text-end">{{ rtrim(rtrim((string)$row->purchased_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->consumed_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->wastage_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td></tr>@empty<tr><td colspan="4" class="text-center text-muted py-5">No posted purchase/sale usage/wastage movement in this period.</td></tr>@endforelse
+</tbody></table></div>@include('admin.inventory.partials.pagination',['paginator'=>$rows,'label'=>'ingredient usage rows'])</div></div>
 
-<div class="progga-card"><div class="progga-card-header"><div><strong>Food-wise Ingredient Consumption</strong><div class="text-muted small">Historical recipe consumption grouped by menu item and ingredient.</div></div></div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Food</th><th>Ingredient</th><th class="text-end">Consumed</th></tr></thead><tbody>
-@forelse($foodRows as $row)<tr><td>{{ $row->menu_item_name }}</td><td>{{ $row->ingredient_name }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->consumed_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td></tr>@empty<tr><td colspan="3" class="text-center text-muted py-5">No order ingredient consumption in this period.</td></tr>@endforelse
+<div class="progga-card"><div class="progga-card-header"><div><strong>Food-wise Ingredient Usage</strong><div class="text-muted small">Historical recipe consumption grouped by menu item and ingredient.</div></div></div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Food</th><th>Ingredient</th><th class="text-end">Consumed</th></tr></thead><tbody>
+@forelse($foodRows as $row)<tr><td>{{ $row->menu_item_name }}</td><td>{{ $row->ingredient_name }}</td><td class="text-end">{{ rtrim(rtrim((string)$row->consumed_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td></tr>@empty<tr><td colspan="3" class="text-center text-muted py-5">No recipe-based sale usage in this period.</td></tr>@endforelse
 </tbody></table></div></div>
 </main>
+@endsection
+@section('script')
+@include('admin.inventory.partials.list_assets',['indexUrl'=>route('reports.inventory.usage')])
 @endsection

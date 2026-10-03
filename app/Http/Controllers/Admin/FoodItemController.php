@@ -96,13 +96,13 @@ class FoodItemController extends Controller
             'name' => 'required|string|max:255',
             'food_category_id' => 'required',
             'base_price' => 'required|numeric',
-            'inventory_tracking' => 'nullable|boolean',
             'recipe' => 'nullable|array',
             'recipe.*.ingredient_id' => 'nullable|integer|exists:ingredients,id',
             'recipe.*.quantity' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
             'recipe.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
-        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), $request->boolean('inventory_tracking'));
+        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), false);
+        $inventoryTracking = $recipeRows !== [];
 
         DB::beginTransaction();
         try {
@@ -134,7 +134,7 @@ class FoodItemController extends Controller
                 'preparation_time' => $request->preparation_time,
                 'calories' => $request->calories,
                 'is_draft' => $request->is_draft ?? 0,
-                'inventory_tracking' => $request->boolean('inventory_tracking'),
+                'inventory_tracking' => $inventoryTracking,
                 'allergens' => $request->allergens ?? [],
                 'allergen_notes' => $request->allergen_notes,
                 'main_image' => $mainImageName,
@@ -223,13 +223,13 @@ class FoodItemController extends Controller
             'name' => 'required|string|max:255',
             'food_category_id' => 'required',
             'base_price' => 'required|numeric',
-            'inventory_tracking' => 'nullable|boolean',
             'recipe' => 'nullable|array',
             'recipe.*.ingredient_id' => 'nullable|integer|exists:ingredients,id',
             'recipe.*.quantity' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
             'recipe.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
-        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), $request->boolean('inventory_tracking'));
+        $recipeRows = $recipes->normalizeRows((array) $request->input('recipe', []), false);
+        $inventoryTracking = $recipeRows !== [];
 
         DB::beginTransaction();
         try {
@@ -274,7 +274,7 @@ class FoodItemController extends Controller
                 'is_dine_in' => $request->has('is_dine_in') ? 1 : 0,
                 'is_takeaway' => $request->has('is_takeaway') ? 1 : 0,
                 'is_draft' => $request->is_draft ?? 0,
-                'inventory_tracking' => $request->boolean('inventory_tracking'),
+                'inventory_tracking' => $inventoryTracking,
                 'active_days' => $request->active_days ?? [],
                 'start_time' => $request->start_time,
                 'end_time' => $request->end_time,
@@ -403,7 +403,7 @@ class FoodItemController extends Controller
         return Ingredient::query()->active()->where('track_inventory', true)
             ->with([
                 'baseUnit',
-                'unitConversions' => fn ($q) => $q->where('is_active', true)->where('recipe_allowed', true)->with('unit'),
+                'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit'),
             ])
             ->orderBy('name')->get();
     }

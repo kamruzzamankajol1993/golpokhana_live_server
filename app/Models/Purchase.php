@@ -65,6 +65,11 @@ class Purchase extends Model
         return $this->belongsTo(StockMovement::class, 'received_stock_movement_id');
     }
 
+    public function voucher()
+    {
+        return $this->belongsTo(PurchaseVoucher::class, 'purchase_voucher_id');
+    }
+
     public function isEditable(): bool
     {
         return $this->status === self::STATUS_DRAFT && $this->received_stock_movement_id === null;

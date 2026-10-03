@@ -11,7 +11,7 @@
     <div class="progga-page-header">
         <div>
             <h1 class="progga-page-title">{{ $wastage->wastage_no }}</h1>
-            <p class="text-muted mb-0">{{ $wastage->location?->name }}</p>
+            <p class="text-muted mb-0">{{ $wastage->location?->type === \App\Models\StockLocation::TYPE_MAIN ? 'Store Stock' : 'Kitchen Stock' }}</p>
         </div>
         <div class="d-flex gap-2">
             @if($canMutateDraft)

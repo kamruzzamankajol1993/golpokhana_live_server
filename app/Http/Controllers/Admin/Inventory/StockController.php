@@ -24,22 +24,18 @@ class StockController extends Controller
 
     public function index(Request $request, InventorySiteContext $site, DecimalQuantity $decimal)
     {
-        $kitchenOnly = (bool) $request->user()?->isKitchenUser();
-
-        $locations = StockLocation::query()->active()
-            ->when($kitchenOnly, fn ($q) => $q->where('type', StockLocation::TYPE_KITCHEN))
-            ->orderBy('type')->get();
-        $allowedLocationIds = $locations->pluck('id');
+        $site->ensureDefaultLocations();
+        $kitchenOnly = (bool) $request->user()?->isKitchenManager();
+        $stockType = $kitchenOnly ? StockLocation::TYPE_KITCHEN : StockLocation::TYPE_MAIN;
+        $location = StockLocation::query()->where('type', $stockType)->where('is_active', true)->first();
 
         $balances = InventoryBalance::query()
             ->with(['location', 'ingredient.baseUnit'])
-            ->when($kitchenOnly, fn ($q) => $q->whereIn('stock_location_id', $allowedLocationIds))
-            ->when(!$kitchenOnly && $request->filled('location_id'), fn ($q) => $q->where('stock_location_id', (int) $request->location_id))
+            ->when($location, fn ($q) => $q->where('stock_location_id', $location->id))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->whereHas('ingredient', fn ($q) => $q->where('name', 'like', $search)->orWhere('code', 'like', $search));
             })
-            ->orderBy('stock_location_id')
             ->orderBy('ingredient_id')
             ->paginate(30)
             ->appends($request->query());
@@ -56,15 +52,20 @@ class StockController extends Controller
             return $balance;
         });
 
-        $ingredients = Ingredient::query()->active()->where('track_inventory', true)->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])->orderBy('name')->get();
+        $ingredients = Ingredient::query()
+            ->active()
+            ->where('track_inventory', true)
+            ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
+            ->orderBy('name')
+            ->get();
         $allUnits = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
 
         return view('admin.inventory.stock.index', [
             'balances' => $balances,
-            'locations' => $locations,
             'ingredients' => $ingredients,
             'allUnits' => $allUnits,
             'kitchenOnly' => $kitchenOnly,
+            'stockLocation' => $location,
         ]);
     }
 
@@ -75,7 +76,6 @@ class StockController extends Controller
         StockMovementService $movements
     ) {
         $data = $request->validate([
-            'location_id' => ['required', 'integer', 'exists:stock_locations,id'],
             'ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
             'quantity' => ['required', 'numeric', 'gt:0'],
             'unit_choice' => ['required', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
@@ -84,10 +84,11 @@ class StockController extends Controller
 
         $site->ensureDefaultLocations();
         $location = StockLocation::query()
-            ->whereKey((int) $data['location_id'])
+            ->where('type', StockLocation::TYPE_MAIN)
+            ->where('is_active', true)
             ->first();
         if (!$location) {
-            throw ValidationException::withMessages(['location_id' => 'The stock location is not available.']);
+            throw ValidationException::withMessages(['ingredient_id' => 'Store stock is not initialized. Run the inventory setup migration first.']);
         }
 
         $ingredient = Ingredient::query()->with('unitConversions')->findOrFail((int) $data['ingredient_id']);
@@ -108,6 +109,6 @@ class StockController extends Controller
             $request->user()?->id
         );
 
-        return back()->with('success', 'Opening stock posted through the immutable inventory ledger.');
+        return back()->with('success', 'Opening stock added to Store Stock successfully.');
     }
 }

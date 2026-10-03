@@ -8,6 +8,9 @@ use App\Models\RestaurantSetting;
 use App\Models\TaxSetting;
 use App\Models\InvoiceSetting;
 use App\Models\PosSetting;
+use App\Models\InventoryPurchaseApprovalSetting;
+use App\Models\InventoryPurchaseApprover;
+use App\Models\User;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\File;
 use Intervention\Image\Laravel\Facades\Image;
@@ -24,7 +27,51 @@ class SettingController extends Controller
         $pos        = PosSetting::first();
         $roles      = Role::with('permissions')->get(); // রোলের জন্য
 
-        return view('admin.setting.index', compact('restaurant', 'tax', 'invoice', 'pos', 'roles'));
+        // Purchase Approval is a System Settings tab, not an Inventory sidebar page.
+        // Load it only for users who are explicitly allowed to manage the workflow.
+        $purchaseApprovalSetting = null;
+        $purchaseApprovalApprovers = collect();
+        $purchaseApprovalUsers = collect();
+        $purchaseApprovalUserOptions = [];
+
+        $canManagePurchaseApproval = auth()->check()
+            && auth()->user()->can('inventory-purchase-approval-settings');
+
+        if ($canManagePurchaseApproval
+            && Schema::hasTable('inventory_purchase_approval_settings')
+            && Schema::hasTable('inventory_purchase_approvers')) {
+            $purchaseApprovalSetting = InventoryPurchaseApprovalSetting::query()->firstOrCreate([], [
+                'is_enabled' => true,
+                'sequential_approval' => true,
+                'minimum_approvers' => 3,
+            ]);
+            $purchaseApprovalApprovers = InventoryPurchaseApprover::query()
+                ->with('user')
+                ->orderBy('approval_order')
+                ->get();
+            $purchaseApprovalUsers = User::query()->orderBy('name')->orderBy('email')->get();
+            $purchaseApprovalUserOptions = $purchaseApprovalUsers->map(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'user_id' => $user->user_id,
+                    'email' => $user->email,
+                ];
+            })->values()->all();
+        }
+
+        return view('admin.setting.index', compact(
+            'restaurant',
+            'tax',
+            'invoice',
+            'pos',
+            'roles',
+            'purchaseApprovalSetting',
+            'purchaseApprovalApprovers',
+            'purchaseApprovalUsers',
+            'purchaseApprovalUserOptions',
+            'canManagePurchaseApproval'
+        ));
     }
 
    public function updateRestaurant(Request $request)

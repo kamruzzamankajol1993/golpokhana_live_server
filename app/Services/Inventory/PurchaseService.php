@@ -64,6 +64,7 @@ class PurchaseService
 
             $purchase->fill([
                 'vendor_id' => $vendor->id,
+                'purchase_voucher_id' => $header['purchase_voucher_id'] ?? $purchase->purchase_voucher_id ?? null,
                 'purchase_date' => $header['purchase_date'],
                 'invoice_no' => $header['invoice_no'] ?? null,
                 'reference_no' => $header['reference_no'] ?? null,
@@ -89,7 +90,7 @@ class PurchaseService
         }, 5);
     }
 
-    private function normalizeItems(array $rows): array
+    public function normalizeItems(array $rows): array
     {
         $normalized = [];
         $seen = [];

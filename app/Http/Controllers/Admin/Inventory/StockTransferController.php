@@ -8,111 +8,48 @@ use App\Models\InventoryBalance;
 use App\Models\StockLocation;
 use App\Models\StockTransfer;
 use App\Models\Unit;
+use App\Services\Inventory\InventorySiteContext;
 use App\Services\Inventory\StockLocationService;
 use App\Services\Inventory\StockTransferService;
-use App\Services\Inventory\InventorySiteContext;
 use Illuminate\Http\Request;
 
 class StockTransferController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('permission:inventory-view|inventory-transfer-post|inventory-return-post')->only(['index', 'show']);
-        $this->middleware('permission:inventory-transfer-post')->only(['create', 'store']);
+        $this->middleware('permission:inventory-view|inventory-transfer-post|inventory-return-post')->only(['show']);
         $this->middleware('permission:inventory-return-post')->only(['returnCreate', 'returnStore']);
     }
 
-    public function index(Request $request, InventorySiteContext $site)
-    {
-        $kitchenOnly = (bool) $request->user()?->isKitchenUser();
-        $site->ensureDefaultLocations();
-        $transfers = StockTransfer::query()
-            ->when($kitchenOnly, fn ($q) => $q->where('direction', StockTransfer::DIRECTION_KITCHEN_TO_MAIN)->where('created_by', $request->user()->id))
-            ->with(['kitchenRequest', 'sourceLocation', 'destinationLocation', 'poster'])
-            ->withCount('items')
-            ->when($request->filled('search'), function ($query) use ($request) {
-                $search = '%' . trim((string) $request->search) . '%';
-                $query->where(function ($sub) use ($search) {
-                    $sub->where('transfer_no', 'like', $search)
-                        ->orWhereHas('kitchenRequest', fn ($q) => $q->where('request_no', 'like', $search));
-                });
-            })
-            ->when($request->filled('direction'), fn ($q) => $q->where('direction', $request->direction))
-            ->orderByDesc('posted_at')
-            ->orderByDesc('id')
-            ->paginate(20)
-            ->appends($request->query());
-
-        return view('admin.inventory.transfers.index', compact('transfers'));
-    }
-
-    public function create(InventorySiteContext $site)
-    {
-        $ingredients = Ingredient::query()
-            ->active()->where('track_inventory', true)
-            ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
-            ->orderBy('name')->get();
-        $units = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
-        $site->ensureDefaultLocations();
-        $balanceQuery = InventoryBalance::query()
-            ->join('stock_locations', 'stock_locations.id', '=', 'inventory_balances.stock_location_id');
-        $balanceRows = $balanceQuery
-            ->where('stock_locations.type', StockLocation::TYPE_MAIN)
-            ->select('inventory_balances.ingredient_id', 'inventory_balances.quantity_base')
-            ->get();
-        $availableByIngredient = [];
-        foreach ($balanceRows as $row) {
-            $availableByIngredient[(int) $row->ingredient_id] = (string) $row->quantity_base;
-        }
-
-        return view('admin.inventory.transfers.form', [
-            'ingredients' => $ingredients,
-            'units' => $units,
-            'availableByIngredient' => $availableByIngredient,
-        ]);
-    }
-
-    public function store(Request $request, InventorySiteContext $site, StockTransferService $service)
-    {
-        $data = $request->validate([
-            'idempotency_key' => ['required', 'string', 'max:80'],
-            'notes' => ['nullable', 'string', 'max:2000'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id', 'distinct'],
-            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'items.*.unit_choice' => ['required', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
-        ]);
-
-        $site->ensureDefaultLocations();
-        $transfer = $service->postDirect(
-            $data['items'],
-            $data['idempotency_key'],
-            $request->user()?->id,
-            $data['notes'] ?? null
-        );
-
-        return redirect()->route('inventory.transfers.show', $transfer)
-            ->with('success', 'Direct Main to Kitchen transfer posted successfully.');
-    }
-
+    /**
+     * Step 1 keeps transfers as an internal stock engine only.
+     * The only user-facing transfer action is returning unused Kitchen stock.
+     */
     public function returnCreate(Request $request, InventorySiteContext $site)
     {
         $site->ensureDefaultLocations();
         $original = null;
+
         if ($request->filled('transfer_id')) {
             $original = StockTransfer::query()
                 ->whereKey((int) $request->transfer_id)
                 ->where('status', StockTransfer::STATUS_POSTED)
                 ->where('direction', StockTransfer::DIRECTION_MAIN_TO_KITCHEN)
-                ->when($request->user()?->isKitchenUser(), fn ($q) => $q->whereHas('kitchenRequest', fn ($kr) => $kr->where('requested_by', $request->user()->id)))
+                ->when($request->user()?->isKitchenManager(), fn ($q) => $q->whereHas(
+                    'kitchenRequest',
+                    fn ($kr) => $kr->where('requested_by', $request->user()->id)
+                ))
                 ->with(['items.ingredient.baseUnit', 'items.ingredient.unitConversions.unit', 'items.unit', 'items.packageConversion'])
                 ->firstOrFail();
         }
 
         $ingredients = Ingredient::query()
-            ->active()->where('track_inventory', true)
+            ->active()
+            ->where('track_inventory', true)
             ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
-            ->orderBy('name')->get();
+            ->orderBy('name')
+            ->get();
+
         $units = Unit::query()->active()->orderBy('dimension')->orderBy('name')->get();
         $kitchen = app(StockLocationService::class)->forType(StockLocation::TYPE_KITCHEN);
         $available = InventoryBalance::query()
@@ -145,8 +82,8 @@ class StockTransferController extends Controller
             'items.*.unit_choice' => ['required', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
 
-        if ($request->user()?->isKitchenUser()) {
-            // Kitchen can return unused stock, but cannot browse/link arbitrary Main-to-Kitchen transfers.
+        if ($request->user()?->isKitchenManager()) {
+            // Kitchen Manager may return unused ingredients but may not link an arbitrary historical issue.
             $data['original_transfer_id'] = null;
         }
 
@@ -160,7 +97,36 @@ class StockTransferController extends Controller
         );
 
         return redirect()->route('inventory.transfers.show', $transfer)
-            ->with('success', 'Unused Kitchen stock returned to Main through an immutable transfer ledger movement.');
+            ->with('success', 'Unused Kitchen ingredients returned to Store Stock successfully.');
+    }
+
+    public function show(StockTransfer $transfer, InventorySiteContext $site)
+    {
+        $site->ensureDefaultLocations();
+
+        if (request()->user()?->isKitchenManager()) {
+            abort_unless(
+                $transfer->direction === StockTransfer::DIRECTION_KITCHEN_TO_MAIN
+                    && (int) $transfer->created_by === (int) request()->user()->id,
+                403,
+                'Kitchen Manager can view only their own ingredient return transactions.'
+            );
+        }
+
+        $transfer->load([
+            'kitchenRequest',
+            'originalTransfer',
+            'sourceLocation',
+            'destinationLocation',
+            'postedMovement.items.ingredient.baseUnit',
+            'creator',
+            'poster',
+            'items.ingredient.baseUnit',
+            'items.unit',
+            'items.packageConversion',
+        ]);
+
+        return view('admin.inventory.transfers.show', compact('transfer'));
     }
 
     private function transferUnitChoice($item): string
@@ -181,33 +147,5 @@ class StockTransferController extends Controller
         });
 
         return $match ? 'c:' . $match->id : 'u:' . $item->unit_id;
-    }
-
-    public function show(StockTransfer $transfer, InventorySiteContext $site)
-    {
-        $site->ensureDefaultLocations();
-        if (request()->user()?->isKitchenUser()) {
-            abort_unless(
-                $transfer->direction === StockTransfer::DIRECTION_KITCHEN_TO_MAIN
-                    && (int) $transfer->created_by === (int) request()->user()->id,
-                403,
-                'Kitchen users can view only their own return transfers.'
-            );
-        }
-
-        $transfer->load([
-            'kitchenRequest',
-            'originalTransfer',
-            'sourceLocation',
-            'destinationLocation',
-            'postedMovement.items.ingredient.baseUnit',
-            'creator',
-            'poster',
-            'items.ingredient.baseUnit',
-            'items.unit',
-            'items.packageConversion',
-        ]);
-
-        return view('admin.inventory.transfers.show', compact('transfer'));
     }
 }

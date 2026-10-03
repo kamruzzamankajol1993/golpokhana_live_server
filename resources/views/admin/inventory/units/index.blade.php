@@ -1,11 +1,11 @@
 @extends('admin.master.master')
-@section('title','Inventory Units')
+@section('title','Units & Conversion')
 @section('body')
 <main class="progga-content">
     <div class="progga-page-header">
         <div>
-            <h1 class="progga-page-title">Inventory Units</h1>
-            <p class="text-muted mb-0">Standard units convert by measurement dimension; package units require an ingredient-specific conversion.</p>
+            <h1 class="progga-page-title">Units & Conversion</h1>
+            <p class="text-muted mb-0">Create unit names and simple conversion rules. Package sizes such as Packet/Bottle are defined inside each Ingredient.</p>
         </div>
         <button class="progga-btn progga-btn-primary" data-bs-toggle="modal" data-bs-target="#unitModal" onclick="resetUnitForm()">
             <i class="bi bi-plus-lg"></i> Add Unit
@@ -56,27 +56,27 @@
                     <div class="col-md-6"><label class="progga-form-label">Name</label><input class="progga-form-control" name="name" id="unitName" required maxlength="80"></div>
                     <div class="col-md-3"><label class="progga-form-label">Symbol</label><input class="progga-form-control" name="symbol" id="unitSymbol" required maxlength="20"></div>
                     <div class="col-md-3">
-                        <label class="progga-form-label">Dimension</label>
+                        <label class="progga-form-label">Unit Type</label>
                         <select class="progga-form-control" name="dimension" id="unitDimension" required onchange="toggleUnitFactor()">
                             @foreach(\App\Models\Unit::dimensions() as $dimension)<option value="{{ $dimension }}">{{ $dimension }}</option>@endforeach
                         </select>
-                        <small class="text-muted">Type of measurement: WEIGHT, VOLUME, COUNT or PACKAGE.</small>
+                        <small class="text-muted">Choose Weight, Volume, Count or Package.</small>
                     </div>
                     <div class="col-md-6" id="factorWrap">
-                        <label class="progga-form-label">Standard to Base Factor</label>
+                        <label class="progga-form-label">Conversion to Base Unit</label>
                         <input class="progga-form-control" type="number" step="0.01" min="0.01" name="standard_to_base_factor" id="unitFactor" value="1.00">
-                        <small class="text-muted">How many base units equal 1 of this unit. Example: 1 kg = 1000 g, so factor = 1000.</small>
+                        <small class="text-muted">Example: 1 kg = 1000 g → enter 1000. Base units use 1.</small>
                     </div>
                     <div class="col-md-3 d-flex align-items-end">
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="is_base" value="1" id="unitBase" onchange="toggleBaseFactor()">
-                            <label class="form-check-label" for="unitBase">Base unit</label>
-                            <div><small class="text-muted">Main reference unit for this dimension; its factor must be 1.</small></div>
+                            <label class="form-check-label" for="unitBase">This is the base unit</label>
+                            <div><small class="text-muted">Example: Gram, Milliliter or Piece.</small></div>
                         </div>
                     </div>
                     <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_active" value="1" id="unitActive" checked><label class="form-check-label" for="unitActive">Active</label></div></div>
                 </div>
-                <div class="alert alert-info mt-3 mb-0 py-2">Examples: KG = 1000 Gram, Liter = 1000 ML, Dozen = 12 Piece. Packet/Bottle/Bag/Box/Carton should use <strong>PACKAGE</strong>; their factor is set separately for each ingredient.</div>
+                <div class="alert alert-info mt-3 mb-0 py-2">Examples: Kilogram = 1000 Gram, Liter = 1000 Milliliter, Dozen = 12 Piece. For Packet/Bottle/Bag/Box/Carton select <strong>PACKAGE</strong>; its size will be set when the Ingredient is created.</div>
             </div>
             <div class="modal-footer"><button type="button" class="progga-btn progga-btn-light" data-bs-dismiss="modal">Cancel</button><button class="progga-btn progga-btn-primary">Save Unit</button></div>
         </form>

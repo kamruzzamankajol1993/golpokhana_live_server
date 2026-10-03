@@ -10,55 +10,50 @@
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ route('reports.inventory.usage', []) }}" class="progga-btn progga-btn-outline">Usage</a>
             <a href="{{ route('reports.inventory.reconciliation', []) }}" class="progga-btn progga-btn-outline">Reconciliation</a>
-            <a href="{{ route('reports.inventory.request-variance', []) }}" class="progga-btn progga-btn-outline">Request vs Issue</a>
+            <a href="{{ route('reports.inventory.request-variance', []) }}" class="progga-btn progga-btn-outline">Request vs Assigned</a>
         </div>
     </div>
 
     <div class="row g-3 mb-4">
-        <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Main Stock Rows</div><div class="fs-4 fw-bold">{{ number_format($summary['main_rows']) }}</div></div></div></div>
+        <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Store Stock Rows</div><div class="fs-4 fw-bold">{{ number_format($summary['main_rows']) }}</div></div></div></div>
         <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Kitchen Stock Rows</div><div class="fs-4 fw-bold">{{ number_format($summary['kitchen_rows']) }}</div></div></div></div>
         <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Low Stock</div><div class="fs-4 fw-bold text-warning">{{ number_format($summary['low_rows']) }}</div></div></div></div>
         <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Negative Stock</div><div class="fs-4 fw-bold text-danger">{{ number_format($summary['negative_rows']) }}</div></div></div></div>
-        <div class="col-md"><div class="progga-card"><div class="progga-card-body"><div class="text-muted small">Open Exceptions</div><div class="fs-4 fw-bold">{{ number_format($summary['open_exceptions']) }}</div></div></div></div>
+        
     </div>
 
     <div class="progga-card mb-4">
         <div class="progga-card-header"><strong>Report Shortcuts</strong></div>
         <div class="p-3 d-flex gap-2 flex-wrap">
-            <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['location_type'=>'MAIN'])) }}">Current Main Stock</a>
+            <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['location_type'=>'MAIN'])) }}">Current Store Stock</a>
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['location_type'=>'KITCHEN'])) }}">Current Kitchen Stock</a>
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['state'=>'LOW'])) }}">Low Stock</a>
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['state'=>'NEGATIVE'])) }}">Negative Stock</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}">Ingredient Ledger</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.purchases.index') }}">Purchase History</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.transfers.index') }}">Transfer / Return History</a>
+            <a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}">Transaction History</a>
+            <a class="progga-btn progga-btn-light" href="{{ route('inventory.purchase-vouchers.index') }}">Purchase Vouchers</a>
+            <a class="progga-btn progga-btn-light" href="{{ route('inventory.purchases.index') }}">Received Purchases</a>
             <a class="progga-btn progga-btn-light" href="{{ route('inventory.kitchen-requests.index') }}">Kitchen Requests</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.consumptions.index') }}">Order Consumption</a>
             <a class="progga-btn progga-btn-light" href="{{ route('inventory.wastages.index') }}">Wastage</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.adjustments.index') }}">Adjustments</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.exceptions.index') }}">Exception Queue</a>
-            @if(auth()->user()?->hasRole('Super Admin'))
-                <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.qa') }}">Rollout QA</a>
-            @endif
         </div>
     </div>
 
     <div class="progga-card">
         <div class="progga-card-header">
-            <form method="GET" class="row g-2 w-100 align-items-end">
-                <div class="col-md-2"><label class="progga-form-label">Location</label><select name="location_type" class="progga-form-control"><option value="">Main + Kitchen</option><option value="MAIN" @selected(request('location_type')==='MAIN')>Main Stock</option><option value="KITCHEN" @selected(request('location_type')==='KITCHEN')>Kitchen Stock</option></select></div>
+            <form method="GET" id="inventoryFilterForm" class="row g-2 w-100 align-items-end">
+                <div class="col-md-2"><label class="progga-form-label">Stock Area</label><select name="location_type" class="progga-form-control"><option value="">Store + Kitchen</option><option value="MAIN" @selected(request('location_type')==='MAIN')>Store Stock</option><option value="KITCHEN" @selected(request('location_type')==='KITCHEN')>Kitchen Stock</option></select></div>
                 <div class="col-md-2"><label class="progga-form-label">State</label><select name="state" class="progga-form-control"><option value="">All States</option><option value="OK" @selected(request('state')==='OK')>OK</option><option value="LOW" @selected(request('state')==='LOW')>Low</option><option value="NEGATIVE" @selected(request('state')==='NEGATIVE')>Negative</option></select></div>
                 <div class="col-md-4"><label class="progga-form-label">Ingredient</label><input name="search" value="{{ request('search') }}" class="progga-form-control" placeholder="Name or code"></div>
                 <div class="col-md-2"><button class="progga-btn progga-btn-primary">Apply</button> <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index') }}">Reset</a></div>
             </form>
         </div>
+        <div id="inventoryListContent">
         <div class="table-responsive">
             <table class="table align-middle mb-0">
-                <thead><tr><th>Location</th><th>Ingredient</th><th class="text-end">Current Qty</th><th class="text-end">Low Level</th><th>Status</th></tr></thead>
+                <thead><tr><th>Stock Area</th><th>Ingredient</th><th class="text-end">Current Qty</th><th class="text-end">Low Level</th><th>Status</th></tr></thead>
                 <tbody>
                 @forelse($rows as $row)
                     <tr>
-                        <td>{{ $row->location_name }} <span class="text-muted small">({{ $row->location_type }})</span></td>
+                        <td>{{ $row->location_type === 'MAIN' ? 'Store Stock' : 'Kitchen Stock' }}</td>
                         <td><strong>{{ $row->ingredient_name }}</strong>@if($row->ingredient_code)<div class="text-muted small">{{ $row->ingredient_code }}</div>@endif</td>
                         <td class="text-end">{{ rtrim(rtrim((string)$row->quantity_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td>
                         <td class="text-end">{{ rtrim(rtrim((string)$row->low_stock_level_base,'0'),'.') }} {{ $row->base_unit_symbol }}</td>
@@ -70,7 +65,11 @@
                 </tbody>
             </table>
         </div>
-        <div class="p-3">{{ $rows->links() }}</div>
+        @include('admin.inventory.partials.pagination',['paginator'=>$rows,'label'=>'stock rows'])
+        </div>
     </div>
 </main>
+@endsection
+@section('script')
+@include('admin.inventory.partials.list_assets',['indexUrl'=>route('reports.inventory.index')])
 @endsection

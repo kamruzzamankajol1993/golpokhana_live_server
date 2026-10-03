@@ -17,7 +17,7 @@ class InventorySiteContext
 
         $now = now();
         foreach ([
-            ['code' => 'MAIN', 'name' => 'Main Stock', 'type' => StockLocation::TYPE_MAIN],
+            ['code' => 'MAIN', 'name' => 'Store Stock', 'type' => StockLocation::TYPE_MAIN],
             ['code' => 'KITCHEN', 'name' => 'Kitchen Stock', 'type' => StockLocation::TYPE_KITCHEN],
         ] as $location) {
             DB::table('stock_locations')->updateOrInsert(

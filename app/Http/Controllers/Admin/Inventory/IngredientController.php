@@ -21,7 +21,7 @@ class IngredientController extends Controller
     public function index(Request $request)
     {
         $ingredients = Ingredient::query()
-            ->with(['baseUnit', 'unitConversions.unit'])
+            ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(function ($q) use ($search) {
@@ -57,7 +57,7 @@ class IngredientController extends Controller
 
     public function edit(Ingredient $ingredient)
     {
-        $ingredient->load('unitConversions.unit');
+        $ingredient->load(['unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')]);
         return view('admin.inventory.ingredients.edit', $this->formData() + compact('ingredient'));
     }
 
@@ -75,7 +75,7 @@ class IngredientController extends Controller
             || $ingredient->recipeItems()->exists()
         )) {
             throw ValidationException::withMessages([
-                'base_unit_id' => 'Base unit or measurement type cannot be changed after stock, purchase, or recipe history exists for this ingredient.',
+                'base_unit_id' => 'Base unit cannot be changed after stock, purchase, or recipe history exists for this ingredient.',
             ]);
         }
 
@@ -112,24 +112,23 @@ class IngredientController extends Controller
     private function formData(): array
     {
         return [
-            'baseUnits' => Unit::query()->active()->where('is_base', true)->orderBy('dimension')->orderBy('name')->get(),
+            'baseUnits' => Unit::query()
+                ->active()
+                ->where('is_base', true)
+                ->whereIn('dimension', [Unit::DIMENSION_WEIGHT, Unit::DIMENSION_VOLUME, Unit::DIMENSION_COUNT])
+                ->orderByRaw("CASE dimension WHEN 'WEIGHT' THEN 1 WHEN 'VOLUME' THEN 2 WHEN 'COUNT' THEN 3 ELSE 4 END")
+                ->orderBy('name')
+                ->get(),
             'packageUnits' => Unit::query()->active()->where('dimension', Unit::DIMENSION_PACKAGE)->orderBy('name')->get(),
-            'dimensions' => [Unit::DIMENSION_WEIGHT, Unit::DIMENSION_VOLUME, Unit::DIMENSION_COUNT],
         ];
     }
 
     private function validated(Request $request, ?Ingredient $ingredient = null): array
     {
-        $request->merge([
-            'name' => trim((string) $request->name),
-            'code' => $request->filled('code') ? trim((string) $request->code) : null,
-            'measurement_dimension' => strtoupper(trim((string) $request->measurement_dimension)),
-        ]);
+        $request->merge(['name' => trim((string) $request->name)]);
 
-        $data = $request->validate([
+        $validated = $request->validate([
             'name' => ['required', 'string', 'max:160', Rule::unique('ingredients', 'name')->ignore($ingredient?->id)],
-            'code' => ['nullable', 'string', 'max:80', Rule::unique('ingredients', 'code')->ignore($ingredient?->id)],
-            'measurement_dimension' => ['required', Rule::in([Unit::DIMENSION_WEIGHT, Unit::DIMENSION_VOLUME, Unit::DIMENSION_COUNT])],
             'base_unit_id' => ['required', 'integer', 'exists:units,id'],
             'low_stock_level_base' => ['required', 'numeric', 'gte:0'],
             'conversions' => ['nullable', 'array'],
@@ -137,13 +136,12 @@ class IngredientController extends Controller
             'conversions.*.unit_id' => ['nullable', 'integer', 'exists:units,id'],
             'conversions.*.label' => ['nullable', 'string', 'max:160'],
             'conversions.*.factor_to_base' => ['nullable', 'numeric', 'gt:0'],
-            'conversions.*.effective_from' => ['nullable', 'date'],
         ]);
 
-        $baseUnit = Unit::query()->findOrFail((int) $data['base_unit_id']);
-        if (!$baseUnit->is_active || !$baseUnit->is_base || $baseUnit->dimension !== $data['measurement_dimension']) {
+        $baseUnit = Unit::query()->findOrFail((int) $validated['base_unit_id']);
+        if (!$baseUnit->is_active || !$baseUnit->is_base || !in_array($baseUnit->dimension, [Unit::DIMENSION_WEIGHT, Unit::DIMENSION_VOLUME, Unit::DIMENSION_COUNT], true)) {
             throw ValidationException::withMessages([
-                'base_unit_id' => 'Select the active base unit that matches the ingredient measurement type.',
+                'base_unit_id' => 'Select an active base unit for Weight, Volume or Count.',
             ]);
         }
 
@@ -161,14 +159,14 @@ class IngredientController extends Controller
             }
             if ($unitId < 1 || $factor === null || $factor === '') {
                 throw ValidationException::withMessages([
-                    "conversions.{$index}" => 'Each package conversion row requires a package unit and factor.',
+                    "conversions.{$index}" => 'Each package conversion requires a package unit and package size/conversion.',
                 ]);
             }
 
             $unit = Unit::query()->findOrFail($unitId);
             if (!$unit->is_active || $unit->dimension !== Unit::DIMENSION_PACKAGE) {
                 throw ValidationException::withMessages([
-                    "conversions.{$index}.unit_id" => 'Ingredient-specific conversions are only allowed for active package units.',
+                    "conversions.{$index}.unit_id" => 'Select an active package unit.',
                 ]);
             }
 
@@ -181,9 +179,7 @@ class IngredientController extends Controller
             $factorKey = $this->normalizeFactorForKey((string) $factor);
             $variantKey = $unitId . '|' . $factorKey;
             if (isset($seenVariants[$variantKey])) {
-                throw ValidationException::withMessages([
-                    'conversions' => 'The same package unit and package size cannot be added twice.',
-                ]);
+                throw ValidationException::withMessages(['conversions' => 'The same package type and size cannot be added twice.']);
             }
             $seenVariants[$variantKey] = true;
 
@@ -192,9 +188,7 @@ class IngredientController extends Controller
             }
             $labelKey = mb_strtolower($label);
             if (isset($seenLabels[$labelKey])) {
-                throw ValidationException::withMessages([
-                    'conversions' => 'Each package conversion label must be unique for this ingredient.',
-                ]);
+                throw ValidationException::withMessages(['conversions' => 'Each package conversion name must be unique for this ingredient.']);
             }
             $seenLabels[$labelKey] = true;
 
@@ -203,16 +197,23 @@ class IngredientController extends Controller
                 'unit_id' => $unitId,
                 'label' => $label,
                 'factor_to_base' => $factor,
-                'purchase_allowed' => !empty($row['purchase_allowed']),
-                'recipe_allowed' => !empty($row['recipe_allowed']),
-                'effective_from' => $row['effective_from'] ?? null,
-                'is_active' => !array_key_exists('is_active', $row) || !empty($row['is_active']),
+                // Advanced flags are intentionally hidden in the simplified UI.
+                'purchase_allowed' => true,
+                'recipe_allowed' => true,
+                'effective_from' => null,
+                'is_active' => true,
             ];
         }
 
-        unset($data['conversions']);
-        $data['track_inventory'] = $request->boolean('track_inventory');
-        $data['is_active'] = $request->boolean('is_active');
+        $data = [
+            'name' => $validated['name'],
+            'code' => $ingredient?->code, // Existing codes remain intact; new ingredients do not require a code.
+            'measurement_dimension' => $baseUnit->dimension,
+            'base_unit_id' => (int) $baseUnit->id,
+            'low_stock_level_base' => $validated['low_stock_level_base'],
+            'track_inventory' => true,
+            'is_active' => $request->boolean('is_active', true),
+        ];
 
         return [$data, $conversions];
     }
@@ -233,11 +234,17 @@ class IngredientController extends Controller
             $keep[] = $record->id;
         }
 
-        $query = $ingredient->unitConversions();
+        // Keep old conversions as inactive history instead of deleting rows that may
+        // already be referenced by purchase/recipe/transfer snapshots.
+        $query = $ingredient->unitConversions()->where('is_active', true);
         if ($keep) {
             $query->whereNotIn('id', $keep);
         }
-        $query->delete();
+        $query->update([
+            'is_active' => false,
+            'purchase_allowed' => false,
+            'recipe_allowed' => false,
+        ]);
     }
 
     private function automaticConversionLabel(Unit $packageUnit, string $factor, Unit $baseUnit): string
@@ -258,5 +265,4 @@ class IngredientController extends Controller
     {
         return rtrim(rtrim(number_format((float) $factor, 8, '.', ''), '0'), '.');
     }
-
 }
