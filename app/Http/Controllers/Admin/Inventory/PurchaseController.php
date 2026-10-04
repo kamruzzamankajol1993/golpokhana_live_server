@@ -35,6 +35,7 @@ class PurchaseController extends Controller
         $purchases = Purchase::query()
             ->with(['vendor', 'receiver', 'voucher'])
             ->withCount('items')
+            ->withSum('vendorPayments', 'amount')
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(fn ($q) => $q->where('purchase_no', 'like', $search)
@@ -120,6 +121,7 @@ class PurchaseController extends Controller
                         $voucherService->requestReapprovalFromPurchase($voucher, $purchase, $request->user()?->id, $reasons);
                         $reapproval = true;
                     } else {
+                        $purchase = $this->confirmGrn($purchase, (string) $data['grn'], $request->user()?->id);
                         $purchase = $receivingService->receive($purchase, $request->user()?->id);
                     }
                 }
@@ -137,8 +139,8 @@ class PurchaseController extends Controller
         }
 
         if ($reapproval) {
-            return redirect()->route('inventory.purchase-vouchers.show', $voucher)
-                ->with('error', 'Actual supplied quantity/value exceeded the approved voucher. Stock was NOT increased; a new approval round has been started automatically.');
+            return redirect()->route('inventory.purchase-vouchers.approval-history', $voucher)
+                ->with('error', 'Actual supplied quantity/value exceeded the approved voucher. Stock was NOT increased. Select the next approval user(s) and send the new revision with a note.');
         }
 
         return redirect()->route('inventory.purchases.show', $purchase)->with(
@@ -150,7 +152,7 @@ class PurchaseController extends Controller
     public function show(Purchase $purchase, InventorySiteContext $site)
     {
         $this->assertSitePurchase($purchase, $site);
-        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver', 'receivedMovement', 'voucher.items.ingredient.baseUnit']);
+        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver', 'receivedMovement', 'voucher.items.ingredient.baseUnit', 'vendorPayments.creator', 'grnConfirmer']);
         return view('admin.inventory.purchases.show', compact('purchase'));
     }
 
@@ -207,10 +209,12 @@ class PurchaseController extends Controller
                             $voucherService->requestReapprovalFromPurchase($voucher, $purchase, $request->user()?->id, $reasons);
                             $reapproval = true;
                         } else {
-                            $purchase = $receivingService->receive($purchase, $request->user()?->id);
+                            $purchase = $this->confirmGrn($purchase, (string) $data['grn'], $request->user()?->id);
+                        $purchase = $receivingService->receive($purchase, $request->user()?->id);
                         }
                     } else {
                         // Backward compatibility for legacy Draft purchases created before Step 3.
+                        $purchase = $this->confirmGrn($purchase, (string) $data['grn'], $request->user()?->id);
                         $purchase = $receivingService->receive($purchase, $request->user()?->id);
                     }
                 }
@@ -228,8 +232,8 @@ class PurchaseController extends Controller
         }
 
         if ($reapproval && $voucher) {
-            return redirect()->route('inventory.purchase-vouchers.show', $voucher)
-                ->with('error', 'Actual supplied quantity/value exceeded approval. Stock was NOT increased; re-approval has started.');
+            return redirect()->route('inventory.purchase-vouchers.approval-history', $voucher)
+                ->with('error', 'Actual supplied quantity/value exceeded approval. Stock was NOT increased. Select the next approval user(s) and send with a note.');
         }
 
         return redirect()->route('inventory.purchases.show', $purchase)->with(
@@ -240,6 +244,11 @@ class PurchaseController extends Controller
 
     public function receive(Request $request, Purchase $purchase, InventorySiteContext $site, PurchaseReceivingService $service, PurchaseVoucherService $voucherService)
     {
+        $data = $request->validate([
+            'grn' => ['required', 'string', 'max:5000'],
+            'grn_confirmed' => ['required', 'accepted'],
+        ]);
+
         $site->ensureDefaultLocations();
         $purchase->load(['voucher.items', 'items.ingredient']);
         if ($purchase->voucher) {
@@ -248,13 +257,18 @@ class PurchaseController extends Controller
             $reasons = $voucherService->overrunReasons($voucher, $purchase);
             if ($reasons !== []) {
                 $voucherService->requestReapprovalFromPurchase($voucher, $purchase, $request->user()?->id, $reasons);
-                return redirect()->route('inventory.purchase-vouchers.show', $voucher)
-                    ->with('error', 'Supply exceeds the approved quantity/value. Re-approval started; stock was not increased.');
+                return redirect()->route('inventory.purchase-vouchers.approval-history', $voucher)
+                    ->with('error', 'Supply exceeds the approved quantity/value. Stock was not increased. Select the next approval user(s) and send the new revision with a note.');
             }
         }
 
-        $purchase = $service->receive($purchase, $request->user()?->id);
-        return redirect()->route('inventory.purchases.show', $purchase)->with('success', 'Purchase received and Store Stock increased through Transaction History.');
+        $purchase = DB::transaction(function () use ($purchase, $service, $request, $data) {
+            $locked = Purchase::query()->whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+            $locked = $this->confirmGrn($locked, (string) $data['grn'], $request->user()?->id);
+            return $service->receive($locked, $request->user()?->id);
+        }, 5);
+
+        return redirect()->route('inventory.purchases.show', $purchase)->with('success', 'GRN confirmed. Purchase received and Store Stock increased through Inventory Audit.');
     }
 
     public function destroy(Request $request, Purchase $purchase, InventorySiteContext $site)
@@ -274,7 +288,7 @@ class PurchaseController extends Controller
     public function invoicePdf(Purchase $purchase, InventorySiteContext $site)
     {
         $this->assertSitePurchase($purchase, $site);
-        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver', 'voucher.items.ingredient.baseUnit']);
+        $purchase->load(['items.ingredient.baseUnit', 'items.unit', 'items.packageConversion', 'vendor', 'creator', 'receiver', 'voucher.items.ingredient.baseUnit', 'vendorPayments.creator', 'grnConfirmer']);
         $restaurant = RestaurantSetting::query()->first();
         return $this->renderInvoicePdf($purchase, $restaurant);
     }
@@ -334,6 +348,24 @@ class PurchaseController extends Controller
         ])->save();
     }
 
+
+    private function confirmGrn(Purchase $purchase, string $grn, ?int $userId): Purchase
+    {
+        $grn = trim($grn);
+        if ($grn === '') {
+            throw ValidationException::withMessages(['grn' => 'GRN details are required before receiving supplier stock.']);
+        }
+
+        $purchase->forceFill([
+            'grn' => $grn,
+            'grn_status' => Purchase::GRN_CONFIRMED,
+            'grn_confirmed_at' => now(),
+            'grn_confirmed_by' => $userId,
+        ])->save();
+
+        return $purchase;
+    }
+
     private function formData(InventorySiteContext $site): array
     {
         $ingredients = Ingredient::query()->active()->where('track_inventory', true)
@@ -358,6 +390,8 @@ class PurchaseController extends Controller
             'discount' => ['nullable', 'numeric', 'gte:0'],
             'tax' => ['nullable', 'numeric', 'gte:0'],
             'notes' => ['nullable', 'string', 'max:3000'],
+            'grn' => [Rule::requiredIf($request->input('submit_action') === 'receive'), 'nullable', 'string', 'max:5000'],
+            'grn_confirmed' => [Rule::requiredIf($request->input('submit_action') === 'receive'), 'nullable', 'accepted'],
             'submit_action' => ['nullable', Rule::in(['draft', 'receive'])],
             'items' => ['required', 'array', 'min:1'],
             'items.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id', 'distinct'],

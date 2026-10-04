@@ -14,11 +14,15 @@ class Purchase extends Model
     public const STATUS_RECEIVED = 'RECEIVED';
     public const STATUS_CANCELLED = 'CANCELLED';
 
+    public const GRN_PENDING = 'PENDING';
+    public const GRN_CONFIRMED = 'CONFIRMED';
+
     protected $guarded = [];
 
     protected $casts = [
         'purchase_date' => 'date',
         'received_at' => 'datetime',
+        'grn_confirmed_at' => 'datetime',
         'subtotal' => 'decimal:4',
         'discount' => 'decimal:4',
         'tax' => 'decimal:4',
@@ -68,6 +72,38 @@ class Purchase extends Model
     public function voucher()
     {
         return $this->belongsTo(PurchaseVoucher::class, 'purchase_voucher_id');
+    }
+
+    public function vendorPayments()
+    {
+        return $this->hasMany(VendorPayment::class);
+    }
+
+    public function grnConfirmer()
+    {
+        return $this->belongsTo(User::class, 'grn_confirmed_by');
+    }
+
+    public function paidAmount(): float
+    {
+        if (array_key_exists('vendor_payments_sum_amount', $this->attributes)) {
+            return (float) ($this->attributes['vendor_payments_sum_amount'] ?? 0);
+        }
+
+        if ($this->relationLoaded('vendorPayments')) {
+            return (float) $this->vendorPayments->sum('amount');
+        }
+
+        return (float) $this->vendorPayments()->sum('amount');
+    }
+
+    public function dueAmount(): float
+    {
+        if ($this->status !== self::STATUS_RECEIVED) {
+            return 0.0;
+        }
+
+        return max(0, round((float) $this->total - $this->paidAmount(), 4));
     }
 
     public function isEditable(): bool

@@ -42,7 +42,7 @@ class SettingController extends Controller
             && Schema::hasTable('inventory_purchase_approvers')) {
             $purchaseApprovalSetting = InventoryPurchaseApprovalSetting::query()->firstOrCreate([], [
                 'is_enabled' => true,
-                'sequential_approval' => true,
+                'sequential_approval' => false,
                 'minimum_approvers' => 3,
             ]);
             $purchaseApprovalApprovers = InventoryPurchaseApprover::query()
@@ -155,6 +155,7 @@ class SettingController extends Controller
         $data['opening_balance_enabled'] = $request->has('opening_balance_enabled');
         $data['final_payment_depends_on_kitchen_status'] = $request->has('final_payment_depends_on_kitchen_status');
         $data['deduct_inventory_on_order_complete'] = $request->has('deduct_inventory_on_order_complete');
+        $data['allow_negative_kitchen_stock_on_order'] = $request->has('allow_negative_kitchen_stock_on_order');
 
         if ($this->userHasRoleCaseInsensitive($request->user(), 'Super Admin')) {
             $request->validate([

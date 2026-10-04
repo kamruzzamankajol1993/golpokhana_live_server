@@ -58,7 +58,7 @@ class PurchaseApprovalSettingController extends Controller
             $setting = InventoryPurchaseApprovalSetting::query()->firstOrNew();
             $setting->fill([
                 'is_enabled' => $enabled,
-                'sequential_approval' => true,
+                'sequential_approval' => false,
                 'minimum_approvers' => (int) $data['minimum_approvers'],
             ])->save();
 

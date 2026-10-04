@@ -7,9 +7,11 @@ use App\Models\InventoryException;
 use App\Models\MenuItemRecipe;
 use App\Models\Order;
 use App\Models\OrderInventoryConsumption;
+use App\Models\PosSetting;
 use App\Models\StockLocation;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class OrderInventoryConsumptionService
@@ -112,6 +114,11 @@ class OrderInventoryConsumptionService
 
             $movement = null;
             if ($movementTotals !== []) {
+                // Step 5: completed POS orders ALWAYS deduct from Kitchen Stock.
+                // Whether Kitchen Stock may become negative is controlled by POS Settings.
+                $allowNegativeKitchenStock = !Schema::hasTable('pos_settings')
+                    || !Schema::hasColumn('pos_settings', 'allow_negative_kitchen_stock_on_order')
+                    || (bool) (PosSetting::query()->orderBy('id')->value('allow_negative_kitchen_stock_on_order') ?? true);
                 ksort($movementTotals, SORT_NUMERIC);
                 $movement = $this->movements->post(
                     StockMovement::ORDER_CONSUMPTION,
@@ -130,6 +137,7 @@ class OrderInventoryConsumptionService
                         'reference_id' => $lockedOrder->id,
                         'performed_by' => $userId,
                         'reason' => "Order {$lockedOrder->order_number} ingredient consumption ({$triggerSource})",
+                        'allow_negative_source' => $allowNegativeKitchenStock,
                     ]
                 );
             }

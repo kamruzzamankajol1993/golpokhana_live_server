@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
+use App\Models\InventoryPurchaseApprover;
+use App\Models\InventoryPurchaseApprovalSetting;
 use App\Models\PurchaseVoucher;
 use App\Models\RestaurantSetting;
 use App\Models\Unit;
@@ -21,7 +23,7 @@ class PurchaseVoucherController extends Controller
     public function __construct()
     {
         $this->middleware('permission:inventory-purchase-voucher-manage')->only([
-            'index', 'create', 'store', 'edit', 'update', 'destroy', 'submit', 'sendToVendor', 'receiveSupply',
+            'index', 'create', 'store', 'edit', 'update', 'destroy', 'submit', 'dispatchApproval', 'approvalHistory', 'sendToVendor', 'receiveSupply',
         ]);
         $this->middleware('permission:inventory-purchase-voucher-manage|inventory-purchase-approve')->only(['show', 'pdf']);
     }
@@ -62,7 +64,7 @@ class PurchaseVoucherController extends Controller
         $submitNow = ($data['submit_action'] ?? 'draft') === 'submit';
         $voucher = DB::transaction(function () use ($service, $vendor, $data, $request, $submitNow) {
             $voucher = $service->saveDraft($vendor, $data, $data['items'], null, $request->user()?->id);
-            return $submitNow ? $service->submit($voucher, $request->user()?->id) : $voucher;
+            return $submitNow ? $service->submit($voucher, $data['approver_ids'] ?? [], (int) $request->user()->id, (string) ($data['approval_note'] ?? '')) : $voucher;
         });
         $message = $submitNow
             ? 'Purchase voucher created and sent for approval.'
@@ -76,10 +78,11 @@ class PurchaseVoucherController extends Controller
         $this->authorizeView($purchaseVoucher);
         $purchaseVoucher->load([
             'vendor', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion',
-            'creator', 'sentToVendorBy', 'currentApprovals.approver', 'revisions.archivedBy', 'purchase', 'convertedPurchase',
+            'creator', 'sentToVendorBy', 'currentApprovals.approver', 'currentApprovals.assigner', 'revisions.archivedBy', 'purchase', 'convertedPurchase',
         ]);
         $canAct = auth()->id() ? $service->canUserAct($purchaseVoucher, (int) auth()->id()) : false;
-        return view('admin.inventory.purchase_vouchers.show', ['voucher' => $purchaseVoucher, 'canAct' => $canAct]);
+        $approvalProgress = $service->approvalProgress($purchaseVoucher);
+        return view('admin.inventory.purchase_vouchers.show', ['voucher' => $purchaseVoucher, 'canAct' => $canAct, 'approvalProgress' => $approvalProgress]);
     }
 
     public function edit(PurchaseVoucher $purchaseVoucher)
@@ -99,7 +102,7 @@ class PurchaseVoucherController extends Controller
         $submitNow = ($data['submit_action'] ?? 'draft') === 'submit';
         $voucher = DB::transaction(function () use ($service, $vendor, $data, $purchaseVoucher, $request, $submitNow) {
             $voucher = $service->saveDraft($vendor, $data, $data['items'], $purchaseVoucher, $request->user()?->id);
-            return $submitNow ? $service->submit($voucher, $request->user()?->id) : $voucher;
+            return $submitNow ? $service->submit($voucher, $data['approver_ids'] ?? [], (int) $request->user()->id, (string) ($data['approval_note'] ?? '')) : $voucher;
         });
         $message = $submitNow
             ? 'Purchase voucher updated and sent for approval.'
@@ -119,9 +122,40 @@ class PurchaseVoucherController extends Controller
 
     public function submit(Request $request, PurchaseVoucher $purchaseVoucher, PurchaseVoucherService $service)
     {
-        $service->submit($purchaseVoucher, $request->user()?->id);
-        return redirect()->route('inventory.purchase-vouchers.show', $purchaseVoucher)
-            ->with('success', 'Voucher sent to the configured approval chain.');
+        $data = $this->validatedApprovalDispatch($request);
+        $service->submit($purchaseVoucher, $data['approver_ids'], (int) $request->user()->id, $data['approval_note']);
+        return redirect()->route('inventory.purchase-vouchers.approval-history', $purchaseVoucher)
+            ->with('success', 'Voucher sent to the selected approval user(s).');
+    }
+
+    public function dispatchApproval(Request $request, PurchaseVoucher $purchaseVoucher, PurchaseVoucherService $service)
+    {
+        $data = $this->validatedApprovalDispatch($request);
+        $service->dispatchApprovals($purchaseVoucher, $data['approver_ids'], (int) $request->user()->id, $data['approval_note']);
+        return redirect()->route('inventory.purchase-vouchers.approval-history', $purchaseVoucher)
+            ->with('success', 'Approval request sent to the selected user(s).');
+    }
+
+    public function approvalHistory(PurchaseVoucher $purchaseVoucher, PurchaseVoucherService $service)
+    {
+        $purchaseVoucher->load([
+            'vendor', 'creator', 'approvals.approver', 'approvals.assigner',
+            'revisions.archivedBy', 'purchase', 'convertedPurchase',
+        ]);
+        $approvalSetting = InventoryPurchaseApprovalSetting::query()->first();
+        $approvalApprovers = InventoryPurchaseApprover::query()->with('user')->active()->get();
+        $approvalProgress = $service->approvalProgress($purchaseVoucher);
+        $pendingUserIds = $purchaseVoucher->approvals
+            ->where('revision_no', $purchaseVoucher->revision_no)
+            ->where('status', 'PENDING')
+            ->pluck('approver_user_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return view('admin.inventory.purchase_vouchers.approval_history', compact(
+            'purchaseVoucher', 'approvalSetting', 'approvalApprovers', 'approvalProgress', 'pendingUserIds'
+        ))->with('voucher', $purchaseVoucher);
     }
 
     public function sendToVendor(Request $request, PurchaseVoucher $purchaseVoucher, PurchaseVoucherService $service)
@@ -148,7 +182,7 @@ class PurchaseVoucherController extends Controller
         $this->authorizeView($purchaseVoucher);
         $purchaseVoucher->load([
             'vendor', 'items.ingredient.baseUnit', 'items.unit', 'items.packageConversion',
-            'creator', 'sentToVendorBy', 'currentApprovals.approver',
+            'creator', 'sentToVendorBy', 'currentApprovals.approver', 'currentApprovals.assigner',
         ]);
         $restaurant = RestaurantSetting::query()->first();
         $tempDir = storage_path('app/mpdf-purchase-vouchers');
@@ -194,11 +228,23 @@ class PurchaseVoucherController extends Controller
             'tax' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'submit_action' => ['nullable', Rule::in(['draft', 'submit'])],
+            'approver_ids' => ['nullable', 'array', 'max:10'],
+            'approver_ids.*' => ['integer', 'distinct', Rule::exists('users', 'id')],
+            'approval_note' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.ingredient_id' => ['required', 'integer', Rule::exists('ingredients', 'id')],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_choice' => ['required', 'string', 'max:50'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+        ]);
+    }
+
+    private function validatedApprovalDispatch(Request $request): array
+    {
+        return $request->validate([
+            'approver_ids' => ['required', 'array', 'min:1', 'max:10'],
+            'approver_ids.*' => ['required', 'integer', 'distinct', Rule::exists('users', 'id')],
+            'approval_note' => ['required', 'string', 'max:2000'],
         ]);
     }
 
@@ -210,6 +256,8 @@ class PurchaseVoucherController extends Controller
                 ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
                 ->where('is_active', true)->where('track_inventory', true)->orderBy('name')->get(),
             'units' => Unit::query()->where('is_active', true)->orderBy('dimension')->orderBy('name')->get(),
+            'approvalSetting' => InventoryPurchaseApprovalSetting::query()->first(),
+            'approvalApprovers' => InventoryPurchaseApprover::query()->with('user')->active()->get(),
         ];
     }
 }

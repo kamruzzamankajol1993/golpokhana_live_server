@@ -98,6 +98,12 @@ class PurchaseVoucher extends Model
         return $this->status === self::STATUS_PENDING_APPROVAL;
     }
 
+    public function canDispatchApproval(): bool
+    {
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_PENDING_APPROVAL, self::STATUS_REJECTED], true)
+            && !$this->converted_purchase_id;
+    }
+
     public function canSendToVendor(): bool
     {
         return $this->status === self::STATUS_APPROVED && !$this->sent_to_vendor_at;

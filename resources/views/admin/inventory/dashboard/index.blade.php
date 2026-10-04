@@ -18,7 +18,7 @@
             ['Store Stock Items',$storeStockItems,'bi-box-seam'],
             ['Kitchen Stock Items',$kitchenStockItems,'bi-basket2'],
             ['Low Store Stock',$lowStockCount,'bi-exclamation-circle'],
-            ['Negative Store Stock',$negativeStockCount,'bi-exclamation-octagon'],
+            ['Negative Kitchen Stock',$negativeStockCount,'bi-exclamation-octagon'],
             ['Pending Ingredient Requests',$pendingRequests,'bi-clipboard2-check'],
             ['Purchase Vouchers Pending Approval',$pendingPurchaseVouchers,'bi-person-check'],
             ['Approved Vouchers / Send Vendor',$approvedPurchaseVouchers,'bi-send-check'],
@@ -45,8 +45,9 @@
             @can('inventory-recipes-manage')<a class="progga-btn progga-btn-light" href="{{ route('inventory.recipes.index') }}"><i class="bi bi-card-checklist"></i> Food Recipes</a>@endcan
             @can('inventory-kitchen-request-assign')<a class="progga-btn progga-btn-light" href="{{ route('inventory.kitchen-requests.index',['tab'=>'assign']) }}"><i class="bi bi-box-arrow-right"></i> Assign Ingredient to Kitchen</a>@endcan
             @can('inventory-purchase-voucher-manage')<a class="progga-btn progga-btn-light" href="{{ route('inventory.purchase-vouchers.index') }}"><i class="bi bi-file-earmark-check"></i> Purchase Vouchers</a>@endcan
-            @can('inventory-transaction-history-view')<a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}"><i class="bi bi-clock-history"></i> Transaction History</a>@endcan
+            @can('inventory-transaction-history-view')<a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}"><i class="bi bi-clock-history"></i> Inventory Audit</a>@endcan
             @can('inventory-adjustment-post')<a class="progga-btn progga-btn-light" href="{{ route('inventory.adjustments.create') }}"><i class="bi bi-sliders"></i> Adjust Stock</a>@endcan
+            @can('inventory-negative-stock-adjust')<a class="progga-btn progga-btn-light" href="{{ route('inventory.negative-stock-adjustments.index') }}"><i class="bi bi-exclamation-triangle"></i> Negative Stock Adjustment</a>@endcan
         </div>
     </div>
 

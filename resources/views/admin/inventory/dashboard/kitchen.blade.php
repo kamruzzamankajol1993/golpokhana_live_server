@@ -61,7 +61,7 @@
                     @can('inventory-kitchen-request-create')<a class="progga-btn progga-btn-light" href="{{ route('inventory.kitchen-requests.create') }}"><i class="bi bi-clipboard-plus"></i> New Ingredient Request</a>@endcan
                     @can('inventory-return-post')<a class="progga-btn progga-btn-light" href="{{ route('inventory.transfers.return.create') }}"><i class="bi bi-arrow-return-left"></i> Return Extra Ingredient</a>@endcan
                     @can('inventory-wastage-create')<a class="progga-btn progga-btn-light" href="{{ route('inventory.wastages.create') }}"><i class="bi bi-trash3"></i> Add Wastage</a>@endcan
-                    @can('inventory-transaction-history-view')<a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}"><i class="bi bi-clock-history"></i> Transaction History</a>@endcan
+                    @can('inventory-transaction-history-view')<a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}"><i class="bi bi-clock-history"></i> Inventory Audit</a>@endcan
                 </div>
             </div>
         </div>

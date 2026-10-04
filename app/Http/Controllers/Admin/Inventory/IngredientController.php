@@ -4,6 +4,12 @@ namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
+use App\Models\InventoryWastage;
+use App\Models\InventoryWastageItem;
+use App\Models\OrderInventoryConsumptionItem;
+use App\Models\Purchase;
+use App\Models\PurchaseItem;
+use App\Models\StockLocation;
 use App\Models\Unit;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -21,7 +27,11 @@ class IngredientController extends Controller
     public function index(Request $request)
     {
         $ingredients = Ingredient::query()
-            ->with(['baseUnit', 'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit')])
+            ->with([
+                'baseUnit',
+                'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit'),
+                'balances.location',
+            ])
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = '%' . trim((string) $request->search) . '%';
                 $query->where(function ($q) use ($search) {
@@ -36,6 +46,79 @@ class IngredientController extends Controller
             ->appends($request->query());
 
         return view('admin.inventory.ingredients.index', compact('ingredients'));
+    }
+
+    public function show(Ingredient $ingredient)
+    {
+        $ingredient->load([
+            'baseUnit',
+            'unitConversions' => fn ($q) => $q->where('is_active', true)->with('unit'),
+            'balances.location',
+        ]);
+
+        $stockByType = [
+            StockLocation::TYPE_MAIN => 0.0,
+            StockLocation::TYPE_KITCHEN => 0.0,
+        ];
+
+        foreach ($ingredient->balances as $balance) {
+            $type = $balance->location?->type;
+            if ($type && array_key_exists($type, $stockByType)) {
+                $stockByType[$type] += (float) $balance->quantity_base;
+            }
+        }
+
+        $purchaseHistory = PurchaseItem::query()
+            ->with(['purchase.vendor', 'unit', 'packageConversion.unit'])
+            ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
+            ->where('purchase_items.ingredient_id', $ingredient->id)
+            ->select('purchase_items.*')
+            ->orderByDesc('purchases.purchase_date')
+            ->orderByDesc('purchase_items.id')
+            ->get();
+
+        $usageHistory = OrderInventoryConsumptionItem::query()
+            ->with(['consumption.order', 'foodItem', 'orderItem'])
+            ->join('order_inventory_consumptions', 'order_inventory_consumption_items.order_inventory_consumption_id', '=', 'order_inventory_consumptions.id')
+            ->where('order_inventory_consumption_items.ingredient_id', $ingredient->id)
+            ->select('order_inventory_consumption_items.*')
+            ->orderByDesc('order_inventory_consumptions.consumed_at')
+            ->orderByDesc('order_inventory_consumption_items.id')
+            ->get();
+
+        $wastageHistory = InventoryWastageItem::query()
+            ->with(['wastage.location', 'wastage.creator', 'unit', 'packageConversion.unit'])
+            ->join('inventory_wastages', 'inventory_wastage_items.inventory_wastage_id', '=', 'inventory_wastages.id')
+            ->where('inventory_wastage_items.ingredient_id', $ingredient->id)
+            ->select('inventory_wastage_items.*')
+            ->orderByRaw('COALESCE(inventory_wastages.posted_at, inventory_wastages.created_at) DESC')
+            ->orderByDesc('inventory_wastage_items.id')
+            ->get();
+
+        $summary = [
+            'store_stock' => $stockByType[StockLocation::TYPE_MAIN],
+            'kitchen_stock' => $stockByType[StockLocation::TYPE_KITCHEN],
+            'total_stock' => array_sum($stockByType),
+            'purchased' => (float) PurchaseItem::query()
+                ->where('ingredient_id', $ingredient->id)
+                ->whereHas('purchase', fn ($q) => $q->where('status', Purchase::STATUS_RECEIVED))
+                ->sum('base_quantity'),
+            'used' => (float) OrderInventoryConsumptionItem::query()
+                ->where('ingredient_id', $ingredient->id)
+                ->sum('quantity_base'),
+            'wastage' => (float) InventoryWastageItem::query()
+                ->where('ingredient_id', $ingredient->id)
+                ->whereHas('wastage', fn ($q) => $q->where('status', InventoryWastage::STATUS_POSTED))
+                ->sum('base_quantity'),
+        ];
+
+        return view('admin.inventory.ingredients.show', compact(
+            'ingredient',
+            'summary',
+            'purchaseHistory',
+            'usageHistory',
+            'wastageHistory'
+        ));
     }
 
     public function create()

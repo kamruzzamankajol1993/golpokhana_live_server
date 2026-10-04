@@ -84,7 +84,7 @@
     </div>
     @endcanany
 
- @canany(['inventory-dashboard-view', 'inventory-kitchen-dashboard-view', 'inventory-kitchen-stock-view', 'inventory-view', 'inventory-units-manage', 'inventory-ingredients-manage', 'inventory-recipes-manage', 'inventory-vendors-manage', 'inventory-purchase-voucher-manage', 'inventory-purchase-approve', 'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-return-post', 'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete', 'inventory-reports-view', 'inventory-transaction-history-view'])
+ @canany(['inventory-dashboard-view', 'inventory-kitchen-dashboard-view', 'inventory-kitchen-stock-view', 'inventory-view', 'inventory-units-manage', 'inventory-ingredients-manage', 'inventory-recipes-manage', 'inventory-vendors-manage', 'inventory-purchase-voucher-manage', 'inventory-purchase-approve', 'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-return-post', 'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete', 'inventory-reports-view', 'inventory-transaction-history-view', 'inventory-negative-stock-adjust'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Inventory</div></div>
     <div class="progga-nav-item">
         <a class="progga-nav-link {{ (request()->routeIs('inventory.*') || request()->routeIs('reports.inventory.*')) ? 'active' : '' }}" data-bs-toggle="collapse" href="#inventoryModuleDropdown" role="button" aria-expanded="{{ (request()->routeIs('inventory.*') || request()->routeIs('reports.inventory.*')) ? 'true' : 'false' }}" aria-controls="inventoryModuleDropdown">
@@ -105,16 +105,33 @@
                 @endcan
             @endif
 
-            @canany(['inventory-view', 'inventory-kitchen-stock-view'])
-            <a class="progga-nav-link {{ request()->routeIs('inventory.stock.*') ? 'active' : '' }}" href="{{ route('inventory.stock.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-boxes progga-nav-icon"></i><span>{{ auth()->user()?->isKitchenManager() ? 'Kitchen Stock' : 'Current Stock' }}</span>
-            </a>
-            @endcanany
-
             @canany(['inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign'])
-            <a class="progga-nav-link {{ request()->routeIs('inventory.kitchen-requests.*') ? 'active' : '' }}" href="{{ route('inventory.kitchen-requests.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-clipboard2-check-fill progga-nav-icon"></i><span>Kitchen Requests</span>
+            @php
+                $kitchenRequestMenuOpen = request()->routeIs('inventory.kitchen-requests.*');
+                $kitchenRequestAssignTab = request()->routeIs('inventory.kitchen-requests.index') && request()->query('tab') === 'assign';
+            @endphp
+            <a class="progga-nav-link {{ $kitchenRequestMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#inventoryKitchenRequestDropdown" role="button" aria-expanded="{{ $kitchenRequestMenuOpen ? 'true' : 'false' }}" aria-controls="inventoryKitchenRequestDropdown" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-clipboard2-check-fill progga-nav-icon"></i><span>Kitchen Request</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
             </a>
+            <div class="collapse {{ $kitchenRequestMenuOpen ? 'show' : '' }}" id="inventoryKitchenRequestDropdown">
+                @can('inventory-kitchen-request-create')
+                <a class="progga-nav-link {{ request()->routeIs('inventory.kitchen-requests.create') ? 'active' : '' }}" href="{{ route('inventory.kitchen-requests.create') }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-plus-circle progga-nav-icon"></i><span>Add Request</span>
+                </a>
+                @endcan
+
+                @canany(['inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign'])
+                <a class="progga-nav-link {{ $kitchenRequestMenuOpen && !request()->routeIs('inventory.kitchen-requests.create') && !request()->routeIs('inventory.kitchen-requests.assign') && !$kitchenRequestAssignTab ? 'active' : '' }}" href="{{ route('inventory.kitchen-requests.index') }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-list-check progga-nav-icon"></i><span>Request List</span>
+                </a>
+                @endcanany
+
+                @can('inventory-kitchen-request-assign')
+                <a class="progga-nav-link {{ $kitchenRequestAssignTab || request()->routeIs('inventory.kitchen-requests.assign') ? 'active' : '' }}" href="{{ route('inventory.kitchen-requests.index', ['tab' => 'assign']) }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-box-arrow-in-down progga-nav-icon"></i><span>Assign Ingredient</span>
+                </a>
+                @endcan
+            </div>
             @endcanany
 
             @if(auth()->user()?->isKitchenManager())
@@ -133,26 +150,46 @@
 
             @can('inventory-transaction-history-view')
             <a class="progga-nav-link {{ request()->routeIs('inventory.ledger.*') ? 'active' : '' }}" href="{{ route('inventory.ledger.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-clock-history progga-nav-icon"></i><span>Transaction History</span>
+                <i class="bi bi-clipboard-data progga-nav-icon"></i><span>Inventory Audit</span>
             </a>
             @endcan
 
-            @can('inventory-purchase-voucher-manage')
-            <a class="progga-nav-link {{ request()->routeIs('inventory.purchase-vouchers.*') ? 'active' : '' }}" href="{{ route('inventory.purchase-vouchers.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-file-earmark-check-fill progga-nav-icon"></i><span>Purchase Vouchers</span>
+            @can('inventory-negative-stock-adjust')
+            @if(!auth()->user()?->isKitchenManager())
+            <a class="progga-nav-link {{ request()->routeIs('inventory.negative-stock-adjustments.*') ? 'active' : '' }}" href="{{ route('inventory.negative-stock-adjustments.index') }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-exclamation-triangle-fill progga-nav-icon"></i><span>Negative Stock Adjustment</span>
             </a>
+            @endif
             @endcan
 
-            @can('inventory-purchase-approve')
-            <a class="progga-nav-link {{ request()->routeIs('inventory.purchase-approvals.*') ? 'active' : '' }}" href="{{ route('inventory.purchase-approvals.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-person-check-fill progga-nav-icon"></i><span>My Purchase Approvals</span>
+            @canany(['inventory-purchase-voucher-manage', 'inventory-purchase-approve', 'inventory-purchase-create', 'inventory-purchase-receive'])
+            @php
+                $purchaseMenuOpen = request()->routeIs('inventory.purchase-vouchers.*')
+                    || request()->routeIs('inventory.purchase-approvals.*')
+                    || request()->routeIs('inventory.purchases.*');
+            @endphp
+            <a class="progga-nav-link {{ $purchaseMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#inventoryPurchaseDropdown" role="button" aria-expanded="{{ $purchaseMenuOpen ? 'true' : 'false' }}" aria-controls="inventoryPurchaseDropdown" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-cart-check-fill progga-nav-icon"></i><span>Purchase</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
             </a>
-            @endcan
+            <div class="collapse {{ $purchaseMenuOpen ? 'show' : '' }}" id="inventoryPurchaseDropdown">
+                @can('inventory-purchase-voucher-manage')
+                <a class="progga-nav-link {{ request()->routeIs('inventory.purchase-vouchers.*') ? 'active' : '' }}" href="{{ route('inventory.purchase-vouchers.index') }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-file-earmark-check-fill progga-nav-icon"></i><span>Purchase Voucher</span>
+                </a>
+                @endcan
 
-            @canany(['inventory-purchase-create', 'inventory-purchase-receive'])
-            <a class="progga-nav-link {{ request()->routeIs('inventory.purchases.*') ? 'active' : '' }}" href="{{ route('inventory.purchases.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Purchases / Supply Receive</span>
-            </a>
+                @canany(['inventory-purchase-create', 'inventory-purchase-receive'])
+                <a class="progga-nav-link {{ request()->routeIs('inventory.purchases.*') ? 'active' : '' }}" href="{{ route('inventory.purchases.index') }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-receipt-cutoff progga-nav-icon"></i><span>Purchase Received</span>
+                </a>
+                @endcanany
+
+                @can('inventory-purchase-approve')
+                <a class="progga-nav-link {{ request()->routeIs('inventory.purchase-approvals.*') ? 'active' : '' }}" href="{{ route('inventory.purchase-approvals.index') }}" style="padding-left:58px;font-size:12px;">
+                    <i class="bi bi-person-check-fill progga-nav-icon"></i><span>My Purchase Approval</span>
+                </a>
+                @endcan
+            </div>
             @endcanany
 
             @can('inventory-ingredients-manage')
@@ -164,12 +201,6 @@
             @can('inventory-recipes-manage')
             <a class="progga-nav-link {{ request()->routeIs('inventory.recipes.*') ? 'active' : '' }}" href="{{ route('inventory.recipes.index') }}" style="padding-left:42px;font-size:13px;">
                 <i class="bi bi-card-checklist progga-nav-icon"></i><span>Food Recipes</span>
-            </a>
-            @endcan
-
-            @can('inventory-units-manage')
-            <a class="progga-nav-link {{ request()->routeIs('inventory.units.*') ? 'active' : '' }}" href="{{ route('inventory.units.index') }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-rulers progga-nav-icon"></i><span>Units &amp; Conversion</span>
             </a>
             @endcan
 

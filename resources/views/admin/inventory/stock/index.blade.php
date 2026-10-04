@@ -5,7 +5,7 @@
     <div class="progga-page-header">
         <div><h1 class="progga-page-title">{{ ($kitchenOnly ?? false) ? 'Kitchen Stock' : 'Current Stock' }}</h1><p class="text-muted mb-0">{{ ($kitchenOnly ?? false) ? 'Ingredients currently available for kitchen operations.' : 'Current Store Stock. Stock area/location selection is handled automatically by the system.' }}</p></div>
         <div class="d-flex gap-2 flex-wrap">
-            @can('inventory-transaction-history-view')<a href="{{ route('inventory.ledger.index') }}" class="progga-btn progga-btn-secondary"><i class="bi bi-clock-history"></i> Transaction History</a>@endcan
+            @can('inventory-transaction-history-view')<a href="{{ route('inventory.ledger.index') }}" class="progga-btn progga-btn-secondary"><i class="bi bi-clock-history"></i> Inventory Audit</a>@endcan
             @unless($kitchenOnly ?? false) @can('inventory-adjustment-post')<a href="{{ route('inventory.adjustments.create') }}" class="progga-btn progga-btn-outline"><i class="bi bi-sliders"></i> Adjust Stock</a>@endcan @endunless
         </div>
     </div>

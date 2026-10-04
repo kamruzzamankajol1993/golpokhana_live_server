@@ -6,7 +6,7 @@
     <div class="progga-page-header">
         <div>
             <h1 class="progga-page-title">Adjust Store Stock</h1>
-            <p class="text-muted mb-0">Use this only when the physical count differs from the system count. The correction is recorded in Transaction History.</p>
+            <p class="text-muted mb-0">Use this only when the physical count differs from the system count. The correction is recorded in Inventory Audit.</p>
         </div>
         <a href="{{ route('inventory.stock.index') }}" class="progga-btn progga-btn-outline">Back to Current Stock</a>
     </div>

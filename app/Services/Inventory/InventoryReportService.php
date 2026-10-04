@@ -151,7 +151,7 @@ class InventoryReportService
             'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create',
             'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-transfer-post', 'inventory-return-post',
             'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete',
-            'inventory-adjustment-post', 'inventory-reports-view',
+            'inventory-adjustment-post', 'inventory-negative-stock-adjust', 'inventory-reports-view',
         ];
         $existingPermissionCount = DB::table('permissions')->where('guard_name', 'web')->whereIn('name', $requiredPermissions)->count();
         $missingPermissionCount = count($requiredPermissions) - $existingPermissionCount;

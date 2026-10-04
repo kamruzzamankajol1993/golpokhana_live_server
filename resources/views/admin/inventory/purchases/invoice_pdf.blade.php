@@ -65,6 +65,23 @@
         </table>
     </div>
 
+
+    <div class="box">
+        <table class="meta-table">
+            <tr>
+                <td style="width:70%">
+                    <div class="section-title">GRN / Goods Received Note</div>
+                    <div>{{ $purchase->grn ?: '—' }}</div>
+                    <div class="muted" style="margin-top:5px">Status: {{ $purchase->grn_status ?: 'PENDING' }}@if($purchase->grn_status === \App\Models\Purchase::GRN_CONFIRMED) · Confirmed by {{ $purchase->grnConfirmer?->name ?: '—' }} on {{ optional($purchase->grn_confirmed_at)->format('d M Y h:i A') ?: '—' }}@endif</div>
+                </td>
+                <td style="width:30%; text-align:right">
+                    <div><span class="muted">Paid:</span> <span class="taka-symbol">&#2547;</span>{{ number_format($purchase->paidAmount(), 2) }}</div>
+                    <div><span class="muted">Due:</span> <span class="taka-symbol">&#2547;</span>{{ number_format($purchase->dueAmount(), 2) }}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
     <table class="items">
         <thead>
             <tr>

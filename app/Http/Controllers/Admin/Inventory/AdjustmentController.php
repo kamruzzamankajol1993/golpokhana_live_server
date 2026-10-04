@@ -67,6 +67,6 @@ class AdjustmentController extends Controller
         );
 
         return redirect()->route('inventory.stock.index')
-            ->with('success', 'Store stock physical count adjustment posted successfully. Transaction History keeps the full audit trail.');
+            ->with('success', 'Store stock physical count adjustment posted successfully. Inventory Audit keeps the full audit trail.');
     }
 }

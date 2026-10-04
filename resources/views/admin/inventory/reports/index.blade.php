@@ -29,7 +29,7 @@
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['location_type'=>'KITCHEN'])) }}">Current Kitchen Stock</a>
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['state'=>'LOW'])) }}">Low Stock</a>
             <a class="progga-btn progga-btn-light" href="{{ route('reports.inventory.index', array_filter(['state'=>'NEGATIVE'])) }}">Negative Stock</a>
-            <a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}">Transaction History</a>
+            <a class="progga-btn progga-btn-light" href="{{ route('inventory.ledger.index') }}">Inventory Audit</a>
             <a class="progga-btn progga-btn-light" href="{{ route('inventory.purchase-vouchers.index') }}">Purchase Vouchers</a>
             <a class="progga-btn progga-btn-light" href="{{ route('inventory.purchases.index') }}">Received Purchases</a>
             <a class="progga-btn progga-btn-light" href="{{ route('inventory.kitchen-requests.index') }}">Kitchen Requests</a>

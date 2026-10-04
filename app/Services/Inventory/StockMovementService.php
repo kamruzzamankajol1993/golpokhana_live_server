@@ -30,8 +30,9 @@ class StockMovementService
 
         $items = $this->validateItems($items);
         [$source, $destination] = $this->validateLocations($movementType, $sourceLocationId, $destinationLocationId);
-        $allowNegativeSource = $movementType === StockMovement::ORDER_CONSUMPTION
-            || (bool) ($options['allow_negative_source'] ?? false);
+        // Negative source stock is never implicit. Callers must opt in explicitly.
+        // POS order consumption uses the Settings toggle to decide whether Kitchen Stock may go below zero.
+        $allowNegativeSource = (bool) ($options['allow_negative_source'] ?? false);
 
         return DB::transaction(function () use ($movementType, $items, $source, $destination, $options, $allowNegativeSource) {
             $movement = $this->createMovement($movementType, $source?->id, $destination?->id, $options);

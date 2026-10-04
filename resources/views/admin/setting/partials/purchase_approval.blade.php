@@ -56,7 +56,7 @@
                             <small class="text-muted">Recommended: 3 or 4 officers.</small>
                         </div>
                         <div class="col-md-4">
-                            <div class="alert alert-info mb-0 py-2">Approval is sequential: Level 1 → Level 2 → Level 3 → Level 4.</div>
+                            <div class="alert alert-info mb-0 py-2">Selective approval: choose who receives each voucher now; you can send to other officers later.</div>
                         </div>
                     </div>
                 </div>
@@ -66,7 +66,7 @@
                 <div class="progga-card-header d-flex justify-content-between align-items-center">
                     <div>
                         <div class="progga-card-title"><i class="bi bi-people me-2"></i>Approval Officers</div>
-                        <div class="small text-muted">Select the users who must approve a Purchase Voucher and define their approval order.</div>
+                        <div class="small text-muted">Select the users who are allowed to receive Purchase Voucher approval requests. The order is only for display/default sorting; sending is selective.</div>
                     </div>
                     <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm" onclick="addApproverRow()">
                         <i class="bi bi-plus-lg"></i> Add Officer
@@ -77,7 +77,7 @@
                         <table class="table align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th style="width:140px">Level</th>
+                                    <th style="width:140px">Display Order</th>
                                     <th>User</th>
                                     <th>Email</th>
                                     <th style="width:70px"></th>

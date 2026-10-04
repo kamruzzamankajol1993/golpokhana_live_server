@@ -20,7 +20,7 @@ class PurchaseApprovalController extends Controller
     {
         $userId = (int) $request->user()->id;
         $approvals = PurchaseVoucherApproval::query()
-            ->with(['voucher.vendor', 'approver'])
+            ->with(['voucher.vendor', 'approver', 'assigner'])
             ->where('approver_user_id', $userId)
             ->whereHas('voucher', fn ($q) => $q->whereColumn('purchase_voucher_approvals.revision_no', 'purchase_vouchers.revision_no'))
             ->when($request->filled('status'), fn ($q) => $q->where('status', strtoupper((string) $request->status)))
@@ -34,8 +34,8 @@ class PurchaseApprovalController extends Controller
 
     public function approve(Request $request, PurchaseVoucher $purchaseVoucher, PurchaseVoucherService $service)
     {
-        $data = $request->validate(['comment' => ['nullable', 'string', 'max:2000']]);
-        $service->approve($purchaseVoucher, (int) $request->user()->id, $data['comment'] ?? null);
+        $data = $request->validate(['comment' => ['required', 'string', 'max:2000']]);
+        $service->approve($purchaseVoucher, (int) $request->user()->id, $data['comment']);
         return redirect()->route('inventory.purchase-vouchers.show', $purchaseVoucher)
             ->with('success', 'Purchase voucher approved successfully.');
     }

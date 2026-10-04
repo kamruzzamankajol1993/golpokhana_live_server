@@ -77,33 +77,57 @@ class PurchaseVoucherService
         }, 5);
     }
 
-    public function submit(PurchaseVoucher|int $voucher, ?int $userId = null): PurchaseVoucher
-    {
+    public function submit(
+        PurchaseVoucher|int $voucher,
+        array $approverIds,
+        int $userId,
+        string $note
+    ): PurchaseVoucher {
         $voucherId = $voucher instanceof PurchaseVoucher ? (int) $voucher->id : (int) $voucher;
 
-        return DB::transaction(function () use ($voucherId, $userId) {
+        return DB::transaction(function () use ($voucherId, $approverIds, $userId, $note) {
             $voucher = PurchaseVoucher::query()->with('items')->whereKey($voucherId)->lockForUpdate()->firstOrFail();
             if (!$voucher->canSubmit()) {
-                throw ValidationException::withMessages(['voucher' => 'Only a Draft voucher can be submitted for approval. Rejected vouchers must be revised and saved first so the rejected approval history is preserved.']);
+                throw ValidationException::withMessages(['voucher' => 'Only a Draft voucher can be submitted for approval.']);
             }
             if ($voucher->items->isEmpty()) {
                 throw ValidationException::withMessages(['items' => 'Add at least one ingredient before submitting the voucher.']);
             }
 
-            $this->createApprovalRound($voucher, false);
-            return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver']);
+            return $this->dispatchApprovalsLocked($voucher, $approverIds, $userId, $note, true);
+        }, 5);
+    }
+
+    public function dispatchApprovals(
+        PurchaseVoucher|int $voucher,
+        array $approverIds,
+        int $userId,
+        string $note
+    ): PurchaseVoucher {
+        $voucherId = $voucher instanceof PurchaseVoucher ? (int) $voucher->id : (int) $voucher;
+
+        return DB::transaction(function () use ($voucherId, $approverIds, $userId, $note) {
+            $voucher = PurchaseVoucher::query()->with('items')->whereKey($voucherId)->lockForUpdate()->firstOrFail();
+            if (!$voucher->canDispatchApproval()) {
+                throw ValidationException::withMessages(['voucher' => 'This voucher can no longer be sent for approval.']);
+            }
+
+            return $this->dispatchApprovalsLocked($voucher, $approverIds, $userId, $note, false);
         }, 5);
     }
 
     public function approve(PurchaseVoucher|int $voucher, int $userId, ?string $comment = null): PurchaseVoucher
     {
+        if (trim((string) $comment) === '') {
+            throw ValidationException::withMessages(['comment' => 'An approval note is required.']);
+        }
         return $this->act($voucher, $userId, PurchaseVoucherApproval::STATUS_APPROVED, $comment);
     }
 
     public function reject(PurchaseVoucher|int $voucher, int $userId, ?string $comment = null): PurchaseVoucher
     {
         if (trim((string) $comment) === '') {
-            throw ValidationException::withMessages(['comment' => 'A rejection reason is required.']);
+            throw ValidationException::withMessages(['comment' => 'A rejection note is required.']);
         }
         return $this->act($voucher, $userId, PurchaseVoucherApproval::STATUS_REJECTED, $comment);
     }
@@ -224,9 +248,15 @@ class PurchaseVoucherService
                 ]);
             }
 
-            // The supplier has already delivered against the previously sent voucher, so keep
-            // sent_to_vendor_at as the audit marker and start a fresh approval round immediately.
-            $this->createApprovalRound($voucher->fresh('items'), true);
+            // Supplier overrun starts a new revision, but Step 4 no longer sends the voucher
+            // automatically to every configured approver. The manager selects the next officer(s)
+            // from Approval History / Exchange and adds a note for that dispatch.
+            $voucher->forceFill([
+                'status' => PurchaseVoucher::STATUS_PENDING_APPROVAL,
+                'submitted_at' => now(),
+                'approved_at' => null,
+                'rejected_at' => null,
+            ])->save();
 
             return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver', 'revisions']);
         }, 5);
@@ -246,21 +276,33 @@ class PurchaseVoucherService
         if ($voucher->status !== PurchaseVoucher::STATUS_PENDING_APPROVAL) {
             return false;
         }
-        $approval = PurchaseVoucherApproval::query()
+
+        return PurchaseVoucherApproval::query()
             ->where('purchase_voucher_id', $voucher->id)
             ->where('revision_no', $voucher->revision_no)
             ->where('approver_user_id', $userId)
             ->where('status', PurchaseVoucherApproval::STATUS_PENDING)
-            ->first();
-        if (!$approval) {
-            return false;
-        }
-        return !PurchaseVoucherApproval::query()
+            ->exists();
+    }
+
+    public function approvalProgress(PurchaseVoucher $voucher): array
+    {
+        $setting = InventoryPurchaseApprovalSetting::query()->first();
+        $minimum = max(1, (int) ($setting?->minimum_approvers ?? 1));
+        $latest = PurchaseVoucherApproval::query()
             ->where('purchase_voucher_id', $voucher->id)
             ->where('revision_no', $voucher->revision_no)
-            ->where('approval_order', '<', $approval->approval_order)
-            ->where('status', '!=', PurchaseVoucherApproval::STATUS_APPROVED)
-            ->exists();
+            ->whereNotNull('approver_user_id')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('approver_user_id')
+            ->map(fn ($rows) => $rows->last());
+
+        return [
+            'approved' => $latest->where('status', PurchaseVoucherApproval::STATUS_APPROVED)->count(),
+            'minimum' => $minimum,
+            'latest' => $latest,
+        ];
     }
 
     private function act(PurchaseVoucher|int $voucher, int $userId, string $decision, ?string $comment): PurchaseVoucher
@@ -276,98 +318,143 @@ class PurchaseVoucherService
                 ->where('purchase_voucher_id', $voucher->id)
                 ->where('revision_no', $voucher->revision_no)
                 ->where('approver_user_id', $userId)
+                ->where('status', PurchaseVoucherApproval::STATUS_PENDING)
+                ->orderByDesc('id')
                 ->lockForUpdate()
                 ->first();
-            if (!$approval || $approval->status !== PurchaseVoucherApproval::STATUS_PENDING) {
+            if (!$approval) {
                 throw ValidationException::withMessages(['approval' => 'You do not have a pending approval action for this voucher.']);
-            }
-
-            $previousPending = PurchaseVoucherApproval::query()
-                ->where('purchase_voucher_id', $voucher->id)
-                ->where('revision_no', $voucher->revision_no)
-                ->where('approval_order', '<', $approval->approval_order)
-                ->where('status', '!=', PurchaseVoucherApproval::STATUS_APPROVED)
-                ->exists();
-            if ($previousPending) {
-                throw ValidationException::withMessages(['approval' => 'Earlier approval levels must approve this voucher first.']);
             }
 
             $approval->forceFill([
                 'status' => $decision,
-                'comment' => trim((string) $comment) ?: null,
+                'comment' => trim((string) $comment),
                 'acted_at' => now(),
             ])->save();
 
-            if ($decision === PurchaseVoucherApproval::STATUS_REJECTED) {
-                $voucher->forceFill([
-                    'status' => PurchaseVoucher::STATUS_REJECTED,
-                    'rejected_at' => now(),
-                    'approved_at' => null,
-                ])->save();
-            } else {
-                $pending = PurchaseVoucherApproval::query()
-                    ->where('purchase_voucher_id', $voucher->id)
-                    ->where('revision_no', $voucher->revision_no)
-                    ->where('status', PurchaseVoucherApproval::STATUS_PENDING)
-                    ->exists();
-                if (!$pending) {
-                    $voucher->forceFill([
-                        'status' => PurchaseVoucher::STATUS_APPROVED,
-                        'approved_at' => now(),
-                        'rejected_at' => null,
-                    ])->save();
-                }
-            }
+            $this->refreshApprovalStatus($voucher);
 
-            return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver']);
+            return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver', 'currentApprovals.assigner']);
         }, 5);
     }
 
-    private function createApprovalRound(PurchaseVoucher $voucher, bool $isReapproval): void
-    {
+    private function dispatchApprovalsLocked(
+        PurchaseVoucher $voucher,
+        array $approverIds,
+        int $userId,
+        string $note,
+        bool $initialSubmit
+    ): PurchaseVoucher {
         $setting = InventoryPurchaseApprovalSetting::query()->first();
         $approvalEnabled = $setting?->is_enabled ?? true;
-        $approvers = InventoryPurchaseApprover::query()->with('user')->active()->get();
         $minimum = max(1, (int) ($setting?->minimum_approvers ?? 1));
+        $configured = InventoryPurchaseApprover::query()->with('user')->active()->get();
 
         if (!$approvalEnabled) {
             $voucher->forceFill([
                 'status' => PurchaseVoucher::STATUS_APPROVED,
-                'submitted_at' => now(),
+                'submitted_at' => $voucher->submitted_at ?: now(),
                 'approved_at' => now(),
                 'rejected_at' => null,
             ])->save();
-            return;
+            return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver']);
         }
 
-        if ($approvers->count() < $minimum || $approvers->isEmpty()) {
+        if ($configured->count() < $minimum || $configured->isEmpty()) {
             throw ValidationException::withMessages([
                 'approval' => "Purchase approval setup requires at least {$minimum} active approver(s). Configure them in Settings > Purchase Approval.",
             ]);
         }
 
-        PurchaseVoucherApproval::query()
+        $note = trim($note);
+        if ($note === '') {
+            throw ValidationException::withMessages(['approval_note' => 'A note is required whenever the voucher is sent to an approver.']);
+        }
+
+        $approverIds = array_values(array_unique(array_filter(array_map('intval', $approverIds))));
+        if ($approverIds === []) {
+            throw ValidationException::withMessages(['approver_ids' => 'Select at least one approval user.']);
+        }
+
+        $configuredByUser = $configured->keyBy(fn ($row) => (int) $row->user_id);
+        foreach ($approverIds as $approverId) {
+            if (!$configuredByUser->has($approverId)) {
+                throw ValidationException::withMessages(['approver_ids' => 'Only users assigned in Settings > Purchase Approval can receive a voucher.']);
+            }
+            $hasPending = PurchaseVoucherApproval::query()
+                ->where('purchase_voucher_id', $voucher->id)
+                ->where('revision_no', $voucher->revision_no)
+                ->where('approver_user_id', $approverId)
+                ->where('status', PurchaseVoucherApproval::STATUS_PENDING)
+                ->exists();
+            if ($hasPending) {
+                $name = $configuredByUser->get($approverId)?->user?->name ?: 'Selected user';
+                throw ValidationException::withMessages(['approver_ids' => $name . ' already has a pending approval request for this revision.']);
+            }
+        }
+
+        $batchNo = (int) PurchaseVoucherApproval::query()
             ->where('purchase_voucher_id', $voucher->id)
             ->where('revision_no', $voucher->revision_no)
-            ->delete();
+            ->max('batch_no') + 1;
+        $nextOrder = (int) PurchaseVoucherApproval::query()
+            ->where('purchase_voucher_id', $voucher->id)
+            ->where('revision_no', $voucher->revision_no)
+            ->max('approval_order') + 1;
 
-        foreach ($approvers as $approver) {
+        foreach ($approverIds as $offset => $approverId) {
+            $configuredApprover = $configuredByUser->get($approverId);
             PurchaseVoucherApproval::query()->create([
                 'purchase_voucher_id' => $voucher->id,
                 'revision_no' => $voucher->revision_no,
-                'approver_user_id' => $approver->user_id,
-                'approver_name' => $approver->user?->name,
-                'approver_email' => $approver->user?->email,
-                'approval_order' => $approver->approval_order,
+                'approver_user_id' => $approverId,
+                'approver_name' => $configuredApprover?->user?->name,
+                'approver_email' => $configuredApprover?->user?->email,
+                'approval_order' => $nextOrder + $offset,
+                'batch_no' => max(1, $batchNo),
+                'assigned_by' => $userId,
+                'assigned_at' => now(),
+                'dispatch_note' => $note,
                 'status' => PurchaseVoucherApproval::STATUS_PENDING,
             ]);
         }
 
         $voucher->forceFill([
             'status' => PurchaseVoucher::STATUS_PENDING_APPROVAL,
-            'submitted_at' => now(),
+            'submitted_at' => $voucher->submitted_at ?: now(),
             'approved_at' => null,
             'rejected_at' => null,
+        ])->save();
+
+        return $voucher->fresh(['vendor', 'items.ingredient.baseUnit', 'currentApprovals.approver', 'currentApprovals.assigner']);
+    }
+
+    private function refreshApprovalStatus(PurchaseVoucher $voucher): void
+    {
+        $progress = $this->approvalProgress($voucher);
+        if ($progress['approved'] >= $progress['minimum']) {
+            PurchaseVoucherApproval::query()
+                ->where('purchase_voucher_id', $voucher->id)
+                ->where('revision_no', $voucher->revision_no)
+                ->where('status', PurchaseVoucherApproval::STATUS_PENDING)
+                ->update(['status' => PurchaseVoucherApproval::STATUS_CANCELLED, 'updated_at' => now()]);
+
+            $voucher->forceFill([
+                'status' => PurchaseVoucher::STATUS_APPROVED,
+                'approved_at' => now(),
+                'rejected_at' => null,
+            ])->save();
+            return;
+        }
+
+        $voucher->forceFill([
+            'status' => PurchaseVoucher::STATUS_PENDING_APPROVAL,
+            'approved_at' => null,
+            'rejected_at' => PurchaseVoucherApproval::query()
+                ->where('purchase_voucher_id', $voucher->id)
+                ->where('revision_no', $voucher->revision_no)
+                ->where('status', PurchaseVoucherApproval::STATUS_REJECTED)
+                ->max('acted_at'),
         ])->save();
     }
 
@@ -398,7 +485,7 @@ class PurchaseVoucherService
                         'conversion_factor_snapshot', 'base_quantity', 'unit_price', 'line_total',
                     ]))->values()->all(),
                     'approvals' => $voucher->currentApprovals->where('revision_no', $voucher->revision_no)->map(fn ($approval) => $approval->only([
-                        'approver_user_id', 'approver_name', 'approver_email', 'approval_order', 'status', 'comment', 'acted_at',
+                        'approver_user_id', 'approver_name', 'approver_email', 'approval_order', 'batch_no', 'assigned_by', 'assigned_at', 'dispatch_note', 'status', 'comment', 'acted_at',
                     ]))->values()->all(),
                 ],
                 'reason' => $reason,

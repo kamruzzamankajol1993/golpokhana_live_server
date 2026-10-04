@@ -23,6 +23,7 @@ class PosSetting extends Model
         'dine_in_waiter_required'              => 'boolean',
         'opening_balance_enabled'                => 'boolean',
         'deduct_inventory_on_order_complete'       => 'boolean',
+        'allow_negative_kitchen_stock_on_order'    => 'boolean',
         'order_list_random_half_enabled'    => 'boolean',
         'random_half_order_button_visible'  => 'boolean',
         'random_order_hide_percentage'      => 'integer',

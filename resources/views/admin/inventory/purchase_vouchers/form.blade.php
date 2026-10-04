@@ -41,6 +41,35 @@
             </tbody></table></div>
         </div>
 
+        @if(($approvalSetting?->is_enabled ?? true))
+        <div class="progga-card mb-4">
+            <div class="progga-card-header">
+                <div><strong>Select Approval User(s)</strong><div class="small text-muted">Only users assigned in Settings > Purchase Approval are shown. You can send to one or more now, then send to other users later from Approval History / Exchange.</div></div>
+            </div>
+            <div class="p-4">
+                <div class="alert alert-info py-2 mb-3">Minimum distinct approvals required: <strong>{{ max(1,(int)($approvalSetting?->minimum_approvers ?? 1)) }}</strong>. Selecting fewer users now is allowed; additional users can be selected later.</div>
+                <div class="row g-2 mb-3">
+                    @forelse($approvalApprovers as $approvalApprover)
+                        @php $uid=(int)$approvalApprover->user_id; $selected=in_array($uid,array_map('intval',(array)old('approver_ids',[])),true); @endphp
+                        <div class="col-md-6 col-xl-4">
+                            <label class="border rounded p-3 d-flex align-items-start gap-2 h-100" style="cursor:pointer">
+                                <input class="form-check-input mt-1 voucher-approver" type="checkbox" name="approver_ids[]" value="{{ $uid }}" @checked($selected)>
+                                <span><strong>{{ $approvalApprover->user?->name ?: 'Unavailable user' }}</strong><small class="text-muted d-block">{{ $approvalApprover->user?->email }} · Setting order {{ $approvalApprover->approval_order }}</small></span>
+                            </label>
+                        </div>
+                    @empty
+                        <div class="col-12"><div class="alert alert-warning mb-0">No approval user is assigned yet. Configure Settings > Purchase Approval before sending.</div></div>
+                    @endforelse
+                </div>
+                <label class="progga-form-label">Send Note <span class="progga-required">*</span></label>
+                <textarea name="approval_note" id="voucherApprovalNote" class="progga-form-control" rows="3" placeholder="Example: Please verify quantity, vendor quotation and requested amount before approval.">{{ old('approval_note') }}</textarea>
+                <small class="text-muted">The note is saved with this dispatch and will be visible in the full approval exchange history.</small>
+            </div>
+        </div>
+        @else
+            <div class="alert alert-info mb-4">Purchase approval is disabled in Settings. Save & Send will mark the voucher approved without officer dispatch.</div>
+        @endif
+
         <div class="row g-4">
             <div class="col-lg-7"><div class="progga-card h-100"><div class="p-4"><label class="progga-form-label">Purpose / Notes</label><textarea name="notes" class="progga-form-control" rows="6" placeholder="Why this purchase is required, special vendor instruction, etc.">{{ old('notes',$voucher->notes) }}</textarea></div></div></div>
             <div class="col-lg-5"><div class="progga-card"><div class="p-4">
@@ -51,7 +80,7 @@
                     <button type="submit" class="progga-btn progga-btn-outline w-100" onclick="document.getElementById('voucherSubmitAction').value='draft'"><i class="bi bi-file-earmark-text"></i> {{ $isEdit ? 'Update Draft' : 'Save Draft' }}</button>
                     <button type="button" class="progga-btn progga-btn-primary w-100" onclick="confirmVoucherSubmit()"><i class="bi bi-send-check"></i> Save & Send for Approval</button>
                 </div>
-                <div class="small text-muted mt-2 text-center">No stock changes here. Purchase receiving is available only after all configured approvals and vendor dispatch.</div>
+                <div class="small text-muted mt-2 text-center">No stock changes here. The voucher is approved after the minimum number of distinct selected officers approve it, then it can be sent to the vendor.</div>
             </div></div></div>
         </div>
     </form>
@@ -74,7 +103,7 @@ function filterVoucherUnits(sel){const row=sel.closest('.voucher-row');const uni
 function voucherUnitChanged(sel){updateVoucherPriceHelp(sel.closest('.voucher-row'));recalcVoucher();}
 function updateVoucherPriceHelp(row){const choice=row.querySelector('.voucher-unit')?.value||'';const h=row.querySelector('.voucher-price-help');if(!h)return;h.textContent=choice.startsWith('c:')?'Price of 1 selected package':(choice.startsWith('u:')?'Total expected price for this entered quantity':'Select a unit first');}
 function recalcVoucher(){let subtotal=0;document.querySelectorAll('.voucher-row').forEach(row=>{const q=parseFloat(row.querySelector('.voucher-qty')?.value||0),p=parseFloat(row.querySelector('.voucher-price')?.value||0),choice=row.querySelector('.voucher-unit')?.value||'';const line=q>0&&p>=0&&choice?(choice.startsWith('c:')?q*p:p):0;subtotal+=line;row.querySelector('.voucher-line-total').textContent=line.toFixed(2);});const discount=parseFloat(document.getElementById('voucherDiscountInput')?.value||0),tax=parseFloat(document.getElementById('voucherTaxInput')?.value||0);document.getElementById('voucherSubtotalText').textContent='৳'+subtotal.toFixed(2);document.getElementById('voucherTotalText').textContent='৳'+Math.max(0,subtotal-discount+tax).toFixed(2);}
-function confirmVoucherSubmit(){const form=document.getElementById('voucherForm');document.getElementById('voucherSubmitAction').value='submit';if(typeof Swal==='undefined'){if(confirm('Send this voucher to the configured approval officers?'))form.requestSubmit();else document.getElementById('voucherSubmitAction').value='draft';return;}Swal.fire({title:'Send for approval?',text:'The voucher will be locked while the approval chain is in progress.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, send for approval'}).then(r=>{if(r.isConfirmed)form.requestSubmit();else document.getElementById('voucherSubmitAction').value='draft';});}
+function confirmVoucherSubmit(){const form=document.getElementById('voucherForm');document.getElementById('voucherSubmitAction').value='submit';const approverBoxes=[...document.querySelectorAll('.voucher-approver')];if(approverBoxes.length){const selected=approverBoxes.filter(x=>x.checked);const note=(document.getElementById('voucherApprovalNote')?.value||'').trim();if(!selected.length){if(typeof Swal!=='undefined')Swal.fire('Select approver','Select at least one approval user.','warning');else alert('Select at least one approval user.');document.getElementById('voucherSubmitAction').value='draft';return;}if(!note){if(typeof Swal!=='undefined')Swal.fire('Note required','Enter a note for this approval dispatch.','warning');else alert('Enter a note for this approval dispatch.');document.getElementById('voucherSubmitAction').value='draft';return;}}if(typeof Swal==='undefined'){if(confirm('Send this voucher to the selected approval user(s)?'))form.requestSubmit();else document.getElementById('voucherSubmitAction').value='draft';return;}Swal.fire({title:'Send to selected approver(s)?',text:'You can send the voucher to other assigned users later from Approval History / Exchange.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, send'}).then(r=>{if(r.isConfirmed)form.requestSubmit();else document.getElementById('voucherSubmitAction').value='draft';});}
 document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.voucher-ingredient').forEach(filterVoucherUnits);document.querySelectorAll('.voucher-row').forEach(updateVoucherPriceHelp);recalcVoucher();});
 </script>
 @endsection

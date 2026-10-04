@@ -216,6 +216,17 @@
                         </div>
                         <div class="col-md-6">
                             <div class="progga-form-group">
+                                <label class="progga-form-label">Allow POS Order When Kitchen Stock Is Insufficient</label>
+                                <label class="progga-toggle" style="margin-top:8px;">
+                                    <input type="checkbox" name="allow_negative_kitchen_stock_on_order" value="1" {{ ($pos->allow_negative_kitchen_stock_on_order ?? true) ? 'checked' : '' }} data-on="Yes" data-off="No">
+                                    <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
+                                    <span class="progga-toggle-label">{{ ($pos->allow_negative_kitchen_stock_on_order ?? true) ? 'Yes — save negative Kitchen Stock' : 'No — block completion' }}</span>
+                                </label>
+                                <small class="d-block text-muted mt-2">Yes: the order completes and recipe ingredients are deducted from Kitchen Stock even when the balance becomes negative. The shortage appears in Negative Stock Adjustment for Inventory Manager. No: order completion is blocked when Kitchen Stock is insufficient.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progga-form-group">
                                 <label class="progga-form-label">Given Money Manual Toggle Button</label>
                                 <label class="progga-toggle" style="margin-top:8px;">
                                     <input type="checkbox"

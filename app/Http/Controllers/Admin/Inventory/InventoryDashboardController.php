@@ -45,7 +45,7 @@ class InventoryDashboardController extends Controller
             ->whereColumn('ib.quantity_base', '<=', 'i.low_stock_level_base')
             ->count();
         $negativeStockCount = (clone $balanceBase)
-            ->where('sl.type', StockLocation::TYPE_MAIN)
+            ->where('sl.type', StockLocation::TYPE_KITCHEN)
             ->where('ib.quantity_base', '<', 0)
             ->count();
 

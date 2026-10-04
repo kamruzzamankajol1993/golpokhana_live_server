@@ -427,6 +427,22 @@ class OfflinePosSyncController extends Controller
 
         if (strtolower((string) $order->status) === 'completed') {
             $this->assertCompletedPaymentRules($order, $payload);
+
+            // Step 5: a completed offline POS order follows the same inventory rule as main POS.
+            // Consumption is idempotent (one header per order), so sync retries cannot deduct twice.
+            $inventoryDeductionEnabled = !Schema::hasTable('pos_settings')
+                || !Schema::hasColumn('pos_settings', 'deduct_inventory_on_order_complete')
+                || (bool) (DB::table('pos_settings')->orderBy('id')->value('deduct_inventory_on_order_complete') ?? true);
+            if ($inventoryDeductionEnabled
+                && Schema::hasTable('order_inventory_consumptions')
+                && Schema::hasTable('inventory_balances')) {
+                app(\App\Services\Inventory\OrderInventoryConsumptionService::class)->consumeOrderInventory(
+                    $order,
+                    \App\Models\OrderInventoryConsumption::TRIGGER_PAYMENT_COMPLETE,
+                    auth()->id() ?: ($order->user_id ? (int) $order->user_id : null)
+                );
+            }
+
             OrderKot::where('order_id', $order->id)->where('kitchen_status', '!=', 'Delivered')->update(['kitchen_status' => 'Delivered']);
             if ($order->table_id && Schema::hasTable('tables') && Schema::hasColumn('tables', 'initial_status')) {
                 Table::whereKey($order->table_id)->update(['initial_status' => 'Available']);

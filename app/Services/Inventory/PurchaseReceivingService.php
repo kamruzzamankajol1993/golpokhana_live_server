@@ -45,6 +45,12 @@ class PurchaseReceivingService
                 ]);
             }
 
+            if ($purchase->grn_status !== Purchase::GRN_CONFIRMED || trim((string) $purchase->grn) === '') {
+                throw ValidationException::withMessages([
+                    'grn' => 'GRN must be entered and confirmed before supplier stock can be received.',
+                ]);
+            }
+
             if ($purchase->voucher) {
                 $this->vouchers->assertPurchaseWithinApproval($purchase->voucher, $purchase);
             }

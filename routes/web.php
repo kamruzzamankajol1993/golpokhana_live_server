@@ -317,11 +317,14 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::get('/ingredients', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'index'])->name('ingredients.index');
         Route::get('/ingredients/create', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'create'])->name('ingredients.create');
         Route::post('/ingredients', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'store'])->name('ingredients.store');
+        Route::get('/ingredients/{ingredient}', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'show'])->name('ingredients.show');
         Route::get('/ingredients/{ingredient}/edit', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'edit'])->name('ingredients.edit');
         Route::put('/ingredients/{ingredient}', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'update'])->name('ingredients.update');
         Route::delete('/ingredients/{ingredient}', [App\Http\Controllers\Admin\Inventory\IngredientController::class, 'destroy'])->name('ingredients.destroy');
 
-        Route::resource('vendors', App\Http\Controllers\Admin\Inventory\VendorController::class)->except(['show']);
+        Route::post('/vendors/{vendor}/payments', [App\Http\Controllers\Admin\Inventory\VendorController::class, 'storePayment'])->name('vendors.payments.store');
+        Route::get('/vendors/{vendor}/documents/{type}', [App\Http\Controllers\Admin\Inventory\VendorController::class, 'document'])->name('vendors.document');
+        Route::resource('vendors', App\Http\Controllers\Admin\Inventory\VendorController::class);
 
         Route::get('/purchase-approval-settings', [App\Http\Controllers\Admin\Inventory\PurchaseApprovalSettingController::class, 'index'])->name('purchase-approval-settings.index');
         Route::put('/purchase-approval-settings', [App\Http\Controllers\Admin\Inventory\PurchaseApprovalSettingController::class, 'update'])->name('purchase-approval-settings.update');
@@ -332,6 +335,8 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
 
         Route::get('/purchase-vouchers/{purchaseVoucher}/pdf', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'pdf'])->name('purchase-vouchers.pdf');
         Route::post('/purchase-vouchers/{purchaseVoucher}/submit', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'submit'])->name('purchase-vouchers.submit');
+        Route::get('/purchase-vouchers/{purchaseVoucher}/approval-history', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'approvalHistory'])->name('purchase-vouchers.approval-history');
+        Route::post('/purchase-vouchers/{purchaseVoucher}/dispatch-approval', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'dispatchApproval'])->name('purchase-vouchers.dispatch-approval');
         Route::post('/purchase-vouchers/{purchaseVoucher}/send-to-vendor', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'sendToVendor'])->name('purchase-vouchers.send-to-vendor');
         Route::get('/purchase-vouchers/{purchaseVoucher}/receive-supply', [App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class, 'receiveSupply'])->name('purchase-vouchers.receive-supply');
         Route::resource('purchase-vouchers', App\Http\Controllers\Admin\Inventory\PurchaseVoucherController::class)->parameters(['purchase-vouchers' => 'purchaseVoucher']);
@@ -355,6 +360,8 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::resource('wastages', App\Http\Controllers\Admin\Inventory\WastageController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);
         Route::get('/adjustments/create', [App\Http\Controllers\Admin\Inventory\AdjustmentController::class, 'create'])->name('adjustments.create');
         Route::post('/adjustments', [App\Http\Controllers\Admin\Inventory\AdjustmentController::class, 'store'])->name('adjustments.store');
+        Route::get('/negative-stock-adjustments', [App\Http\Controllers\Admin\Inventory\NegativeStockAdjustmentController::class, 'index'])->name('negative-stock-adjustments.index');
+        Route::post('/negative-stock-adjustments', [App\Http\Controllers\Admin\Inventory\NegativeStockAdjustmentController::class, 'store'])->name('negative-stock-adjustments.store');
 
         Route::get('/stock', [App\Http\Controllers\Admin\Inventory\StockController::class, 'index'])->name('stock.index');
         Route::post('/stock/opening', [App\Http\Controllers\Admin\Inventory\StockController::class, 'storeOpeningStock'])->name('stock.opening.store');
