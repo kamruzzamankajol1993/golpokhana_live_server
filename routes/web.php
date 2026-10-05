@@ -508,5 +508,6 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
     Route::delete('/offline-sync-logs/bulk-delete', [App\Http\Controllers\Admin\OfflinePosSyncLogController::class, 'destroySelected'])->name('offline-sync-logs.bulk-delete');
     Route::post('/offline-pos-devices', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'store'])->name('offline-pos-devices.store');
     Route::patch('/offline-pos-devices/{device}/toggle', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'toggle'])->name('offline-pos-devices.toggle');
+    Route::patch('/offline-pos-devices/{device}/reset-binding', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'resetBinding'])->name('offline-pos-devices.reset-binding');
     Route::delete('/offline-pos-devices/{device}', [App\Http\Controllers\Admin\OfflinePosDeviceController::class, 'destroy'])->name('offline-pos-devices.destroy');
 });

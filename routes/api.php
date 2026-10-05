@@ -53,6 +53,7 @@ Route::prefix('offline-pos/v1')
             Route::get('/pull/delivery-partners', [OfflinePosMasterDataController::class, 'deliveryPartners']);
             Route::get('/pull/occasions', [OfflinePosMasterDataController::class, 'occasions']);
             Route::get('/pull/active-orders', [OfflinePosDataController::class, 'activeOrdersResponse']);
+            Route::get('/pull/counter-orders', [OfflinePosDataController::class, 'counterOrdersResponse']);
             Route::get('/pull/order-changes', [OfflinePosDataController::class, 'changedOrdersResponse']);
             Route::get('/pull/table-bookings', [OfflinePosBookingController::class, 'index']);
             Route::get('/table-bookings/options', [OfflinePosBookingController::class, 'options']);

@@ -194,7 +194,7 @@ class OfflinePosOperationController extends Controller
     {
         if (!Schema::hasTable('tables')) return [];
         $activeStatuses = ['Pending', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready'];
-        $activeOrders = Order::query()->whereNotNull('table_id')->whereIn('status', $activeStatuses)->latest('id')->get()
+        $activeOrders = Order::query()->with('waiter')->whereNotNull('table_id')->whereIn('status', $activeStatuses)->latest('id')->get()
             ->groupBy('table_id')->map(fn ($rows) => $rows->first());
 
         $now = Carbon::now('Asia/Dhaka');
@@ -245,6 +245,9 @@ class OfflinePosOperationController extends Controller
                 'display_status' => $display,
                 'active_order_id' => $order?->id,
                 'active_order_number' => $order?->order_number,
+                'order_status' => $order?->status,
+                'waiter_id' => $order?->waiter_id,
+                'waiter_name' => $order?->waiter?->name,
                 'bill_printed' => $order && Schema::hasColumn('orders', 'pre_invoice_printed_at') ? !empty($order->pre_invoice_printed_at) : false,
                 'booking' => $booking ? [
                     'server_id' => $booking->id,

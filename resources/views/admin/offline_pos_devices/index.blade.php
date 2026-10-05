@@ -116,6 +116,12 @@
                                     @csrf @method('PATCH')
                                     <button class="progga-btn progga-btn-outline progga-btn-sm">{{ $device->status ? 'Disable' : 'Enable' }}</button>
                                 </form>
+                                @if($device->status && $device->last_seen_at)
+                                <form method="POST" action="{{ route('offline-pos-devices.reset-binding', $device) }}" class="d-inline" data-swal-title="Reset device binding?" data-swal-confirm="Use this for HTTP 401 / UUID mismatch. The Device Key stays the same and no order data is deleted." data-swal-confirm-text="Yes, reset binding">
+                                    @csrf @method('PATCH')
+                                    <button class="progga-btn progga-btn-warning progga-btn-sm"><i class="bi bi-arrow-repeat"></i> Reset Binding</button>
+                                </form>
+                                @endif
                                 <form method="POST" action="{{ route('offline-pos-devices.destroy', $device) }}" class="d-inline" data-swal-title="Remove device?" data-swal-confirm="This offline POS device will be removed." data-swal-confirm-text="Yes, remove">
                                     @csrf @method('DELETE')
                                     <button class="progga-btn progga-btn-danger progga-btn-sm">Delete</button>

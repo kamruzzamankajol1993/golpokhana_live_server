@@ -47,6 +47,20 @@ class OfflinePosDeviceController extends Controller
         return back()->with('success', 'Offline POS device status updated.');
     }
 
+    public function resetBinding(Request $request, OfflinePosDevice $device)
+    {
+        $this->authorizeSuperAdmin($request);
+
+        // Keep the same Device Key and activation status, but allow the next
+        // /initialize request to bind the key to the UUID currently stored by
+        // the physical Offline POS. No order/sync data is deleted.
+        $device->forceFill([
+            'last_seen_at' => null,
+        ])->save();
+
+        return back()->with('success', 'Device binding reset. Now open the Offline POS initialize page and run Repair Sync Authorization with this Device Key.');
+    }
+
     public function destroy(Request $request, OfflinePosDevice $device)
     {
         $this->authorizeSuperAdmin($request);

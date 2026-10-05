@@ -34,6 +34,7 @@ class VerifyOfflinePosKey
 
             return response()->json([
                 'status' => false,
+                'error_code' => 'invalid_device_key',
                 'message' => 'Unauthorized offline POS request.',
             ], 401);
         }
@@ -53,6 +54,7 @@ class VerifyOfflinePosKey
 
             return response()->json([
                 'status' => false,
+                'error_code' => 'device_uuid_mismatch',
                 'message' => 'Offline POS device UUID mismatch.',
             ], 401);
         }

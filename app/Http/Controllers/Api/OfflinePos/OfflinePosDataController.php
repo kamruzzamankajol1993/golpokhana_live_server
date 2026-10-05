@@ -72,6 +72,23 @@ class OfflinePosDataController extends Controller
         ]);
     }
 
+    public function counterOrdersResponse(): JsonResponse
+    {
+        $statuses = ['Waiter_Hold', 'QR_Pending', 'QR_Hold'];
+        $orders = $this->ordersSnapshot(null, true, $statuses);
+
+        return response()->json([
+            'status' => true,
+            'server_time' => now()->toDateTimeString(),
+            'orders' => $orders,
+            'meta' => [
+                'count' => count($orders),
+                'qr_count' => count(array_filter($orders, fn ($row) => in_array((string) ($row['status'] ?? ''), ['QR_Pending', 'QR_Hold'], true))),
+                'waiter_count' => count(array_filter($orders, fn ($row) => (string) ($row['status'] ?? '') === 'Waiter_Hold')),
+            ],
+        ]);
+    }
+
     private function paymentMethods(): array
     {
         return [
@@ -107,7 +124,7 @@ class OfflinePosDataController extends Controller
      * Active snapshots power the POS screens; timestamp snapshots also include
      * Completed/Cancelled rows so another terminal can clear stale local orders.
      */
-    private function ordersSnapshot(?string $updatedAfter, bool $activeOnly): array
+    private function ordersSnapshot(?string $updatedAfter, bool $activeOnly, ?array $statusFilter = null): array
     {
         if (!Schema::hasTable('orders')) {
             return [];
@@ -126,8 +143,12 @@ class OfflinePosDataController extends Controller
             'pre_invoice_printed_at', 'created_at', 'updated_at',
         ]));
 
-        if ($activeOnly && Schema::hasColumn('orders', 'status')) {
-            $query->whereIn('status', ['Pending', 'Processing', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready']);
+        if (Schema::hasColumn('orders', 'status')) {
+            if ($statusFilter !== null) {
+                $query->whereIn('status', $statusFilter);
+            } elseif ($activeOnly) {
+                $query->whereIn('status', ['Pending', 'Processing', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready']);
+            }
         }
         if ($updatedAfter && Schema::hasColumn('orders', 'updated_at')) {
             $query->where('updated_at', '>', $updatedAfter);
