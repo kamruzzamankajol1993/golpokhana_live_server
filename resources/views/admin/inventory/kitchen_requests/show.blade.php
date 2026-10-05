@@ -11,7 +11,7 @@
 @section('body')
 <main class="progga-content">
     <div class="progga-page-header">
-        <div><h1 class="progga-page-title">{{ $kitchenRequest->request_no }}</h1><p class="text-muted mb-0">Ingredient request details and assignment progress.</p></div>
+        <div><h1 class="progga-page-title">{{ $kitchenRequest->request_no }}</h1><p class="text-muted mb-0">Kitchen request details, recipe-calculated ingredients and assignment progress.</p></div>
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ route('inventory.kitchen-requests.index',['tab'=>'requests']) }}" class="progga-btn progga-btn-outline">Back to Request List</a>
             @can('inventory-kitchen-request-assign')
@@ -29,6 +29,7 @@
 
     <div class="progga-card mb-4"><div class="p-4"><div class="row g-3">
         <div class="col-md-2"><small class="text-muted">Status</small><div><span class="progga-badge progga-badge-{{ $badge }}">{{ $statusText }}</span></div></div>
+        <div class="col-md-2"><small class="text-muted">Request Type</small><div>{{ match($kitchenRequest->request_type){'FOOD'=>'Food-wise','MIXED'=>'Food + Direct Ingredient',default=>'Direct Ingredient'} }}</div></div>
         <div class="col-md-2"><small class="text-muted">Request Date</small><div>{{ optional($kitchenRequest->request_date)->format('d M Y') }}</div></div>
         <div class="col-md-2"><small class="text-muted">Requested By</small><div>{{ $kitchenRequest->requester?->name ?: '—' }}</div></div>
         <div class="col-md-2"><small class="text-muted">Assigned/Reviewed By</small><div>{{ $kitchenRequest->reviewer?->name ?: '—' }}</div></div>
@@ -37,17 +38,37 @@
     </div></div></div>
 
     @if($kitchenRequest->foodItems->isNotEmpty())
-        <div class="alert alert-info"><strong>Legacy request:</strong> This request was created before Step 2 using a food/recipe request. Its calculated ingredient requirement is preserved below for history.</div>
+    <div class="progga-card mb-4">
+        <div class="progga-card-header">
+            <div><strong>Food-wise Request</strong><div class="small text-muted">Recipe/version is snapshotted when the request is sent. Ingredient quantities below were calculated from these rows.</div></div>
+        </div>
+        <div class="table-responsive"><table class="table align-middle mb-0">
+            <thead><tr><th>Food Item</th><th>Food Quantity</th><th>Recipe Version</th></tr></thead>
+            <tbody>
+            @foreach($kitchenRequest->foodItems as $foodRow)
+                <tr>
+                    <td><strong>{{ $foodRow->foodItem?->name ?: 'Deleted/Unavailable Food' }}</strong></td>
+                    <td>{{ rtrim(rtrim((string)$foodRow->requested_food_qty,'0'),'.') }}</td>
+                    <td>v{{ $foodRow->recipe_version_no }}</td>
+                </tr>
+            @endforeach
+            </tbody>
+        </table></div>
+    </div>
     @endif
 
     <div class="progga-card mb-4">
         <div class="progga-card-header"><div><strong>Requested Ingredients</strong><div class="small text-muted">Required quantity remains unchanged; assigned quantity accumulates from each Inventory Manager assignment.</div></div></div>
-        <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th>Requested</th><th>Assigned</th><th>Remaining</th></tr></thead><tbody>
+        <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Ingredient</th><th>Source</th><th>Requested</th><th>Assigned</th><th>Remaining</th></tr></thead><tbody>
         @foreach($kitchenRequest->ingredientItems as $item)
             <tr>
                 <td><strong>{{ $item->ingredient?->name }}</strong></td>
+                <td><span class="progga-badge {{ $item->source_kind==='MIXED' ? 'progga-badge-warning' : ($item->source_kind==='FOOD' ? 'progga-badge-info' : 'progga-badge-neutral') }}">{{ $item->source_kind==='MIXED' ? 'Food + Direct' : ($item->source_kind==='FOOD' ? 'Food Recipe' : 'Direct') }}</span></td>
                 <td>
-                    @if($item->input_quantity)
+                    @if($item->source_kind === \App\Models\KitchenRequestIngredientItem::SOURCE_MIXED)
+                        <span class="fw-semibold">{{ rtrim(rtrim((string)$item->required_base_qty,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</span>
+                        <br><small class="text-muted">Includes direct: {{ rtrim(rtrim((string)$item->input_quantity,'0'),'.') }} {{ $item->packageConversion?->label ?: $item->displayUnit?->symbol }}</small>
+                    @elseif($item->input_quantity)
                         {{ rtrim(rtrim((string)$item->input_quantity,'0'),'.') }} {{ $item->packageConversion?->label ?: $item->displayUnit?->symbol }}
                         <br><small class="text-muted">{{ rtrim(rtrim((string)$item->required_base_qty,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }} base</small>
                     @else

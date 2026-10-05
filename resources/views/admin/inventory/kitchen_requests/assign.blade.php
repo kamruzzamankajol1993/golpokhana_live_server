@@ -3,7 +3,7 @@
 @section('body')
 <main class="progga-content">
     <div class="progga-page-header">
-        <div><h1 class="progga-page-title">Assign Ingredient to Kitchen</h1><p class="text-muted mb-0">{{ $kitchenRequest->request_no }} — assign full or partial quantities from Store Stock.</p></div>
+        <div><h1 class="progga-page-title">Assign Ingredient to Kitchen</h1><p class="text-muted mb-0">{{ $kitchenRequest->request_no }} — approve/assign the final calculated ingredient quantities from Store Stock.</p></div>
         <div class="d-flex gap-2"><a href="{{ route('inventory.kitchen-requests.index',['tab'=>'assign']) }}" class="progga-btn progga-btn-outline">Back to Assign Tab</a><a href="{{ route('inventory.kitchen-requests.show',$kitchenRequest) }}" class="progga-btn progga-btn-secondary">Request Details</a></div>
     </div>
 
@@ -23,7 +23,7 @@
         <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key',(string)\Illuminate\Support\Str::uuid()) }}">
         <div class="progga-card mb-4">
             <div class="progga-card-header d-flex justify-content-between align-items-center gap-3">
-                <div><strong>Ingredient Assignment</strong><div class="small text-muted">Assignment immediately decreases Store Stock and increases Kitchen Stock in one audited transaction.</div></div>
+                <div><strong>Ingredient Assignment</strong><div class="small text-muted">Food-wise recipe quantities and direct ingredients are already combined here. Assignment immediately decreases Store Stock and increases Kitchen Stock in one audited transaction.</div></div>
                 <button type="button" class="progga-btn progga-btn-light progga-btn-sm" onclick="fillAllRemaining()"><i class="bi bi-check2-all"></i> Fill All Remaining</button>
             </div>
             <div class="table-responsive"><table class="table align-middle mb-0">
@@ -44,7 +44,7 @@
                 @endforeach
                 </tbody>
             </table></div>
-            <div class="p-4 border-top"><div class="row g-3 align-items-end"><div class="col-lg-9"><label class="progga-form-label">Assignment Notes</label><input name="notes" value="{{ old('notes') }}" class="progga-form-control" placeholder="Optional inventory note"></div><div class="col-lg-3"><button type="button" class="progga-btn progga-btn-primary w-100" onclick="confirmAssignment()"><i class="bi bi-box-arrow-right"></i> Assign Ingredient</button></div></div></div>
+            <div class="p-4 border-top"><div class="row g-3 align-items-end"><div class="col-lg-9"><label class="progga-form-label">Assignment Notes</label><input name="notes" value="{{ old('notes') }}" class="progga-form-control" placeholder="Optional inventory note"></div><div class="col-lg-3"><button type="button" class="progga-btn progga-btn-primary w-100" onclick="confirmAssignment()"><i class="bi bi-box-arrow-right"></i> Approve & Assign</button></div></div></div>
         </div>
     </form>
 
@@ -63,7 +63,7 @@ function confirmAssignment(){
     const hasQty=[...document.querySelectorAll('.assign-qty')].some(i=>parseFloat(i.value||'0')>0);
     if(!hasQty){if(window.Swal){Swal.fire({title:'No quantity entered',text:'Enter at least one ingredient quantity to assign.',icon:'info'});}else{alert('Enter at least one ingredient quantity to assign.');}return;}
     const form=document.getElementById('assignIngredientForm');
-    if(window.Swal){Swal.fire({title:'Assign ingredients to Kitchen?',text:'Store Stock will decrease and Kitchen Stock will increase immediately.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, assign now',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});}else if(window.confirm('Assign these ingredients to Kitchen?')){form.submit();}
+    if(window.Swal){Swal.fire({title:'Approve & assign ingredients to Kitchen?',text:'Store Stock will decrease and Kitchen Stock will increase immediately.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, approve & assign',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});}else if(window.confirm('Assign these ingredients to Kitchen?')){form.submit();}
 }
 </script>
 @endsection

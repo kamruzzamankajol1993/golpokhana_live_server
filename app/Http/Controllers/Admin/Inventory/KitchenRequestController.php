@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Inventory;
 
 use App\Http\Controllers\Controller;
+use App\Models\FoodItem;
 use App\Models\Ingredient;
 use App\Models\InventoryBalance;
 use App\Models\KitchenRequest;
@@ -150,7 +151,7 @@ class KitchenRequestController extends Controller
         $service->submit($kitchenRequest, $request->user()?->id);
 
         return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
-            ->with('success', 'Ingredient request sent to Inventory Manager successfully.');
+            ->with('success', 'Kitchen request sent to Inventory Manager successfully.');
     }
 
     public function show(
@@ -188,7 +189,12 @@ class KitchenRequestController extends Controller
             return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
                 ->with('error', 'A request cannot be edited after ingredient assignment has started.');
         }
-        $kitchenRequest->load(['ingredientItems.displayUnit', 'ingredientItems.packageConversion']);
+        $kitchenRequest->load([
+            'foodItems.foodItem',
+            'foodItems.recipe',
+            'ingredientItems.displayUnit',
+            'ingredientItems.packageConversion',
+        ]);
 
         return view('admin.inventory.kitchen_requests.form', $this->formData($site) + compact('kitchenRequest'));
     }
@@ -205,7 +211,7 @@ class KitchenRequestController extends Controller
         $kitchenRequest = $service->saveDraft($data, $kitchenRequest, $request->user()?->id);
 
         return redirect()->route('inventory.kitchen-requests.show', $kitchenRequest)
-            ->with('success', 'Ingredient request updated successfully.');
+            ->with('success', 'Kitchen request updated successfully.');
     }
 
     /** Legacy Draft compatibility. New Step 2 requests are submitted immediately from store(). */
@@ -219,7 +225,7 @@ class KitchenRequestController extends Controller
         $this->assertKitchenOwnership($kitchenRequest);
         $service->submit($kitchenRequest, $request->user()?->id);
 
-        return back()->with('success', 'Ingredient request sent to Inventory Manager.');
+        return back()->with('success', 'Kitchen request sent to Inventory Manager.');
     }
 
     public function cancel(
@@ -231,7 +237,7 @@ class KitchenRequestController extends Controller
         $this->assertKitchenOwnership($kitchenRequest);
         $service->cancel($kitchenRequest);
 
-        return back()->with('success', 'Ingredient request cancelled. No stock was changed.');
+        return back()->with('success', 'Kitchen request cancelled. No stock was changed.');
     }
 
     public function close(
@@ -292,7 +298,7 @@ class KitchenRequestController extends Controller
         }
         $kitchenRequest->delete();
 
-        return redirect()->route('inventory.kitchen-requests.index')->with('success', 'Ingredient request deleted successfully.');
+        return redirect()->route('inventory.kitchen-requests.index')->with('success', 'Kitchen request deleted successfully.');
     }
 
     private function formData(InventorySiteContext $site): array
@@ -305,8 +311,17 @@ class KitchenRequestController extends Controller
             ->orderBy('name')
             ->get();
 
+        $foods = FoodItem::query()
+            ->whereHas('activeRecipe')
+            ->with([
+                'activeRecipe.items.ingredient.baseUnit',
+            ])
+            ->orderBy('name')
+            ->get();
+
         return [
             'ingredients' => $ingredients,
+            'foods' => $foods,
             'units' => Unit::query()->active()->orderBy('dimension')->orderBy('name')->get(),
         ];
     }
@@ -316,10 +331,17 @@ class KitchenRequestController extends Controller
         return $request->validate([
             'request_date' => ['required', 'date'],
             'notes' => ['nullable', 'string', 'max:3000'],
-            'ingredient_items' => ['required', 'array', 'min:1'],
-            'ingredient_items.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id', 'distinct'],
-            'ingredient_items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'ingredient_items.*.unit_choice' => ['required', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
+
+            // Both request methods are optional individually. KitchenRequestService
+            // enforces that at least one complete Food-wise or Direct Ingredient row exists.
+            'food_items' => ['nullable', 'array'],
+            'food_items.*.menu_item_id' => ['nullable', 'integer', 'exists:food_items,id'],
+            'food_items.*.quantity' => ['nullable', 'numeric', 'gt:0'],
+
+            'ingredient_items' => ['nullable', 'array'],
+            'ingredient_items.*.ingredient_id' => ['nullable', 'integer', 'exists:ingredients,id'],
+            'ingredient_items.*.quantity' => ['nullable', 'numeric', 'gt:0'],
+            'ingredient_items.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
     }
 

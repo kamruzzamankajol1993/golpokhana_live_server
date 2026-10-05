@@ -41,7 +41,7 @@ Dashboard — {{ $restaurantSettingName }}
         <div class="progga-stat-card">
           <div class="progga-stat-icon success"><i class="bi bi-graph-up-arrow"></i></div>
           <div class="progga-stat-info">
-            <div class="progga-stat-label">Monthly Revenue</div>
+            <div class="progga-stat-label">Current Month Revenue</div>
             <div class="progga-stat-value">৳{{ number_format($monthlySales) }}</div>
             <div class="progga-stat-change {{ $monthlyChange >= 0 ? 'up' : 'down' }}">
                 <i class="bi {{ $monthlyChange >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right' }}"></i>

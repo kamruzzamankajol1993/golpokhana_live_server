@@ -5,10 +5,10 @@
     <div class="progga-page-header">
         <div>
             <h1 class="progga-page-title">Kitchen Requests</h1>
-            <p class="text-muted mb-0">Kitchen Manager requests ingredients. Inventory Manager assigns them from Store Stock.</p>
+            <p class="text-muted mb-0">Kitchen Manager can request by Food + Quantity, Direct Ingredient, or both. Inventory Manager assigns the final ingredients from Store Stock.</p>
         </div>
         @can('inventory-kitchen-request-create')
-            <a href="{{ route('inventory.kitchen-requests.create') }}" class="progga-btn progga-btn-primary"><i class="bi bi-plus-lg"></i> New Ingredient Request</a>
+            <a href="{{ route('inventory.kitchen-requests.create') }}" class="progga-btn progga-btn-primary"><i class="bi bi-plus-lg"></i> New Kitchen Request</a>
         @endcan
     </div>
 
@@ -60,7 +60,7 @@
                         @endphp
                         <tr>
                             <td>{{ ($assignmentRequests->firstItem() ?? 1)+$loop->index }}</td>
-                            <td><strong>{{ $item->request_no }}</strong><br><small class="text-muted">By {{ $item->requester?->name ?: '—' }}</small></td>
+                            <td><strong>{{ $item->request_no }}</strong><br><small class="text-muted">{{ match($item->request_type){'FOOD'=>'Food-wise','MIXED'=>'Food + Direct','INGREDIENT'=>'Direct Ingredient',default=>$item->request_type} }} · By {{ $item->requester?->name ?: '—' }}</small></td>
                             <td>{{ optional($item->request_date)->format('d M Y') }}</td>
                             <td>{{ $item->ingredient_items_count }} item(s)<br><small class="text-muted">{{ $item->remaining_lines }} remaining line(s)</small></td>
                             <td>{{ $item->completed_lines }} / {{ $item->ingredient_items_count }} ingredient line(s)</td>
@@ -75,7 +75,7 @@
                             <td><a href="{{ route('inventory.kitchen-requests.assign',$item) }}" class="progga-btn progga-btn-primary progga-btn-sm"><i class="bi bi-box-arrow-right"></i> Assign</a></td>
                         </tr>
                     @empty
-                        <tr><td colspan="8" class="text-center text-muted py-5">No ingredient request is waiting for assignment.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-5">No kitchen request is waiting for ingredient assignment.</td></tr>
                     @endforelse
                     </tbody>
                 </table>
@@ -99,7 +99,7 @@
         </div>
 
         <div class="progga-card">
-            <div class="progga-card-header"><div><strong>Request List</strong><div class="small text-muted">Ingredient requests and their assignment status.</div></div><span class="text-muted small" id="inventoryResultCount">{{ $requests->total() }} {{ $requests->total()===1?'record':'records' }}</span></div>
+            <div class="progga-card-header"><div><strong>Request List</strong><div class="small text-muted">Food-wise, Direct Ingredient and Mixed requests with their assignment status.</div></div><span class="text-muted small" id="inventoryResultCount">{{ $requests->total() }} {{ $requests->total()===1?'record':'records' }}</span></div>
             <div id="inventoryListContent">
             <div class="progga-table-wrapper" style="border:none;border-radius:0;">
                 <table class="progga-table">
@@ -112,7 +112,7 @@
                         @endphp
                         <tr>
                             <td>{{ ($requests->firstItem() ?? 1)+$loop->index }}</td>
-                            <td><a href="{{ route('inventory.kitchen-requests.show',$item) }}"><strong>{{ $item->request_no }}</strong></a><br><small class="text-muted">By {{ $item->requester?->name ?: '—' }}</small></td>
+                            <td><a href="{{ route('inventory.kitchen-requests.show',$item) }}"><strong>{{ $item->request_no }}</strong></a><br><small class="text-muted">{{ match($item->request_type){'FOOD'=>'Food-wise','MIXED'=>'Food + Direct','INGREDIENT'=>'Direct Ingredient',default=>$item->request_type} }} · By {{ $item->requester?->name ?: '—' }}</small></td>
                             <td>{{ optional($item->request_date)->format('d M Y') }}</td>
                             <td>{{ $item->ingredient_items_count }} item(s)</td>
                             <td>{{ $item->transfers_count }}</td>
@@ -129,7 +129,7 @@
                             </div></td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="text-center text-muted py-5">No ingredient requests found.</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted py-5">No kitchen requests found.</td></tr>
                     @endforelse
                     </tbody>
                 </table>
@@ -146,7 +146,7 @@
 function confirmKitchenRequestDelete(button){
     const form=button.closest('form');
     const requestNo=button.dataset.deleteName||'This request';
-    if(window.Swal){Swal.fire({title:'Delete ingredient request?',text:requestNo+' will be permanently deleted.',icon:'warning',showCancelButton:true,confirmButtonText:'Yes, delete it',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});return;}
+    if(window.Swal){Swal.fire({title:'Delete kitchen request?',text:requestNo+' will be permanently deleted.',icon:'warning',showCancelButton:true,confirmButtonText:'Yes, delete it',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});return;}
     if(window.confirm('Delete '+requestNo+'?')) form.submit();
 }
 </script>
