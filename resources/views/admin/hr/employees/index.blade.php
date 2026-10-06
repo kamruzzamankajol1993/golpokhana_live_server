@@ -22,6 +22,14 @@
             </div>
 
             <div class="d-flex gap-2 flex-wrap justify-content-end">
+                @canany(['employee-create','employee-edit'])
+                    <button type="button" class="progga-btn progga-btn-outline" id="tipsoiPullEmployeesBtn">
+                        <i class="bi bi-cloud-arrow-down"></i> Pull Tipsoi
+                    </button>
+                    <button type="button" class="progga-btn progga-btn-outline" id="tipsoiPushEmployeesBtn">
+                        <i class="bi bi-cloud-arrow-up"></i> Push Tipsoi
+                    </button>
+                @endcanany
                 @can('employee-delete')
                     <button type="button" class="progga-btn progga-btn-danger" id="employeeBulkDeleteBtn" disabled>
                         <i class="bi bi-trash3-fill"></i> Delete Selected <span id="employeeBulkDeleteCount"></span>
@@ -239,6 +247,65 @@
                 if (this.checked) selectedEmployees.add(String(this.value));
                 else selectedEmployees.delete(String(this.value));
                 syncEmployeeSelectionUi();
+            });
+
+            $('#tipsoiPullEmployeesBtn').on('click', function () {
+                Swal.fire({
+                    title: 'Pull employees from Tipsoi?',
+                    text: 'Matching employees will be updated and unmatched Tipsoi people will be created as local HR employees.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Pull Employees'
+                }).then(function (result) {
+                    if (!result.isConfirmed) return;
+                    const button = $('#tipsoiPullEmployeesBtn').prop('disabled', true);
+                    Swal.fire({title:'Pulling Tipsoi employees...',allowOutsideClick:false,showConfirmButton:false,didOpen:function(){Swal.showLoading();}});
+                    $.post("{{ route('hr.tipsoi.employees.pull') }}", {_token: "{{ csrf_token() }}"})
+                        .done(function (response) {
+                            Swal.fire('Tipsoi Pull Complete', response.message || 'Employees pulled successfully.', 'success');
+                            loadEmployees(1);
+                        })
+                        .fail(function (xhr) { Swal.fire('Tipsoi Pull Failed', xhr.responseJSON?.message || 'Employee pull failed.', 'error'); })
+                        .always(function () { button.prop('disabled', false); });
+                });
+            });
+
+            $('#tipsoiPushEmployeesBtn').on('click', function () {
+                const ids = Array.from(selectedEmployees);
+                Swal.fire({
+                    title: ids.length ? 'Push selected employees to Tipsoi?' : 'Push all active employees to Tipsoi?',
+                    text: ids.length ? (ids.length + ' selected employee(s) will be pushed.') : 'All active HR employees will be pushed.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Push Employees'
+                }).then(function (result) {
+                    if (!result.isConfirmed) return;
+                    const button = $('#tipsoiPushEmployeesBtn').prop('disabled', true);
+                    Swal.fire({title:'Pushing employees to Tipsoi...',allowOutsideClick:false,showConfirmButton:false,didOpen:function(){Swal.showLoading();}});
+                    $.post("{{ route('hr.tipsoi.employees.push') }}", {
+                        _token: "{{ csrf_token() }}",
+                        employee_ids: ids
+                    }).done(function (response) {
+                        Swal.fire({
+                            icon: response.failed ? 'warning' : 'success',
+                            title: 'Tipsoi Push Complete',
+                            text: response.message || 'Employee push finished.'
+                        });
+                        loadEmployees(currentPage);
+                    }).fail(function (xhr) { Swal.fire('Tipsoi Push Failed', xhr.responseJSON?.message || 'Employee push failed.', 'error'); })
+                    .always(function () { button.prop('disabled', false); });
+                });
+            });
+
+            $(document).on('click', '.employee-tipsoi-push-btn', function () {
+                const button = $(this).prop('disabled', true);
+                $.post(button.data('url'), {_token: "{{ csrf_token() }}"})
+                    .done(function (response) {
+                        Swal.fire({icon:'success',title:'Tipsoi Synced',text:response.message || 'Employee pushed successfully.',timer:1700,showConfirmButton:false});
+                        loadEmployees(currentPage);
+                    })
+                    .fail(function (xhr) { Swal.fire('Tipsoi Push Failed', xhr.responseJSON?.message || 'Employee push failed.', 'error'); })
+                    .always(function () { button.prop('disabled', false); });
             });
 
             $('#employeeBulkDeleteBtn').on('click', function () {

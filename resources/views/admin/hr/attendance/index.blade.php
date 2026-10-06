@@ -29,7 +29,17 @@
                 </div>
             </div>
             <div class="attendance-action-bar">
+                @if($attendanceSetting?->tipsoi_enabled)
+                    @canany(['attendance-create','attendance-edit'])
+                        <button type="button" class="progga-btn progga-btn-outline" id="tipsoiPullAttendanceBtn">
+                            <i class="bi bi-arrow-repeat"></i> Sync Attendance
+                        </button>
+                    @endcanany
+                @endif
                 @can('attendance-view')
+                    <a href="{{ route('hr.tipsoi.devices.index') }}" class="progga-btn progga-btn-outline">
+                        <i class="bi bi-hdd-network"></i> Attendance Device
+                    </a>
                     <a href="{{ route('hr.attendance.reports.index') }}" class="progga-btn progga-btn-outline">
                         <i class="bi bi-file-earmark-bar-graph"></i> Reports
                     </a>
@@ -102,6 +112,67 @@
                 if (!attendancePageInitializing) loadAttendance(1);
             }
         });
+
+        const shouldRunAttendancePageSync = @json((bool) ($shouldRunAttendancePageSync ?? false));
+        const attendanceAutoSyncUrl = @json(route('hr.tipsoi.attendance.auto-sync'));
+
+        function showAttendanceSyncLoader(title, text) {
+            Swal.fire({
+                title: title || 'Attendance syncing...',
+                text: text || 'Please wait while TIPSOI attendance is being updated.',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: function () { Swal.showLoading(); }
+            });
+        }
+
+        $('#tipsoiPullAttendanceBtn').on('click', function () {
+            const date = $('#attendanceDate').val();
+            if (!date) return;
+            const button = $(this).prop('disabled', true);
+            showAttendanceSyncLoader('Syncing Attendance', date);
+            $.post("{{ route('hr.tipsoi.attendance.pull') }}", {
+                _token: "{{ csrf_token() }}",
+                from_date: date,
+                to_date: date
+            }).done(function (response) {
+                Swal.close();
+                loadAttendance(1);
+                Swal.fire({icon:'success',title:'Attendance Synced',text:response.message || 'Attendance synced successfully.',timer:1600,showConfirmButton:false});
+            }).fail(function (xhr) {
+                Swal.fire('Attendance Sync Failed', xhr.responseJSON?.message || 'Attendance sync failed.', 'error');
+            }).always(function () { button.prop('disabled', false); });
+        });
+
+        // First Attendance visit after login only. The controller marks this
+        // session before rendering the page, so leaving and returning later in
+        // the same login session does not show this popup again.
+        if (shouldRunAttendancePageSync) {
+            window.setTimeout(function () {
+                showAttendanceSyncLoader('Attendance syncing...', 'TIPSOI attendance is syncing. The list will refresh automatically.');
+                $.ajax({
+                    url: attendanceAutoSyncUrl,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        _token: "{{ csrf_token() }}",
+                        attendance_page_first_visit: true,
+                        force_month: true
+                    }),
+                    headers: {
+                        'X-CSRF-TOKEN': "{{ csrf_token() }}",
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                }).done(function () {
+                    Swal.close();
+                    loadAttendance(1);
+                }).fail(function (xhr) {
+                    Swal.fire('Attendance Sync Failed', xhr.responseJSON?.message || 'Attendance sync failed.', 'error');
+                });
+            }, 100);
+        }
 
         function initTimePickers() {
             document.querySelectorAll('#attendanceTableContainer .attendance-time').forEach(function (element) {

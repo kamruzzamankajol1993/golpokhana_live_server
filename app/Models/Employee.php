@@ -18,6 +18,10 @@ class Employee extends Model
         'exit_date' => 'date',
         'is_waiter' => 'boolean',
         'can_login' => 'boolean',
+        'tipsoi_person_id' => 'integer',
+        'tipsoi_total_fingerprints' => 'integer',
+        'tipsoi_remote_updated_at' => 'datetime',
+        'tipsoi_synced_at' => 'datetime',
     ];
 
     public function user()

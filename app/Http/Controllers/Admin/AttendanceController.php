@@ -49,6 +49,21 @@ class AttendanceController extends Controller
             return view('admin.hr.attendance.table', $tableData)->render();
         }
 
+        $attendanceSetting = AttendanceSetting::query()->first();
+        $shouldRunAttendancePageSync = false;
+
+        // Exactly once per authenticated login session: the first full visit to
+        // Attendance shows the sync popup and refreshes the current month. AJAX
+        // table reloads, filters, pagination and later visits never trigger it.
+        if (
+            $attendanceSetting?->tipsoi_enabled
+            && !session()->has('attendance_page_auto_sync_done')
+        ) {
+            session()->put('attendance_page_auto_sync_done', true);
+            session()->put('attendance_page_auto_sync_pending', true);
+            $shouldRunAttendancePageSync = true;
+        }
+
         return view('admin.hr.attendance.index', [
             'date' => $date,
             'summary' => $tableData['summary'],
@@ -56,6 +71,8 @@ class AttendanceController extends Controller
             'departments' => Department::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'shifts' => Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get(),
             'initialTableData' => $tableData,
+            'attendanceSetting' => $attendanceSetting,
+            'shouldRunAttendancePageSync' => $shouldRunAttendancePageSync,
         ]);
     }
 
@@ -722,15 +739,22 @@ class AttendanceController extends Controller
         $earlyLeaveMinutes = 0;
         $overtimeMinutes = 0;
 
-        if ($shift && $shift->start_time && $shift->end_time) {
-            $scheduledStart = Carbon::parse("{$date} {$shift->start_time}");
-            $scheduledEnd = Carbon::parse("{$date} {$shift->end_time}");
-            if ($shift->is_overnight || $scheduledEnd->lessThanOrEqualTo($scheduledStart)) {
+        $setting = AttendanceSetting::first();
+        $scheduledStartTime = $shift?->start_time ?: ($setting?->global_start_time ?: null);
+        $scheduledEndTime = $shift?->end_time ?: ($setting?->global_end_time ?: null);
+
+        // Priority: roster/default shift -> global attendance schedule. This keeps
+        // attendance calculation working even when an employee has no shift or roster.
+        if ($scheduledStartTime && $scheduledEndTime) {
+            $scheduledStart = Carbon::parse("{$date} {$scheduledStartTime}");
+            $scheduledEnd = Carbon::parse("{$date} {$scheduledEndTime}");
+            if (($shift?->is_overnight ?? false) || $scheduledEnd->lessThanOrEqualTo($scheduledStart)) {
                 $scheduledEnd->addDay();
             }
 
-            $setting = AttendanceSetting::first();
-            $grace = (int) ($shift->grace_minutes ?: ($setting->grace_minutes ?? 0));
+            $grace = $shift && $shift->grace_minutes !== null
+                ? (int) $shift->grace_minutes
+                : (int) ($setting?->grace_minutes ?? 0);
 
             if ($checkInAt && $checkInAt->greaterThan($scheduledStart->copy()->addMinutes($grace))) {
                 $lateMinutes = $scheduledStart->diffInMinutes($checkInAt);
@@ -740,7 +764,7 @@ class AttendanceController extends Controller
             }
             if ($checkOutAt && $checkOutAt->greaterThan($scheduledEnd) && ($setting?->auto_calculate_overtime ?? true)) {
                 $rawOvertime = $scheduledEnd->diffInMinutes($checkOutAt);
-                $minimum = (int) ($setting->minimum_overtime_minutes ?? 0);
+                $minimum = (int) ($setting?->minimum_overtime_minutes ?? 0);
                 $overtimeMinutes = $rawOvertime >= $minimum ? $rawOvertime : 0;
             }
         }

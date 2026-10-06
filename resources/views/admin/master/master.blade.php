@@ -713,6 +713,68 @@ function exportReport(type, reportName) {
 
 @if(auth()->check())
 <script>
+(function tipsoiAttendanceBackgroundSync() {
+    const tipsoiEnabled = @json((bool) \App\Models\AttendanceSetting::query()->value('tipsoi_enabled'));
+    const syncUrl = @json(route('hr.tipsoi.attendance.auto-sync'));
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const shouldRunLoginSync = tipsoiEnabled && @json((bool) session()->get('tipsoi_login_attendance_sync_pending', false));
+    let inFlight = false;
+
+    // Master kill-switch: when HR Settings -> TIPSOI is OFF, do not even
+    // schedule browser AJAX calls. Server-side services also enforce this.
+    if (!tipsoiEnabled || !syncUrl || !csrf || !window.fetch) return;
+
+    async function syncAttendance(payload) {
+        if (inFlight) return;
+        inFlight = true;
+
+        try {
+            const response = await fetch(syncUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload || {})
+            });
+
+            // Silent background behavior by design. Errors are logged only in
+            // the browser console; the Attendance page's first-visit sync has
+            // its own visible popup/error handling.
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                console.debug('TIPSOI attendance background sync skipped/failed:', data.message || response.status);
+            }
+        } catch (error) {
+            console.debug('TIPSOI attendance background sync error:', error);
+        } finally {
+            inFlight = false;
+        }
+    }
+
+    // One silent current-month pull approximately 3 seconds after login. The
+    // server keeps the pending marker until this request actually reaches it,
+    // so navigating quickly after login does not lose the bootstrap sync.
+    if (shouldRunLoginSync) {
+        window.setTimeout(function () {
+            syncAttendance({ login_sync: true, force_month: true });
+        }, 3000);
+    }
+
+    // While any authenticated Karachi page remains open, poll every 30 seconds.
+    // The server-side lock/throttle prevents multiple tabs from double syncing.
+    window.setInterval(function () {
+        syncAttendance({ background: true });
+    }, 30000);
+})();
+</script>
+@endif
+
+@if(auth()->check())
+<script>
 (function keepOpenPosSessionActivityCurrent() {
     const activityUrl = @json(route('pos.session.activity'));
     const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

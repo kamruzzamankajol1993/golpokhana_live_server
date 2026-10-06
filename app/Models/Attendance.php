@@ -19,6 +19,9 @@ class Attendance extends Model
         'early_leave_minutes' => 'integer',
         'overtime_minutes' => 'integer',
         'worked_minutes' => 'integer',
+        'tipsoi_person_id' => 'integer',
+        'tipsoi_synced_at' => 'datetime',
+        'tipsoi_pushed_at' => 'datetime',
     ];
 
     public function employee()

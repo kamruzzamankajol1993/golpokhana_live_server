@@ -80,6 +80,13 @@ class HrSettingController extends Controller
 
         $attendanceSetting = AttendanceSetting::first() ?? new AttendanceSetting([
             'grace_minutes' => 10,
+            'global_start_time' => '09:00:00',
+            'global_end_time' => '17:00:00',
+            'tipsoi_enabled' => false,
+            'tipsoi_mode' => 'live',
+            'tipsoi_demo_url' => 'https://test.api-inovace360.com/api/v1',
+            'tipsoi_live_url' => 'https://api-inovace360.com/api/v1',
+            'tipsoi_ssl_mode' => 'auto',
             'half_day_after_minutes' => 240,
             'absent_after_minutes' => 480,
             'minimum_overtime_minutes' => 30,
@@ -255,6 +262,8 @@ class HrSettingController extends Controller
     public function updateAttendance(Request $request)
     {
         $validated = $request->validate([
+            'global_start_time' => ['required', 'date_format:H:i'],
+            'global_end_time' => ['required', 'date_format:H:i'],
             'grace_minutes' => ['required', 'integer', 'min:0', 'max:240'],
             'half_day_after_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
             'absent_after_minutes' => ['required', 'integer', 'min:1', 'max:1440', 'gte:half_day_after_minutes'],
@@ -262,15 +271,35 @@ class HrSettingController extends Controller
             'default_working_hours' => ['required', 'numeric', 'min:1', 'max:24'],
             'weekly_off_days' => ['nullable', 'array'],
             'weekly_off_days.*' => [Rule::in(['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])],
+            'tipsoi_mode' => ['required', Rule::in(['demo', 'live'])],
+            'tipsoi_demo_url' => ['nullable', 'url', 'max:500'],
+            'tipsoi_demo_api_key' => ['nullable', 'string', 'max:5000'],
+            'tipsoi_live_url' => ['nullable', 'url', 'max:500'],
+            'tipsoi_live_api_key' => ['nullable', 'string', 'max:5000'],
+            'tipsoi_ssl_mode' => ['required', Rule::in(['auto', 'verify', 'disable'])],
         ]);
 
+        $setting = AttendanceSetting::first() ?? new AttendanceSetting();
+
+        $validated['global_start_time'] = $validated['global_start_time'] . ':00';
+        $validated['global_end_time'] = $validated['global_end_time'] . ':00';
         $validated['weekly_off_days'] = $request->input('weekly_off_days', []);
         $validated['allow_manual_attendance'] = $request->boolean('allow_manual_attendance');
         $validated['auto_calculate_late'] = $request->boolean('auto_calculate_late');
         $validated['auto_calculate_overtime'] = $request->boolean('auto_calculate_overtime');
+        $validated['tipsoi_enabled'] = $request->boolean('tipsoi_enabled');
+        $validated['tipsoi_demo_url'] = $validated['tipsoi_demo_url'] ?: 'https://test.api-inovace360.com/api/v1';
+        $validated['tipsoi_live_url'] = $validated['tipsoi_live_url'] ?: 'https://api-inovace360.com/api/v1';
         $validated['status'] = true;
 
-        $setting = AttendanceSetting::first() ?? new AttendanceSetting();
+        // Blank key inputs mean: keep the previously saved credential.
+        if (!$request->filled('tipsoi_demo_api_key')) {
+            unset($validated['tipsoi_demo_api_key']);
+        }
+        if (!$request->filled('tipsoi_live_api_key')) {
+            unset($validated['tipsoi_live_api_key']);
+        }
+
         $setting->fill($validated)->save();
 
         return redirect()->route('hr.settings.index', ['tab' => 'attendance'])

@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\HrDashboardController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\EmployeeSalaryController;
 use App\Http\Controllers\Admin\AttendanceController;
+use App\Http\Controllers\Admin\TipsoiController;
 use App\Http\Controllers\Admin\LeaveManagementController;
 use App\Http\Controllers\Admin\HrShiftController;
 use App\Http\Controllers\Admin\PayrollController;
@@ -403,6 +404,34 @@ Route::post('waiter-update-status', [WaiterController::class, 'updateStatus'])->
         Route::post('/attendance/bulk', [AttendanceController::class, 'storeBulk'])->name('attendance.bulk.store');
         Route::put('/attendance/{attendance}', [AttendanceController::class, 'update'])->name('attendance.update');
         Route::delete('/attendance/{attendance}', [AttendanceController::class, 'destroy'])->name('attendance.destroy');
+
+        Route::post('/tipsoi/test', [TipsoiController::class, 'testConnection'])->name('tipsoi.test');
+
+        Route::get('/tipsoi/people', [TipsoiController::class, 'people'])->name('tipsoi.people.index');
+        Route::post('/tipsoi/people/refresh', [TipsoiController::class, 'refreshPeople'])->name('tipsoi.people.refresh');
+        Route::post('/tipsoi/employees/pull', [TipsoiController::class, 'pullEmployees'])->name('tipsoi.employees.pull');
+        Route::post('/tipsoi/employees/push', [TipsoiController::class, 'pushEmployees'])->name('tipsoi.employees.push');
+        Route::post('/tipsoi/employees/{employee}/push', [TipsoiController::class, 'pushEmployee'])->name('tipsoi.employees.push-one');
+
+        Route::get('/tipsoi/devices', [TipsoiController::class, 'devices'])->name('tipsoi.devices.index');
+        Route::post('/tipsoi/devices/refresh', [TipsoiController::class, 'refreshDevices'])->name('tipsoi.devices.refresh');
+
+        Route::get('/tipsoi/fingerprint', [TipsoiController::class, 'fingerprint'])->name('tipsoi.fingerprint.index');
+        Route::post('/tipsoi/fingerprint/start', [TipsoiController::class, 'startEnrollment'])->name('tipsoi.fingerprint.start');
+        Route::post('/tipsoi/fingerprint/stop', [TipsoiController::class, 'stopEnrollment'])->name('tipsoi.fingerprint.stop');
+        Route::get('/tipsoi/fingerprint/status', [TipsoiController::class, 'enrollmentStatus'])->name('tipsoi.fingerprint.status');
+
+        Route::get('/tipsoi/allocations', [TipsoiController::class, 'allocations'])->name('tipsoi.allocations.index');
+        Route::post('/tipsoi/allocations', [TipsoiController::class, 'allocate'])->name('tipsoi.allocations.store');
+        Route::post('/tipsoi/allocations/batch', [TipsoiController::class, 'batchAllocation'])->name('tipsoi.allocations.batch');
+
+        Route::get('/tipsoi/raw-logs', [TipsoiController::class, 'rawLogs'])->name('tipsoi.raw-logs.index');
+        Route::post('/tipsoi/raw-logs/refresh', [TipsoiController::class, 'refreshRawLogs'])->name('tipsoi.raw-logs.refresh');
+        Route::get('/tipsoi/sync-history', [TipsoiController::class, 'syncHistory'])->name('tipsoi.sync-history.index');
+
+        Route::post('/tipsoi/attendance/pull', [TipsoiController::class, 'pullAttendance'])->name('tipsoi.attendance.pull');
+        Route::post('/tipsoi/attendance/auto-sync', [TipsoiController::class, 'autoSyncAttendance'])->name('tipsoi.attendance.auto-sync');
+
 
         Route::get('/leave-management', [LeaveManagementController::class, 'index'])->name('leaves.index');
         Route::get('/leave-management/employee/{employee}/balances', [LeaveManagementController::class, 'balances'])->name('leaves.balances');

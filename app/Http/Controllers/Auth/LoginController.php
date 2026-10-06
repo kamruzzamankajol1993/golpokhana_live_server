@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\AttendanceSetting;
 use App\Models\PosSession;
 use App\Models\Table;
 use Carbon\Carbon;
@@ -52,6 +53,21 @@ class LoginController extends Controller
         // A running shared Manager session is accepted automatically after login;
         // do not ask each user/browser to Continue Previous or Start New.
         $request->session()->forget('force_pos_unfinished_prompt');
+
+        // TIPSOI attendance bootstrap follows the Pioneer HR behavior, but only
+        // while the integration is enabled from HR Settings. When TIPSOI is OFF
+        // no login/background/page attendance sync marker is created.
+        $tipsoiEnabled = (bool) AttendanceSetting::query()->value('tipsoi_enabled');
+
+        $request->session()->forget([
+            'tipsoi_login_attendance_sync_pending',
+            'attendance_page_auto_sync_done',
+            'attendance_page_auto_sync_pending',
+        ]);
+
+        if ($tipsoiEnabled) {
+            $request->session()->put('tipsoi_login_attendance_sync_pending', true);
+        }
 
         // Keep the application's existing role-based landing pages intact.
         // HR dashboard is only the login landing page for users whose assigned

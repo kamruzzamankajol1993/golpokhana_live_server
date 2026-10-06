@@ -1,5 +1,6 @@
 @php
     $isEdit = isset($employee);
+    $tipsoiImport = $tipsoiRemotePerson ?? null;
     $employeeValue = fn ($field, $default = null) => old($field, $isEdit ? data_get($employee, $field) : $default);
     $isWaiterChecked = old('is_waiter', $isEdit ? $employee->is_waiter : false);
     $canLoginChecked = old('can_login', $isEdit ? $employee->can_login : false);
@@ -72,7 +73,7 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="progga-form-label">Full Name <span class="progga-required">*</span></label>
-                        <input type="text" class="progga-form-control" name="name" value="{{ $employeeValue('name') }}" required>
+                        <input type="text" class="progga-form-control" name="name" value="{{ $employeeValue('name', $tipsoiImport?->name ?? '') }}" required>
                         @error('name')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                     <div class="col-md-3">
@@ -101,7 +102,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="progga-form-label">NID Number</label>
-                        <input type="text" class="progga-form-control" name="nid" value="{{ $employeeValue('nid') }}" maxlength="50" placeholder="Enter NID number">
+                        <input type="text" class="progga-form-control" name="nid" value="{{ $employeeValue('nid', $tipsoiImport?->nid ?? '') }}" maxlength="50" placeholder="Enter NID number">
                         @error('nid')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                     <div class="col-md-8">
@@ -372,6 +373,62 @@
                         </div>
                     </div>
                 @endforeach
+            </div>
+        </div>
+
+        <div class="hr-card mb-3">
+            <div class="hr-card-header">
+                <div>
+                    <div class="hr-card-title"><i class="bi bi-fingerprint me-2"></i>TIPSOI Person</div>
+                    <div class="hr-card-subtitle">Person Create/Update fields used by the TIPSOI Device API. Employee Code is used when Identifier is blank.</div>
+                </div>
+                @if($isEdit && ($employee->tipsoi_sync_status || $employee->tipsoi_person_id))
+                    <span class="hr-badge {{ $employee->tipsoi_sync_status === 'failed' ? 'hr-badge-warning' : 'hr-badge-success' }}">
+                        {{ ucfirst($employee->tipsoi_sync_status ?: 'linked') }}
+                    </span>
+                @endif
+            </div>
+            <div class="hr-card-body">
+                @if($tipsoiImport)
+                    <input type="hidden" name="tipsoi_remote_person_id" value="{{ $tipsoiImport->id }}">
+                    <div class="hr-inline-note mb-3">
+                        <strong>Existing TIPSOI person selected.</strong> This HR record will link to Person ID {{ $tipsoiImport->tipsoi_person_id ?: '—' }} instead of creating a duplicate.
+                        @if($tipsoiImport->total_fingerprints !== null) · Fingerprints: {{ $tipsoiImport->total_fingerprints }} @endif
+                    </div>
+                @endif
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="progga-form-label">Person Identifier</label>
+                        <input type="text" class="progga-form-control" name="tipsoi_identifier" value="{{ old('tipsoi_identifier', $isEdit ? $employee->tipsoi_identifier : ($tipsoiImport?->identifier ?? '')) }}" placeholder="Blank = Employee Code">
+                        <div class="hr-muted mt-1">Unique TIPSOI person identifier.</div>
+                        @error('tipsoi_identifier')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-6">
+                        <label class="progga-form-label">RFID</label>
+                        <input type="text" class="progga-form-control" name="tipsoi_rfid" maxlength="10" minlength="10" value="{{ old('tipsoi_rfid', $isEdit ? $employee->tipsoi_rfid : ($tipsoiImport?->rfid ?? '')) }}" placeholder="10 characters">
+                        <div class="hr-muted mt-1">Optional. TIPSOI documentation specifies a fixed 10-character RFID.</div>
+                        @error('tipsoi_rfid')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-6">
+                        <label class="progga-form-label">Primary Display Text</label>
+                        <input type="text" class="progga-form-control" name="tipsoi_primary_display_text" maxlength="10" value="{{ old('tipsoi_primary_display_text', $isEdit ? $employee->tipsoi_primary_display_text : ($tipsoiImport?->primary_display_text ?? 'Welcome')) }}" placeholder="Welcome">
+                        <div class="hr-muted mt-1">Maximum 10 characters.</div>
+                        @error('tipsoi_primary_display_text')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-6">
+                        <label class="progga-form-label">Secondary Display Text</label>
+                        <input type="text" class="progga-form-control" name="tipsoi_secondary_display_text" maxlength="10" value="{{ old('tipsoi_secondary_display_text', $isEdit ? $employee->tipsoi_secondary_display_text : ($tipsoiImport?->secondary_display_text ?? '')) }}" placeholder="Employee name/code">
+                        <div class="hr-muted mt-1">Maximum 10 characters.</div>
+                        @error('tipsoi_secondary_display_text')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                </div>
+                @if($isEdit && ($employee->tipsoi_person_id || $employee->tipsoi_identifier))
+                    <div class="hr-inline-note mt-3 mb-0">
+                        <strong>Remote:</strong> Person ID {{ $employee->tipsoi_person_id ?: '—' }} · Identifier {{ $employee->tipsoi_identifier ?: '—' }} · Fingerprints {{ $employee->tipsoi_total_fingerprints ?? 0 }}
+                        @if($employee->tipsoi_synced_at) · Last Sync {{ $employee->tipsoi_synced_at->format('d M Y h:i A') }} @endif
+                        @if($employee->tipsoi_sync_error)<br><span class="text-danger">{{ $employee->tipsoi_sync_error }}</span>@endif
+                    </div>
+                @endif
             </div>
         </div>
 

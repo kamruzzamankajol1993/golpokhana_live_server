@@ -798,6 +798,31 @@ $(function () {
         $('#holidayModal').modal('show');
     };
 
+    $('#tipsoiTestConnectionBtn').on('click', function () {
+        const button = $(this).prop('disabled', true);
+        Swal.fire({
+            title: 'Testing Tipsoi connection...',
+            text: 'The currently saved active Demo/Live credential will be used.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+
+        $.post("{{ route('hr.tipsoi.test') }}", {_token: "{{ csrf_token() }}"})
+            .done(function (response) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Tipsoi Connected',
+                    text: (response.message || 'Connection successful.') + ' Remote people: ' + (response.remote_people ?? 0) + ' · Devices: ' + (response.remote_devices ?? 0)
+                });
+            })
+            .fail(function (xhr) {
+                Swal.fire('Tipsoi Connection Failed', xhr.responseJSON?.message || 'Unable to connect to Tipsoi.', 'error');
+            })
+            .always(function () { button.prop('disabled', false); });
+    });
+
     $('.hr-settings-panel form:not(.hr-ajax-form)').on('submit', function () {
         Swal.fire({
             title: 'Saving settings...',

@@ -236,6 +236,30 @@
             @can('attendance-view')
             <a class="progga-nav-link {{ request()->routeIs('hr.attendance.*') ? 'active' : '' }}" href="{{ route('hr.attendance.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-fingerprint progga-nav-icon"></i><span>Attendance</span></a>
             @endcan
+
+            @canany(['attendance-view','attendance-create','attendance-edit','employee-view','employee-create','employee-edit','hr-setting-view','hr-setting-update'])
+            @php $tipsoiMenuOpen = request()->routeIs('hr.tipsoi.*'); @endphp
+            <a class="progga-nav-link {{ $tipsoiMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#hrTipsoiDropdown" role="button" aria-expanded="{{ $tipsoiMenuOpen ? 'true' : 'false' }}" style="padding-left:42px;font-size:13px;">
+                <i class="bi bi-fingerprint progga-nav-icon"></i><span>TIPSOI</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
+            </a>
+            <div class="collapse {{ $tipsoiMenuOpen ? 'show' : '' }}" id="hrTipsoiDropdown">
+                @can('employee-view')
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.people.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.people.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-people progga-nav-icon"></i><span>People Sync</span></a>
+                @endcan
+                @can('attendance-view')
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.devices.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.devices.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-hdd-network progga-nav-icon"></i><span>Attendance Device</span></a>
+                @endcan
+                @canany(['employee-create','employee-edit'])
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.fingerprint.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.fingerprint.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-fingerprint progga-nav-icon"></i><span>Fingerprint Enrollment</span></a>
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.allocations.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.allocations.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-diagram-3 progga-nav-icon"></i><span>Device Assignment</span></a>
+                @endcanany
+                @can('attendance-view')
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.raw-logs.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.raw-logs.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-clock-history progga-nav-icon"></i><span>Raw Punch Logs</span></a>
+                <a class="progga-nav-link {{ request()->routeIs('hr.tipsoi.sync-history.*') ? 'active' : '' }}" href="{{ route('hr.tipsoi.sync-history.index') }}" style="padding-left:58px;font-size:12px;"><i class="bi bi-arrow-repeat progga-nav-icon"></i><span>Sync History</span></a>
+                @endcan
+            </div>
+            @endcanany
+
             @can('leave-management-view')
             <a class="progga-nav-link {{ request()->routeIs('hr.leaves.*') ? 'active' : '' }}" href="{{ route('hr.leaves.index') }}" style="padding-left:42px;font-size:13px;"><i class="bi bi-calendar2-check-fill progga-nav-icon"></i><span>Leave Management</span></a>
             @endcan

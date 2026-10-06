@@ -22,5 +22,7 @@ class AttendanceSetting extends Model
         'auto_calculate_late' => 'boolean',
         'auto_calculate_overtime' => 'boolean',
         'status' => 'boolean',
+        'tipsoi_enabled' => 'boolean',
+        'tipsoi_last_sync_at' => 'datetime',
     ];
 }

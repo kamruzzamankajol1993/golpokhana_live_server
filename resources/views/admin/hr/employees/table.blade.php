@@ -48,6 +48,13 @@
                                     {{ $employee->name }}
                                 </a>
                                 <div class="hr-person-meta">{{ $employee->employee_code }} · {{ $employee->phone }}</div>
+                                @if($employee->tipsoi_sync_status === 'synced')
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-success"><i class="bi bi-fingerprint"></i> Tipsoi Synced</span></div>
+                                @elseif($employee->tipsoi_sync_status === 'failed')
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-warning" title="{{ $employee->tipsoi_sync_error }}"><i class="bi bi-exclamation-triangle"></i> Tipsoi Failed</span></div>
+                                @elseif($employee->tipsoi_person_id || $employee->tipsoi_identifier)
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Tipsoi Linked</span></div>
+                                @endif
                             </div>
                         </div>
                     </td>
@@ -149,6 +156,17 @@
                                 >
                                     <i class="bi bi-wallet2"></i>
                                 </a>
+                            @endcan
+
+                            @can('employee-edit')
+                                <button
+                                    type="button"
+                                    class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm employee-tipsoi-push-btn"
+                                    data-url="{{ route('hr.tipsoi.employees.push-one', $employee) }}"
+                                    title="Push employee to Tipsoi"
+                                >
+                                    <i class="bi bi-cloud-arrow-up"></i>
+                                </button>
                             @endcan
 
                             @can('employee-delete')

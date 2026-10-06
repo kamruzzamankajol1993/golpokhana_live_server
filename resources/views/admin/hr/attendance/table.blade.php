@@ -66,6 +66,9 @@
                                     <div class="hr-person-meta">
                                         {{ $employee->employee_code }} · {{ $employee->department->name ?? 'No department' }}
                                     </div>
+                                    @if($attendance?->tipsoi_synced_at)
+                                        <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Tipsoi</span></div>
+                                    @endif
                                 </div>
                             </div>
                         </td>
@@ -75,7 +78,15 @@
                                 class="progga-select attendance-input attendance-shift"
                                 {{ $locked ? 'disabled' : '' }}
                             >
-                                <option value="">No Shift</option>
+                                <option
+                                    value=""
+                                    data-start="{{ substr((string) ($attendanceSetting?->global_start_time ?? '09:00:00'), 0, 5) }}"
+                                    data-end="{{ substr((string) ($attendanceSetting?->global_end_time ?? '17:00:00'), 0, 5) }}"
+                                    data-grace="{{ (int) ($attendanceSetting?->grace_minutes ?? 0) }}"
+                                    data-break="0"
+                                    data-overnight="{{ strtotime((string) ($attendanceSetting?->global_end_time ?? '17:00:00')) <= strtotime((string) ($attendanceSetting?->global_start_time ?? '09:00:00')) ? 1 : 0 }}"
+                                    {{ blank($selectedShift) ? 'selected' : '' }}
+                                >Global Schedule ({{ substr((string) ($attendanceSetting?->global_start_time ?? '09:00:00'), 0, 5) }} - {{ substr((string) ($attendanceSetting?->global_end_time ?? '17:00:00'), 0, 5) }})</option>
 
                                 @foreach ($shifts as $shift)
                                     <option

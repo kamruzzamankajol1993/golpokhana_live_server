@@ -13,9 +13,11 @@ use App\Models\EmploymentType;
 use App\Models\HrSetting;
 use App\Models\LeaveType;
 use App\Models\Shift;
+use App\Models\TipsoiRemotePerson;
 use App\Models\User;
 use App\Models\Waiter;
 use App\Models\FloorZone;
+use App\Services\Hr\TipsoiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -114,9 +116,21 @@ class EmployeeController extends Controller
         ];
     }
 
-    public function create()
+    public function create(Request $request)
     {
-        return view('admin.hr.employees.create', $this->formData());
+        $data = $this->formData();
+
+        if ($request->filled('tipsoi_remote_person_id')) {
+            $tipsoiRemotePerson = TipsoiRemotePerson::query()
+                ->whereNull('employee_id')
+                ->find($request->integer('tipsoi_remote_person_id'));
+
+            if ($tipsoiRemotePerson) {
+                $data['tipsoiRemotePerson'] = $tipsoiRemotePerson;
+            }
+        }
+
+        return view('admin.hr.employees.create', $data);
     }
 
     public function show(Employee $employee)
@@ -246,7 +260,22 @@ class EmployeeController extends Controller
                 'emergency_contact_name' => $validated['emergency_contact_name'] ?? null,
                 'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? null,
                 'notes' => $validated['notes'] ?? null,
+                'tipsoi_identifier' => $validated['tipsoi_identifier'] ?? null,
+                'tipsoi_rfid' => $validated['tipsoi_rfid'] ?? null,
+                'tipsoi_primary_display_text' => $validated['tipsoi_primary_display_text'] ?? null,
+                'tipsoi_secondary_display_text' => $validated['tipsoi_secondary_display_text'] ?? null,
             ]);
+
+            if (!empty($validated['tipsoi_remote_person_id'])) {
+                $remotePerson = TipsoiRemotePerson::query()
+                    ->whereNull('employee_id')
+                    ->find($validated['tipsoi_remote_person_id']);
+
+                if ($remotePerson) {
+                    app(TipsoiService::class)->linkEmployeeFromRemotePerson($employee, $remotePerson);
+                    $employee->refresh();
+                }
+            }
 
             if ($isWaiter) {
                 $this->syncWaiter($employee);
@@ -377,6 +406,10 @@ class EmployeeController extends Controller
                 'emergency_contact_name' => $validated['emergency_contact_name'] ?? null,
                 'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? null,
                 'notes' => $validated['notes'] ?? null,
+                'tipsoi_identifier' => $validated['tipsoi_identifier'] ?? null,
+                'tipsoi_rfid' => $validated['tipsoi_rfid'] ?? null,
+                'tipsoi_primary_display_text' => $validated['tipsoi_primary_display_text'] ?? null,
+                'tipsoi_secondary_display_text' => $validated['tipsoi_secondary_display_text'] ?? null,
             ])->save();
 
             $step = 'waiter_sync';
@@ -714,6 +747,21 @@ class EmployeeController extends Controller
             'emergency_contact_name' => ['nullable', 'string', 'max:180'],
             'emergency_contact_phone' => ['nullable', 'string', 'max:40'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'tipsoi_remote_person_id' => ['nullable', 'integer', 'exists:tipsoi_remote_people,id'],
+            'tipsoi_identifier' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique('employees', 'tipsoi_identifier')->ignore($employee?->id),
+            ],
+            'tipsoi_rfid' => [
+                'nullable',
+                'string',
+                'size:10',
+                Rule::unique('employees', 'tipsoi_rfid')->ignore($employee?->id),
+            ],
+            'tipsoi_primary_display_text' => ['nullable', 'string', 'max:10'],
+            'tipsoi_secondary_display_text' => ['nullable', 'string', 'max:10'],
             'salary_enabled' => ['nullable', 'boolean'],
             'salary_effective_from' => [Rule::requiredIf($request->boolean('salary_enabled')), 'nullable', 'date', 'after_or_equal:join_date'],
             'basic_salary' => [Rule::requiredIf($request->boolean('salary_enabled')), 'nullable', 'numeric', 'min:0'],
