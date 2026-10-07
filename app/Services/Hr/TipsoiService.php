@@ -376,31 +376,43 @@ class TipsoiService
                             continue;
                         }
 
-                        $checkIn = $this->timeOnly($log['start'] ?? null);
-                        $checkOut = $this->timeOnly($log['end'] ?? null);
-                        $resolved = $this->calculateAttendance($employee, $date, $checkIn, $checkOut);
+                        // TIPSOI attendance_logs is calendar-day based. Keep it as a
+                        // fallback, but normalize full datetimes and API hours instead of
+                        // turning equal/single punches into a fake 24-hour checkout. Raw
+                        // punches are rebuilt into schedule-day attendance just below.
+                        $resolved = $this->calculateTipsoiSummaryAttendance($employee, $date, $log);
+                        $this->correctJoinDateFromAttendance($employee, $date);
 
-                        Attendance::updateOrCreate(
-                            ['employee_id' => $employee->id, 'attendance_date' => $date],
-                            array_merge($resolved, [
-                                'source' => 'system',
-                                'notes' => null,
-                                'marked_by' => null,
-                                'tipsoi_project_id' => $row['project_id'] ?? null,
-                                'tipsoi_person_id' => $personId,
-                                'tipsoi_person_identifier' => $identifier ?: $employee->employee_code,
-                                'tipsoi_person_name' => $row['name'] ?? $employee->name,
-                                'tipsoi_rfid' => $row['rfid'] ?? null,
-                                'tipsoi_primary_display_text' => $row['primary_display_text'] ?? null,
-                                'tipsoi_secondary_display_text' => $row['secondary_display_text'] ?? null,
-                                'tipsoi_hours' => $log['hours'] ?? null,
-                                'tipsoi_external_id' => 'tipsoi-' . ($personId ?: $employee->id) . '-' . $date,
-                                'tipsoi_synced_at' => now(),
-                                'tipsoi_push_status' => 'remote',
-                                'tipsoi_push_error' => null,
-                            ])
-                        );
-                        $saved++;
+                        $existing = Attendance::query()
+                            ->where('employee_id', $employee->id)
+                            ->whereDate('attendance_date', $date)
+                            ->first();
+
+                        // Once HR edits a TIPSOI row manually, background sync must not
+                        // silently overwrite that deliberate correction.
+                        if (!$existing || $existing->source !== 'manual') {
+                            Attendance::updateOrCreate(
+                                ['employee_id' => $employee->id, 'attendance_date' => $date],
+                                array_merge($resolved, [
+                                    'source' => 'system',
+                                    'notes' => null,
+                                    'marked_by' => null,
+                                    'tipsoi_project_id' => $row['project_id'] ?? null,
+                                    'tipsoi_person_id' => $personId,
+                                    'tipsoi_person_identifier' => $identifier ?: $employee->employee_code,
+                                    'tipsoi_person_name' => $row['name'] ?? $employee->name,
+                                    'tipsoi_rfid' => $row['rfid'] ?? null,
+                                    'tipsoi_primary_display_text' => $row['primary_display_text'] ?? null,
+                                    'tipsoi_secondary_display_text' => $row['secondary_display_text'] ?? null,
+                                    'tipsoi_hours' => $log['hours'] ?? null,
+                                    'tipsoi_external_id' => 'tipsoi-' . ($personId ?: $employee->id) . '-' . $date,
+                                    'tipsoi_synced_at' => now(),
+                                    'tipsoi_push_status' => 'remote',
+                                    'tipsoi_push_error' => null,
+                                ])
+                            );
+                            $saved++;
+                        }
                     }
                 }
 
@@ -408,8 +420,14 @@ class TipsoiService
                 $page++;
             } while ($page <= $lastPage && $page <= 1000);
 
-            $raw = $this->syncRawLogs($fromDate, $toDate, false);
-            $message = "Tipsoi attendance pull complete: {$saved} attendance record(s), {$raw['saved']} raw punch(es), {$skipped} skipped.";
+            // An overnight business day can finish after midnight. When a
+            // historical day/range is pulled, include the following calendar day
+            // in raw punches so its checkout is available for normalization.
+            $rawToDate = Carbon::parse($toDate)->lt(today())
+                ? Carbon::parse($toDate)->addDay()->toDateString()
+                : $toDate;
+            $raw = $this->syncRawLogs($fromDate, $rawToDate, false);
+            $message = "Tipsoi attendance pull complete: {$saved} summary record(s), {$raw['saved']} raw punch(es), {$raw['rebuilt']} normalized attendance day(s), {$skipped} skipped.";
             $this->rememberSyncResult('success', $message);
             $history->update([
                 'summary_records' => $saved,
@@ -469,6 +487,8 @@ class TipsoiService
         $lastPage = 1;
         $saved = 0;
         $skipped = 0;
+        $touchedBusinessDays = [];
+        $touchedCalendarDays = [];
 
         do {
             $json = $this->getRawLogs($fromDate . ' 00:00:00', $toDate . ' 23:59:59', $page, 500);
@@ -515,18 +535,67 @@ class TipsoiService
                     ]
                 );
                 $saved++;
+
+                if (!$employee) {
+                    $skipped++;
+                    continue;
+                }
+
+                // Use the literal TIPSOI logged_time string from raw_payload. The
+                // database column is TIMESTAMP and may be timezone-converted by
+                // MySQL; the vendor string is the correct wall-clock punch time.
+                $localLoggedAt = $this->parseTipsoiLocalDateTime($row['logged_time'] ?? null);
+                if (!$localLoggedAt) {
+                    continue;
+                }
+
+                $businessDate = $this->businessDateForPunch($employee, $localLoggedAt);
+                $businessKey = $employee->id . '|' . $businessDate;
+                $calendarKey = $employee->id . '|' . $localLoggedAt->toDateString();
+                $touchedBusinessDays[$businessKey] = [$employee->id, $businessDate];
+                $touchedCalendarDays[$calendarKey] = [$employee->id, $localLoggedAt->toDateString()];
             }
 
             $lastPage = max(1, (int) data_get($json, 'meta.last_page', 1));
             $page++;
         } while ($page <= $lastPage && $page <= 1000);
 
-        $message = "Tipsoi raw punch sync complete: {$saved} saved/updated, {$skipped} skipped.";
+        $rebuilt = 0;
+        $rebuiltKeys = [];
+        foreach ($touchedBusinessDays as $key => [$employeeId, $businessDate]) {
+            if ($this->rebuildAttendanceFromRawPunches((int) $employeeId, (string) $businessDate)) {
+                $rebuilt++;
+                $rebuiltKeys[$key] = true;
+            }
+        }
+
+        // attendance_logs groups by calendar date, which creates false rows for
+        // overnight-shift checkout punches (e.g. 02:23 AM becoming a new day).
+        // Remove only system/TIPSOI fallback rows for a touched calendar day when
+        // raw-punch normalization assigned every punch to another business day.
+        foreach ($touchedCalendarDays as $calendarKey => [$employeeId, $calendarDate]) {
+            if (isset($rebuiltKeys[$calendarKey])) {
+                continue;
+            }
+
+            Attendance::query()
+                ->where('employee_id', $employeeId)
+                ->whereDate('attendance_date', $calendarDate)
+                ->where('source', 'system')
+                ->whereNotNull('tipsoi_synced_at')
+                ->where(function ($query) {
+                    $query->whereNull('tipsoi_external_id')
+                        ->orWhere('tipsoi_external_id', 'not like', 'tipsoi-raw-%');
+                })
+                ->delete();
+        }
+
+        $message = "Tipsoi raw punch sync complete: {$saved} saved/updated, {$rebuilt} normalized attendance day(s), {$skipped} skipped.";
         if ($remember) {
             $this->rememberSyncResult('success', $message);
         }
 
-        return compact('saved', 'skipped', 'message');
+        return compact('saved', 'rebuilt', 'skipped', 'message');
     }
 
     public function refreshPeopleMapping(): array
@@ -736,6 +805,21 @@ class TipsoiService
 
     public function calculateAttendance(Employee $employee, string $date, ?string $checkIn, ?string $checkOut): array
     {
+        $checkInAt = $checkIn ? Carbon::parse("{$date} {$checkIn}") : null;
+        $checkOutAt = $checkOut ? Carbon::parse("{$date} {$checkOut}") : null;
+
+        // Manual/time-only input may represent an overnight checkout. Full
+        // TIPSOI datetimes use calculateAttendanceAt() directly and never need
+        // this guess.
+        if ($checkOutAt && $checkInAt && $checkOutAt->lessThanOrEqualTo($checkInAt)) {
+            $checkOutAt->addDay();
+        }
+
+        return $this->calculateAttendanceAt($employee, $date, $checkInAt, $checkOutAt);
+    }
+
+    private function calculateAttendanceAt(Employee $employee, string $date, ?Carbon $checkInAt, ?Carbon $checkOutAt): array
+    {
         $schedule = $this->resolveSchedule($employee, $date);
         $start = $schedule['start_time'];
         $end = $schedule['end_time'];
@@ -743,7 +827,7 @@ class TipsoiService
         $shift = $schedule['shift'];
         $setting = $schedule['setting'];
 
-        if (!$checkIn && !$checkOut) {
+        if (!$checkInAt && !$checkOutAt) {
             return [
                 'shift_id' => $shift?->id,
                 'check_in' => null,
@@ -762,10 +846,10 @@ class TipsoiService
             $scheduledEnd->addDay();
         }
 
-        $checkInAt = $checkIn ? Carbon::parse("{$date} {$checkIn}") : null;
-        $checkOutAt = $checkOut ? Carbon::parse("{$date} {$checkOut}") : null;
-        if ($checkOutAt && $checkInAt && $checkOutAt->lessThanOrEqualTo($checkInAt)) {
-            $checkOutAt->addDay();
+        // A single TIPSOI event is a valid attendance punch but not a checkout.
+        // Never manufacture an end time or a 24-hour work duration.
+        if ($checkInAt && $checkOutAt && $checkOutAt->lessThan($checkInAt)) {
+            $checkOutAt = null;
         }
 
         $lateMinutes = 0;
@@ -1036,6 +1120,250 @@ class TipsoiService
             throw new RuntimeException('From date cannot be after To date.');
         }
         return [$fromDate, $toDate];
+    }
+
+    private function calculateTipsoiSummaryAttendance(Employee $employee, string $date, array $log): array
+    {
+        $checkInAt = $this->parseTipsoiLocalDateTime($log['start'] ?? null);
+        $checkOutAt = $this->parseTipsoiLocalDateTime($log['end'] ?? null);
+        $apiMinutes = $this->parseTipsoiHoursToMinutes($log['hours'] ?? null);
+
+        if ($checkInAt && $checkOutAt) {
+            $rawMinutes = $checkInAt->diffInMinutes($checkOutAt, false);
+            if ($rawMinutes < 0) {
+                $checkOutAt = null;
+            } elseif ($apiMinutes === 0 && $rawMinutes <= 5) {
+                // TIPSOI commonly returns start=end (or repeated face scans only)
+                // for a one-punch day. This is not a 24-hour attendance.
+                $checkOutAt = null;
+            }
+        }
+
+        $resolved = $this->calculateAttendanceAt($employee, $date, $checkInAt, $checkOutAt);
+        if ($apiMinutes !== null) {
+            // attendance_logs hours is authoritative for its calendar-day
+            // fallback. Raw shift-window normalization can replace it later.
+            $resolved['worked_minutes'] = $apiMinutes;
+        }
+
+        return $resolved;
+    }
+
+    private function rebuildAttendanceFromRawPunches(int $employeeId, string $businessDate): bool
+    {
+        $employee = Employee::query()->find($employeeId);
+        if (!$employee) {
+            return false;
+        }
+
+        [$boundaryStart, $boundaryEnd] = $this->businessDateBoundaries($employee, $businessDate);
+
+        // TIMESTAMP columns may be shifted by DB timezone. Query with a generous
+        // buffer, then filter by raw_payload.logged_time (the vendor wall clock).
+        $logs = TipsoiAttendanceLog::query()
+            ->where('employee_id', $employeeId)
+            ->whereBetween('logged_time', [
+                $boundaryStart->copy()->subDay(),
+                $boundaryEnd->copy()->addDay(),
+            ])
+            ->orderBy('logged_time')
+            ->get();
+
+        $events = $logs->map(function (TipsoiAttendanceLog $log) {
+            $at = $this->rawLocalLoggedAt($log);
+            return $at ? ['at' => $at, 'log' => $log] : null;
+        })->filter()->filter(function (array $event) use ($employee, $businessDate, $boundaryStart, $boundaryEnd) {
+            /** @var Carbon $at */
+            $at = $event['at'];
+            return $at->gte($boundaryStart)
+                && $at->lt($boundaryEnd)
+                && $this->businessDateForPunch($employee, $at) === $businessDate;
+        })->sortBy(fn (array $event) => $event['at']->timestamp)->values();
+
+        if ($events->isEmpty()) {
+            return false;
+        }
+
+        // A face terminal often emits many scans seconds apart. Treat scans
+        // within 5 minutes as one punch event so 17:41:25 + 17:41:27 does not
+        // become a fake 2-second shift.
+        $clusters = [];
+        foreach ($events as $event) {
+            if ($clusters === []) {
+                $clusters[] = [$event];
+                continue;
+            }
+
+            $lastClusterIndex = count($clusters) - 1;
+            $lastEvent = $clusters[$lastClusterIndex][count($clusters[$lastClusterIndex]) - 1];
+            if ($lastEvent['at']->diffInSeconds($event['at']) <= 300) {
+                $clusters[$lastClusterIndex][] = $event;
+            } else {
+                $clusters[] = [$event];
+            }
+        }
+
+        $firstEvent = $clusters[0][0];
+        $lastCluster = $clusters[count($clusters) - 1];
+        $lastEvent = $lastCluster[count($lastCluster) - 1];
+        $checkInAt = $firstEvent['at']->copy();
+        $checkOutAt = count($clusters) > 1 ? $lastEvent['at']->copy() : null;
+
+        $resolved = $this->calculateAttendanceAt($employee, $businessDate, $checkInAt, $checkOutAt);
+        $existing = Attendance::query()
+            ->where('employee_id', $employeeId)
+            ->whereDate('attendance_date', $businessDate)
+            ->first();
+
+        if ($existing?->source === 'manual') {
+            return true;
+        }
+
+        /** @var TipsoiAttendanceLog $metadataLog */
+        $metadataLog = $lastEvent['log'];
+        $this->correctJoinDateFromAttendance($employee, $businessDate);
+
+        Attendance::updateOrCreate(
+            ['employee_id' => $employeeId, 'attendance_date' => $businessDate],
+            array_merge($resolved, [
+                'source' => 'system',
+                'notes' => null,
+                'marked_by' => null,
+                'tipsoi_project_id' => $existing?->tipsoi_project_id,
+                'tipsoi_person_id' => $metadataLog->person_id ?: $employee->tipsoi_person_id,
+                'tipsoi_person_identifier' => $metadataLog->person_identifier ?: ($employee->tipsoi_identifier ?: $employee->employee_code),
+                'tipsoi_person_name' => $existing?->tipsoi_person_name ?: $employee->name,
+                'tipsoi_rfid' => $metadataLog->rfid ?: $employee->tipsoi_rfid,
+                'tipsoi_primary_display_text' => $metadataLog->primary_display_text ?: $employee->tipsoi_primary_display_text,
+                'tipsoi_secondary_display_text' => $metadataLog->secondary_display_text ?: $employee->tipsoi_secondary_display_text,
+                'tipsoi_hours' => $this->formatMinutesAsTipsoiHours((int) $resolved['worked_minutes']),
+                'tipsoi_external_id' => 'tipsoi-raw-' . $employeeId . '-' . $businessDate,
+                'tipsoi_synced_at' => now(),
+                'tipsoi_push_status' => 'remote',
+                'tipsoi_push_error' => null,
+            ])
+        );
+
+        return true;
+    }
+
+    /** @return array{0: Carbon, 1: Carbon} */
+    private function businessDateBoundaries(Employee $employee, string $businessDate): array
+    {
+        $date = Carbon::parse($businessDate)->startOfDay();
+        $previousDate = $date->copy()->subDay()->toDateString();
+        $nextDate = $date->copy()->addDay()->toDateString();
+
+        $previous = $this->scheduleWindow($employee, $previousDate);
+        $current = $this->scheduleWindow($employee, $businessDate);
+        $next = $this->scheduleWindow($employee, $nextDate);
+
+        $boundaryStart = $this->midpointBetween($previous['end'], $current['start']) ?: $current['start']->copy()->subHours(8);
+        $boundaryEnd = $this->midpointBetween($current['end'], $next['start']) ?: $current['end']->copy()->addHours(8);
+
+        return [$boundaryStart, $boundaryEnd];
+    }
+
+    private function businessDateForPunch(Employee $employee, Carbon $punch): string
+    {
+        $calendarDate = $punch->toDateString();
+        $previousDate = $punch->copy()->subDay()->toDateString();
+        $previous = $this->scheduleWindow($employee, $previousDate);
+        $current = $this->scheduleWindow($employee, $calendarDate);
+        $boundary = $this->midpointBetween($previous['end'], $current['start']);
+
+        if (!$boundary) {
+            return $calendarDate;
+        }
+
+        return $punch->lt($boundary) ? $previousDate : $calendarDate;
+    }
+
+    /** @return array{start: Carbon, end: Carbon} */
+    private function scheduleWindow(Employee $employee, string $date): array
+    {
+        $schedule = $this->resolveSchedule($employee, $date);
+        $start = Carbon::parse($date . ' ' . $schedule['start_time']);
+        $end = Carbon::parse($date . ' ' . $schedule['end_time']);
+        if ($schedule['shift']?->is_overnight || $end->lessThanOrEqualTo($start)) {
+            $end->addDay();
+        }
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    private function midpointBetween(Carbon $left, Carbon $right): ?Carbon
+    {
+        $seconds = $left->diffInSeconds($right, false);
+        if ($seconds <= 0) {
+            return null;
+        }
+
+        return $left->copy()->addSeconds((int) floor($seconds / 2));
+    }
+
+    private function rawLocalLoggedAt(TipsoiAttendanceLog $log): ?Carbon
+    {
+        $payload = is_array($log->raw_payload) ? $log->raw_payload : [];
+        return $this->parseTipsoiLocalDateTime($payload['logged_time'] ?? null)
+            ?: ($log->logged_time ? Carbon::parse($log->logged_time->format('Y-m-d H:i:s')) : null);
+    }
+
+    private function parseTipsoiLocalDateTime(mixed $value): ?Carbon
+    {
+        if (!$value) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            try {
+                return Carbon::createFromFormat($format, $value);
+            } catch (Throwable) {
+                // Try the next vendor format.
+            }
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function parseTipsoiHoursToMinutes(mixed $hours): ?int
+    {
+        if ($hours === null || trim((string) $hours) === '') {
+            return null;
+        }
+
+        $parts = explode(':', trim((string) $hours), 2);
+        if (!is_numeric($parts[0] ?? null)) {
+            return null;
+        }
+
+        return max(0, ((int) $parts[0] * 60) + (int) ($parts[1] ?? 0));
+    }
+
+    private function formatMinutesAsTipsoiHours(int $minutes): string
+    {
+        $minutes = max(0, $minutes);
+        return intdiv($minutes, 60) . ':' . ($minutes % 60);
+    }
+
+    private function correctJoinDateFromAttendance(Employee $employee, string $attendanceDate): void
+    {
+        if (!$employee->join_date) {
+            return;
+        }
+
+        $joinDate = Carbon::parse($employee->join_date)->toDateString();
+        if ($joinDate > $attendanceDate) {
+            // The remote People API has no joining-date field. Auto-created
+            // employees initially use today, but an older TIPSOI punch proves
+            // the person was already employed. Move only backward, never forward.
+            $employee->forceFill(['join_date' => $attendanceDate])->save();
+        }
     }
 
     private function timeOnly(mixed $value): ?string

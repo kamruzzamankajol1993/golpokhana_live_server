@@ -31,12 +31,11 @@
                         $selectedShift = $attendance?->shift_id
                             ?: ($roster?->shift_id ?: $employee->default_shift_id);
 
-                        $status = $attendance?->status
-                            ?: ($roster?->status === 'off'
-                                ? 'off_day'
-                                : ($roster?->status === 'scheduled'
-                                    ? 'present'
-                                    : ($isGlobalOffDay ? 'off_day' : 'present')));
+                        // Controller resolves inferred absence after the employee's
+                        // effective scheduled end time. Before the cutoff, an unsynced
+                        // editable row keeps the existing Present default.
+                        $status = $effectiveStatusMap->get($employee->id)
+                            ?: ($attendance?->status ?: 'present');
 
                         $locked = $attendance?->source === 'system'
                             && $attendance?->status === 'leave';

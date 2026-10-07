@@ -29,13 +29,6 @@
                 </div>
             </div>
             <div class="attendance-action-bar">
-                @if($attendanceSetting?->tipsoi_enabled)
-                    @canany(['attendance-create','attendance-edit'])
-                        <button type="button" class="progga-btn progga-btn-outline" id="tipsoiPullAttendanceBtn">
-                            <i class="bi bi-arrow-repeat"></i> Sync Attendance
-                        </button>
-                    @endcanany
-                @endif
                 @can('attendance-view')
                     <a href="{{ route('hr.tipsoi.devices.index') }}" class="progga-btn progga-btn-outline">
                         <i class="bi bi-hdd-network"></i> Attendance Device
@@ -64,6 +57,47 @@
             <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-clock-history"></i></div><div><div class="hr-stat-value attendance-summary-value" data-summary="late">{{ $summary['late'] }}</div><div class="hr-stat-label">Late</div></div></div>
             <div class="hr-stat-card"><div class="hr-stat-icon"><i class="bi bi-person-x"></i></div><div><div class="hr-stat-value attendance-summary-value" data-summary="absent">{{ $summary['absent'] }}</div><div class="hr-stat-label">Absent</div></div></div>
         </div>
+
+        @if($attendanceSetting?->tipsoi_enabled)
+            <div class="hr-card mb-3">
+                <div class="hr-card-header">
+                    <div>
+                        <div class="hr-card-title">TIPSOI Attendance Sync</div>
+                        <div class="hr-card-subtitle">Sync one selected day or pull attendance for a custom date range.</div>
+                    </div>
+                </div>
+                <div class="hr-card-body">
+                    <div class="hr-filter-grid five">
+                        <div>
+                            <label class="progga-form-label">Single Date</label>
+                            <input id="tipsoiSingleSyncDate" class="progga-form-control" value="{{ $date }}">
+                        </div>
+                        <div class="d-flex align-items-end">
+                            @canany(['attendance-create','attendance-edit'])
+                                <button type="button" class="progga-btn progga-btn-outline w-100" id="tipsoiSingleDateSyncBtn">
+                                    <i class="bi bi-arrow-repeat"></i> Sync Selected Date
+                                </button>
+                            @endcanany
+                        </div>
+                        <div>
+                            <label class="progga-form-label">From Date</label>
+                            <input id="tipsoiSyncFromDate" class="progga-form-control" value="{{ $date }}">
+                        </div>
+                        <div>
+                            <label class="progga-form-label">To Date</label>
+                            <input id="tipsoiSyncToDate" class="progga-form-control" value="{{ $date }}">
+                        </div>
+                        <div class="d-flex align-items-end">
+                            @canany(['attendance-create','attendance-edit'])
+                                <button type="button" class="progga-btn progga-btn-primary w-100" id="tipsoiRangeSyncBtn">
+                                    <i class="bi bi-calendar-range"></i> Sync Date Range
+                                </button>
+                            @endcanany
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
 
         <div class="hr-card mb-3">
             <div class="hr-card-header">
@@ -108,10 +142,17 @@
         HrUi.initSelect2('.attendance-select2');
         HrUi.initSelect2($('#attendanceTableContainer'));
         const datePicker = HrUi.initFlatpickr('#attendanceDate', {
-            onChange: function () {
+            onChange: function (selectedDates, dateStr) {
+                if (dateStr) {
+                    const singlePicker = document.querySelector('#tipsoiSingleSyncDate')?._flatpickr;
+                    if (singlePicker) singlePicker.setDate(dateStr, false);
+                }
                 if (!attendancePageInitializing) loadAttendance(1);
             }
         });
+        HrUi.initFlatpickr('#tipsoiSingleSyncDate');
+        HrUi.initFlatpickr('#tipsoiSyncFromDate');
+        HrUi.initFlatpickr('#tipsoiSyncToDate');
 
         const shouldRunAttendancePageSync = @json((bool) ($shouldRunAttendancePageSync ?? false));
         const attendanceAutoSyncUrl = @json(route('hr.tipsoi.attendance.auto-sync'));
@@ -127,22 +168,53 @@
             });
         }
 
-        $('#tipsoiPullAttendanceBtn').on('click', function () {
-            const date = $('#attendanceDate').val();
-            if (!date) return;
-            const button = $(this).prop('disabled', true);
-            showAttendanceSyncLoader('Syncing Attendance', date);
+        function syncTipsoiAttendance(fromDate, toDate, button, successTitle) {
+            if (!fromDate || !toDate) {
+                Swal.fire('Date Required', 'Please select both From Date and To Date.', 'warning');
+                return;
+            }
+            if (fromDate > toDate) {
+                Swal.fire('Invalid Date Range', 'To Date cannot be before From Date.', 'warning');
+                return;
+            }
+
+            const syncButton = button ? $(button).prop('disabled', true) : $();
+            const label = fromDate === toDate ? fromDate : (fromDate + ' to ' + toDate);
+            showAttendanceSyncLoader('Syncing Attendance', label);
+
             $.post("{{ route('hr.tipsoi.attendance.pull') }}", {
                 _token: "{{ csrf_token() }}",
-                from_date: date,
-                to_date: date
+                from_date: fromDate,
+                to_date: toDate
             }).done(function (response) {
                 Swal.close();
                 loadAttendance(1);
-                Swal.fire({icon:'success',title:'Attendance Synced',text:response.message || 'Attendance synced successfully.',timer:1600,showConfirmButton:false});
+                Swal.fire({
+                    icon: 'success',
+                    title: successTitle || 'Attendance Synced',
+                    text: response.message || 'Attendance synced successfully.',
+                    timer: 1800,
+                    showConfirmButton: false
+                });
             }).fail(function (xhr) {
                 Swal.fire('Attendance Sync Failed', xhr.responseJSON?.message || 'Attendance sync failed.', 'error');
-            }).always(function () { button.prop('disabled', false); });
+            }).always(function () {
+                syncButton.prop('disabled', false);
+            });
+        }
+
+        $('#tipsoiSingleDateSyncBtn').on('click', function () {
+            const date = $('#tipsoiSingleSyncDate').val();
+            syncTipsoiAttendance(date, date, this, 'Selected Date Synced');
+        });
+
+        $('#tipsoiRangeSyncBtn').on('click', function () {
+            syncTipsoiAttendance(
+                $('#tipsoiSyncFromDate').val(),
+                $('#tipsoiSyncToDate').val(),
+                this,
+                'Date Range Synced'
+            );
         });
 
         // First Attendance visit after login only. The controller marks this

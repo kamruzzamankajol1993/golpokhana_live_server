@@ -86,6 +86,19 @@ class AttendanceController extends Controller
     {
         $query = Employee::with(['department', 'designation', 'defaultShift'])
             ->where('employment_status', 'active')
+            // Do not show employees who had not joined yet on a historical daily sheet,
+            // unless TIPSOI/local attendance is already present for that date. Remote
+            // TIPSOI employees may initially have an inferred join date, so real
+            // attendance remains stronger evidence than that local date.
+            ->where(function ($employeeQuery) use ($date) {
+                $employeeQuery->whereDate('join_date', '<=', $date)
+                    ->orWhereHas('attendances', fn ($attendanceQuery) => $attendanceQuery->whereDate('attendance_date', $date));
+            })
+            ->where(function ($employeeQuery) use ($date) {
+                $employeeQuery->whereNull('exit_date')
+                    ->orWhereDate('exit_date', '>=', $date)
+                    ->orWhereHas('attendances', fn ($attendanceQuery) => $attendanceQuery->whereDate('attendance_date', $date));
+            })
             ->orderBy('name');
 
         if ($request->filled('search')) {
@@ -109,36 +122,84 @@ class AttendanceController extends Controller
             });
         }
 
-        if ($request->filled('status')) {
-            $status = $request->status;
-            if ($status === 'not_marked') {
-                $query->whereDoesntHave('attendances', fn ($q) => $q->whereDate('attendance_date', $date));
-            } else {
-                $query->whereHas('attendances', fn ($q) => $q->whereDate('attendance_date', $date)->where('status', $status));
-            }
+        $attendanceSetting = AttendanceSetting::first();
+        $weeklyOffDays = collect($attendanceSetting?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
+        $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
+            || Holiday::where('status', true)->whereDate('holiday_date', $date)->exists();
+
+        $statusFilter = $request->filled('status') ? (string) $request->status : null;
+
+        // Status filtering must include inferred absences. A simple whereHas()
+        // cannot see employees with no attendance row, so when a status filter
+        // is active we resolve each employee's effective daily status first and
+        // then paginate the filtered collection.
+        if ($statusFilter) {
+            $allEmployees = $query->get();
+            $allIds = $allEmployees->pluck('id');
+            $allAttendanceMap = Attendance::whereIn('employee_id', $allIds)
+                ->whereDate('attendance_date', $date)
+                ->get()
+                ->keyBy('employee_id');
+            $allRosterMap = ShiftRoster::with('shift')
+                ->whereIn('employee_id', $allIds)
+                ->whereDate('roster_date', $date)
+                ->get()
+                ->keyBy('employee_id');
+
+            $filtered = $allEmployees->filter(function ($employee) use ($statusFilter, $date, $allAttendanceMap, $allRosterMap, $isGlobalOffDay, $attendanceSetting) {
+                $attendance = $allAttendanceMap->get($employee->id);
+                $roster = $allRosterMap->get($employee->id);
+                $effective = $this->effectiveStatusForDate($employee, $date, $attendance, $roster, $isGlobalOffDay, $attendanceSetting, true);
+                return $effective === $statusFilter;
+            })->values();
+
+            $page = max(1, (int) $request->get('page', 1));
+            $perPage = 10;
+            $employees = new LengthAwarePaginator(
+                $filtered->forPage($page, $perPage)->values(),
+                $filtered->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } else {
+            $employees = $query->paginate(10)->withQueryString();
         }
 
-        $employees = $query->paginate(10)->withQueryString();
         $employeeIds = $employees->pluck('id');
         $attendanceMap = Attendance::whereIn('employee_id', $employeeIds)
             ->whereDate('attendance_date', $date)
             ->get()
             ->keyBy('employee_id');
-        $rosterMap = ShiftRoster::whereIn('employee_id', $employeeIds)
+        $rosterMap = ShiftRoster::with('shift')
+            ->whereIn('employee_id', $employeeIds)
             ->whereDate('roster_date', $date)
             ->get()
             ->keyBy('employee_id');
         $shifts = Shift::where('status', true)->orderBy('sort_order')->orderBy('name')->get();
-        $attendanceSetting = AttendanceSetting::first();
-        $weeklyOffDays = collect($attendanceSetting?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
-        $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
-            || Holiday::where('status', true)->whereDate('holiday_date', $date)->exists();
         $timeFormat = HrSetting::first()?->time_format ?? 'h:i A';
+
+        $effectiveStatusMap = collect();
+        foreach ($employees as $employee) {
+            $effectiveStatusMap->put(
+                $employee->id,
+                $this->effectiveStatusForDate(
+                    $employee,
+                    $date,
+                    $attendanceMap->get($employee->id),
+                    $rosterMap->get($employee->id),
+                    $isGlobalOffDay,
+                    $attendanceSetting,
+                    false
+                )
+            );
+        }
 
         return [
             'employees' => $employees,
             'attendanceMap' => $attendanceMap,
             'rosterMap' => $rosterMap,
+            'effectiveStatusMap' => $effectiveStatusMap,
             'shifts' => $shifts,
             'date' => $date,
             'isGlobalOffDay' => $isGlobalOffDay,
@@ -691,7 +752,12 @@ class AttendanceController extends Controller
         if ($validated['status'] === 'present' && $metrics['late_minutes'] > 0 && (AttendanceSetting::first()?->auto_calculate_late ?? true)) {
             $validated['status'] = 'late';
         }
-        $attendance->update(array_merge($validated, $metrics, ['marked_by' => auth()->id()]));
+        // A deliberate HR edit becomes a manual override. TIPSOI background
+        // sync respects manual rows and will not overwrite this correction.
+        $attendance->update(array_merge($validated, $metrics, [
+            'source' => 'manual',
+            'marked_by' => auth()->id(),
+        ]));
         return response()->json(['success' => true, 'message' => 'Attendance updated successfully.']);
     }
 
@@ -781,22 +847,115 @@ class AttendanceController extends Controller
 
     private function summaryForDate(string $date): array
     {
-        $active = Employee::where('employment_status', 'active')->count();
-        $counts = Attendance::whereDate('attendance_date', $date)
-            ->select('status', DB::raw('COUNT(*) AS total'))
-            ->groupBy('status')
-            ->pluck('total', 'status');
+        $setting = AttendanceSetting::first();
+        $weeklyOffDays = collect($setting?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
+        $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
+            || Holiday::where('status', true)->whereDate('holiday_date', $date)->exists();
 
-        return [
-            'total' => $active,
-            'present' => (int) ($counts['present'] ?? 0),
-            'late' => (int) ($counts['late'] ?? 0),
-            'absent' => (int) ($counts['absent'] ?? 0),
-            'leave' => (int) ($counts['leave'] ?? 0),
-            'half_day' => (int) ($counts['half_day'] ?? 0),
-            'off_day' => (int) ($counts['off_day'] ?? 0),
-            'not_marked' => max(0, $active - (int) $counts->sum()),
+        $employees = Employee::with('defaultShift')
+            ->where('employment_status', 'active')
+            ->where(function ($employeeQuery) use ($date) {
+                $employeeQuery->whereDate('join_date', '<=', $date)
+                    ->orWhereHas('attendances', fn ($attendanceQuery) => $attendanceQuery->whereDate('attendance_date', $date));
+            })
+            ->where(function ($employeeQuery) use ($date) {
+                $employeeQuery->whereNull('exit_date')
+                    ->orWhereDate('exit_date', '>=', $date)
+                    ->orWhereHas('attendances', fn ($attendanceQuery) => $attendanceQuery->whereDate('attendance_date', $date));
+            })
+            ->get();
+
+        $ids = $employees->pluck('id');
+        $attendanceMap = Attendance::whereIn('employee_id', $ids)
+            ->whereDate('attendance_date', $date)
+            ->get()
+            ->keyBy('employee_id');
+        $rosterMap = ShiftRoster::with('shift')
+            ->whereIn('employee_id', $ids)
+            ->whereDate('roster_date', $date)
+            ->get()
+            ->keyBy('employee_id');
+
+        $counts = [
+            'present' => 0,
+            'late' => 0,
+            'absent' => 0,
+            'leave' => 0,
+            'half_day' => 0,
+            'off_day' => 0,
+            'not_marked' => 0,
         ];
+
+        foreach ($employees as $employee) {
+            $status = $this->effectiveStatusForDate(
+                $employee,
+                $date,
+                $attendanceMap->get($employee->id),
+                $rosterMap->get($employee->id),
+                $isGlobalOffDay,
+                $setting,
+                true
+            );
+            if (array_key_exists($status, $counts)) {
+                $counts[$status]++;
+            }
+        }
+
+        return array_merge(['total' => $employees->count()], $counts);
+    }
+
+    /**
+     * Resolve the status that HR should see for a date when there may be no
+     * physical attendance row yet. Once the employee's scheduled end time has
+     * passed, no valid check-in/punch means Absent. Before that cutoff the day
+     * remains Not Marked in reports/filters; the editable daily grid keeps the
+     * legacy Present selection until the cutoff so Save Visible remains valid.
+     */
+    private function effectiveStatusForDate(
+        Employee $employee,
+        string $date,
+        ?Attendance $attendance,
+        ?ShiftRoster $roster,
+        bool $isGlobalOffDay,
+        ?AttendanceSetting $setting,
+        bool $allowNotMarked
+    ): string {
+        if ($attendance) {
+            return (string) $attendance->status;
+        }
+
+        if ($roster?->status === 'off' || $isGlobalOffDay) {
+            return 'off_day';
+        }
+
+        if ($this->scheduledEndHasPassed($date, $roster?->shift ?: $employee->defaultShift, $setting)) {
+            return 'absent';
+        }
+
+        return $allowNotMarked ? 'not_marked' : 'present';
+    }
+
+    private function scheduledEndHasPassed(string|Carbon $date, ?Shift $shift, ?AttendanceSetting $setting = null): bool
+    {
+        $day = $date instanceof Carbon ? $date->copy()->startOfDay() : Carbon::parse($date)->startOfDay();
+        $setting ??= AttendanceSetting::first();
+
+        $startTime = $shift?->start_time ?: ($setting?->global_start_time ?: null);
+        $endTime = $shift?->end_time ?: ($setting?->global_end_time ?: null);
+
+        if (!$endTime) {
+            return now()->greaterThanOrEqualTo($day->copy()->endOfDay());
+        }
+
+        $scheduledEnd = Carbon::parse($day->toDateString() . ' ' . $endTime);
+        if ($startTime) {
+            $scheduledStart = Carbon::parse($day->toDateString() . ' ' . $startTime);
+            if (($shift?->is_overnight ?? false) || $scheduledEnd->lessThanOrEqualTo($scheduledStart)) {
+                $scheduledEnd->addDay();
+            }
+        }
+
+        return now()->greaterThanOrEqualTo($scheduledEnd);
     }
 
     private function parseExcelDate(mixed $value): ?Carbon
@@ -878,9 +1037,25 @@ class AttendanceController extends Controller
     private function employeesForMonthQuery(Carbon $start, Carbon $end)
     {
         return Employee::query()
-            ->whereDate('join_date', '<=', $end)
-            ->where(function ($query) use ($start) {
-                $query->whereNull('exit_date')->orWhereDate('exit_date', '>=', $start);
+            ->where(function ($employeeQuery) use ($start, $end) {
+                $employeeQuery
+                    ->where(function ($employmentQuery) use ($start, $end) {
+                        $employmentQuery
+                            ->whereDate('join_date', '<=', $end)
+                            ->where(function ($exitQuery) use ($start) {
+                                $exitQuery->whereNull('exit_date')->orWhereDate('exit_date', '>=', $start);
+                            });
+                    })
+                    // TIPSOI People does not supply a joining date. If remote
+                    // attendance exists in the month, that evidence must keep the
+                    // employee in the report even when an auto-created local
+                    // join_date was temporarily too new.
+                    ->orWhereHas('attendances', function ($attendanceQuery) use ($start, $end) {
+                        $attendanceQuery->whereBetween('attendance_date', [
+                            $start->toDateString(),
+                            $end->toDateString(),
+                        ]);
+                    });
             });
     }
 
@@ -901,7 +1076,8 @@ class AttendanceController extends Controller
             ->get()
             ->keyBy(fn ($roster) => $roster->employee_id . '|' . $roster->roster_date->toDateString());
 
-        $weeklyOffDays = collect(AttendanceSetting::first()?->weekly_off_days ?? [])
+        $attendanceSetting = AttendanceSetting::first();
+        $weeklyOffDays = collect($attendanceSetting?->weekly_off_days ?? [])
             ->map(fn ($day) => strtolower($day));
 
         $holidayDates = Holiday::where('status', true)
@@ -924,24 +1100,33 @@ class AttendanceController extends Controller
                 $outsideEmployment = ($employee->join_date && $date->lt($employee->join_date))
                     || ($employee->exit_date && $date->gt($employee->exit_date));
 
-                if ($outsideEmployment) {
+                $shift = $attendance?->shift
+                    ?: ($roster?->shift ?: $employee->defaultShift);
+
+                // Actual attendance is stronger evidence than a locally inferred
+                // join_date. This is especially important for employees imported
+                // from TIPSOI, whose People API has no joining-date field.
+                if ($attendance) {
+                    $status = $attendance->status;
+                } elseif ($outsideEmployment) {
                     $status = 'not_applicable';
                 } elseif ($date->isFuture()) {
                     $status = 'future';
-                } elseif ($attendance) {
-                    $status = $attendance->status;
                 } elseif (
                     $roster?->status === 'off'
                     || $weeklyOffDays->contains(strtolower($date->format('l')))
                     || $holidayDates->has($date->toDateString())
                 ) {
                     $status = 'off_day';
+                } elseif ($this->scheduledEndHasPassed($date, $shift, $attendanceSetting)) {
+                    // Once the scheduled end has passed, an employee with no
+                    // attendance/check-in is definitively absent. This includes
+                    // overnight schedules such as 14:00 -> 02:00, where the
+                    // business day's cutoff is 02:00 on the following calendar day.
+                    $status = 'absent';
                 } else {
                     $status = 'not_marked';
                 }
-
-                $shift = $attendance?->shift
-                    ?: ($roster?->shift ?: $employee->defaultShift);
 
                 $dayMap[$key] = [
                     'date' => $date->copy(),
