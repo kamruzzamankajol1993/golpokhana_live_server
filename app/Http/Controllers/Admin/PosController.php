@@ -197,20 +197,7 @@ public function index(\Illuminate\Http\Request $request)
     // Work periods may cross calendar/business days and remain active until explicitly ended.
     $requirePreviousSessionClose = false;
 
-    // Operational session dropdown follows the restaurant business day, not calendar date.
-    $businessDayWindow = $this->getPosBusinessDayWindow();
-    $sessions = PosSession::with('user')
-        ->whereBetween('start_time', [$businessDayWindow['start'], $businessDayWindow['end']])
-        ->orderBy('id', 'desc')
-        ->get();
-
-    $sessions->transform(function ($session) {
-        $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
-            Carbon::parse($session->start_time),
-            Carbon::parse($session->end_time ?: now())
-        )->sum('grand_total');
-        return $session;
-    });
+    // Session History is fetched on demand when its header modal is opened.
 
     return view('admin.pos.index', compact(
         'categories',
@@ -225,7 +212,6 @@ public function index(\Illuminate\Http\Request $request)
         'activeSession',
         'forceUnfinishedSessionPrompt',
         'requirePreviousSessionClose',
-        'sessions',
         'activeTakeawayDeliveryOrders',
         'isManagerRole',
         'randomHalfOrderButtonVisible',
@@ -241,6 +227,39 @@ public function index(\Illuminate\Http\Request $request)
         'loggedInWaiter'
     ));
 }
+
+    /**
+     * POS header modal: sessions started within the current restaurant business
+     * day and its previous nine business days (ten business-day windows total).
+     * Loaded on demand so reopening the modal always shows the latest sessions.
+     */
+    public function sessionHistory(Request $request)
+    {
+        $businessWindow = $this->getPosBusinessDayWindow();
+        $firstBusinessDate = $businessWindow['business_date']->copy()->subDays(9);
+        $from = $firstBusinessDate->copy()
+            ->setTimeFromTimeString($businessWindow['opening_time'] . ':00');
+        $to = $businessWindow['end'];
+
+        $sessions = PosSession::with('user')
+            ->whereBetween('start_time', [$from, $to])
+            ->orderByDesc('id')
+            ->get();
+
+        $sessions->each(function (PosSession $session) {
+            $session->report_grand_total = (float) $this->reportableOrdersForSessionWindow(
+                $session->start_time->copy(),
+                $session->end_time ? $session->end_time->copy() : Carbon::now('Asia/Dhaka')
+            )->sum('grand_total');
+        });
+
+        return response()->json([
+            'html' => view('admin.pos.partials.session_history_rows', compact('sessions'))->render(),
+            'count' => $sessions->count(),
+            'period' => $firstBusinessDate->format('d M Y') . ' – '
+                . $businessWindow['business_date']->format('d M Y'),
+        ]);
+    }
 
     /**
      * Standalone POS session history page with AJAX pagination.

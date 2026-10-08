@@ -130,6 +130,7 @@ Route::post('pos-session-start', [App\Http\Controllers\Admin\PosController::clas
 Route::post('pos-session-end', [App\Http\Controllers\Admin\PosController::class, 'endSession'])->name('pos.session.end');
 Route::post('pos-session-activity', [App\Http\Controllers\Admin\PosController::class, 'touchSessionActivity'])->name('pos.session.activity');
 Route::get('pos-session-status', [App\Http\Controllers\Admin\PosController::class, 'sessionStatus'])->name('pos.session.status');
+Route::get('pos-session-history', [App\Http\Controllers\Admin\PosController::class, 'sessionHistory'])->name('pos.session.history');
 
 // POS Session History & Report Routes
 Route::get('/pos/session/report/{id}', [App\Http\Controllers\Admin\PosController::class, 'printSessionReport'])->name('pos.session.report');

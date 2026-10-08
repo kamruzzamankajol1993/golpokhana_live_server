@@ -352,44 +352,8 @@
                                     <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                @forelse($sessions ?? [] as $key => $sess)
-                                    <tr>
-                                        <td><strong>#{{ $key+1 }}</strong></td>
-                                        <td>{{ $sess->user->name ?? 'N/A' }}</td>
-                                        <td><span class="badge bg-secondary">{{ $sess->weekday }}</span></td>
-                                        <td>{{ $sess->start_time->format('d M y - h:i A') }}</td>
-                                        <td>{{ $sess->end_time ? $sess->end_time->format('d M y - h:i A') : '—' }}</td>
-                                        <td>{{ $sess->duration ?? 'Running' }}</td>
-                                        <td><strong>৳{{ round($sess->report_grand_total ?? $sess->grand_total) }}</strong></td>
-                                        <td>
-                                            <span class="badge {{ $sess->status == 'Open' ? 'bg-success' : 'bg-danger' }}">
-                                                {{ $sess->status }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex gap-1 justify-content-center">
-                                                <button type="button"
-                                                    class="btn btn-sm btn-primary btnEditSession"
-                                                    data-id="{{ $sess->id }}"
-                                                    data-start="{{ $sess->start_time ? $sess->start_time->format('Y-m-d\TH:i') : '' }}"
-                                                    data-end="{{ $sess->end_time ? $sess->end_time->format('Y-m-d\TH:i') : '' }}"
-                                                    data-status="{{ $sess->status }}">
-                                                    <i class="bi bi-pencil-square"></i> Edit
-                                                </button>
-                                                @if($sess->status == 'Closed')
-                                                    <a href="{{ route('pos.session.report', $sess->id) }}" target="_blank" class="btn btn-sm btn-warning fw-bold">
-                                                        <i class="bi bi-printer"></i> Print
-                                                    </a>
-                                                @endif
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="9" class="text-muted py-4">No sessions found!</td>
-                                    </tr>
-                                @endforelse
+                            <tbody id="posSessionHistoryRows">
+                                <tr><td colspan="9" class="text-muted py-4">Open Session History to load sessions.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -3610,6 +3574,35 @@
         $('#posMobileBackdrop').fadeOut('fast');
         $('body').removeClass('progga-pos-overflow-lock');
     });
+
+    // Fetch the latest ten restaurant business days every time the modal opens.
+    // Both the desktop header and the mobile off-canvas use the same modal.
+    let posSessionHistoryRequest = null;
+    function loadPosSessionHistory() {
+        const $rows = $('#posSessionHistoryRows');
+
+        if (posSessionHistoryRequest && posSessionHistoryRequest.readyState !== 4) {
+            posSessionHistoryRequest.abort();
+        }
+        $rows.html('<tr><td colspan="9" class="text-center py-4"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading sessions...</td></tr>');
+
+        posSessionHistoryRequest = $.ajax({
+            url: @json(route('pos.session.history')),
+            type: 'GET',
+            dataType: 'json',
+            cache: false
+        }).done(function(res) {
+            $rows.html(res.html || '<tr><td colspan="9" class="text-muted py-4">No sessions found.</td></tr>');
+        }).fail(function(xhr, status) {
+            if (status === 'abort') return;
+            $rows.html('<tr><td colspan="9" class="text-center text-danger py-4">Could not load session history. <button type="button" class="btn btn-sm btn-outline-primary js-retry-session-history">Retry</button></td></tr>');
+        });
+    }
+
+    $('#sessionHistoryModal').on('show.bs.modal', function() {
+        loadPosSessionHistory();
+    });
+    $(document).on('click', '.js-retry-session-history', loadPosSessionHistory);
 
     // POS workflow note.
     $(document).on('click', '.btnEditSession', function(e) {
