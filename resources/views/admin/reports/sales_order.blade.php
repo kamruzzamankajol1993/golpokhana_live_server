@@ -5,7 +5,15 @@
     <div class="progga-page-header">
         <div><h1 class="progga-page-title">Sales &amp; Order Report</h1><div class="progga-breadcrumb"><a href="{{ route('home') }}" class="progga-breadcrumb-item">Dashboard</a><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item active">Reports</span></div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button type="button" onclick="exportReport('pdf','sales_order')" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+            <div class="dropdown">
+                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" aria-label="PDF export options">
+                    <i class="bi bi-file-earmark-pdf"></i> PDF
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><button type="button" class="dropdown-item" onclick="exportSalesOrderPdf('without')"><i class="bi bi-file-earmark-text me-2"></i>Without Product</button></li>
+                    <li><button type="button" class="dropdown-item" onclick="exportSalesOrderPdf('with')"><i class="bi bi-list-ul me-2"></i>With Product</button></li>
+                </ul>
+            </div>
             <button type="button" onclick="exportReport('excel','sales_order')" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</button>
         </div>
     </div>
@@ -27,6 +35,13 @@
 @endsection
 @section('script')
 <script>
+function exportSalesOrderPdf(productMode) {
+    const filterForm = document.getElementById('reportFilterForm');
+    const params = new URLSearchParams(filterForm ? new FormData(filterForm) : undefined);
+    params.set('report', 'sales_order');
+    params.set('product_mode', productMode === 'with' ? 'with' : 'without');
+    window.open(@json(route('reports.export.pdf')) + '?' + params.toString(), '_blank');
+}
 window.updateReportDOM=function(data){
     $('#salesReportContainer').html(data.html||''); $('#salesReportPagination').html(data.pagination||'');
     if(data.summary){ $('#cardRev').text(data.summary.revenue); $('#cardOrders').text(data.summary.orders); $('#cardAvg').text(data.summary.avg); $('#cardCust').text(data.summary.customers); }

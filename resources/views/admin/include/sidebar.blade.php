@@ -240,7 +240,7 @@
             @canany(['attendance-view','attendance-create','attendance-edit','employee-view','employee-create','employee-edit','hr-setting-view','hr-setting-update'])
             @php $tipsoiMenuOpen = request()->routeIs('hr.tipsoi.*'); @endphp
             <a class="progga-nav-link {{ $tipsoiMenuOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#hrTipsoiDropdown" role="button" aria-expanded="{{ $tipsoiMenuOpen ? 'true' : 'false' }}" style="padding-left:42px;font-size:13px;">
-                <i class="bi bi-fingerprint progga-nav-icon"></i><span>TIPSOI</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
+                <i class="bi bi-fingerprint progga-nav-icon"></i><span>Device Sync</span><i class="bi bi-chevron-down ms-auto" style="font-size:10px;"></i>
             </a>
             <div class="collapse {{ $tipsoiMenuOpen ? 'show' : '' }}" id="hrTipsoiDropdown">
                 @can('employee-view')

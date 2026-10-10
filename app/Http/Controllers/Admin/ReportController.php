@@ -2208,17 +2208,153 @@ class ReportController extends Controller
     }
 
 
+    /**
+     * Sales & Order PDF: render bounded HTML tables rather than materializing
+     * all orders, all order details, and one huge HTML string in PHP memory.
+     */
+    private function exportSalesOrderPdfInChunks(Request $request)
+    {
+        $filters = $this->resolveReportFilters($request);
+        $startDate = $filters['startDate'];
+        $endDate = $filters['endDate'];
+        $withProducts = $request->query('product_mode') === 'with';
+
+        $baseQuery = Order::query()
+            ->where('status', 'Completed')
+            ->whereBetween('created_at', [$startDate, $endDate]);
+
+        // Database totals; do not hold every order in a Collection for SUM()/COUNT().
+        $aggregates = (clone $baseQuery)->selectRaw(
+            'COUNT(*) AS order_count, '
+            . 'COALESCE(SUM(subtotal), 0) AS subtotal, '
+            . 'COALESCE(SUM(discount_amount), 0) AS discount_amount, '
+            . 'COALESCE(SUM(product_discount_amount), 0) AS product_discount_amount, '
+            . 'COALESCE(SUM(service_charge), 0) AS service_charge, '
+            . 'COALESCE(SUM(tips_amount), 0) AS tips_amount, '
+            . 'COALESCE(SUM(grand_total), 0) AS grand_total'
+        )->first();
+
+        $reportTotals = [
+            'order_count' => (int) $aggregates->order_count,
+            'subtotal' => (float) $aggregates->subtotal,
+            'discount_amount' => (float) $aggregates->discount_amount,
+            'product_discount_amount' => (float) $aggregates->product_discount_amount,
+            'service_charge' => (float) $aggregates->service_charge,
+            'tips_amount' => (float) $aggregates->tips_amount,
+            'grand_total' => (float) $aggregates->grand_total,
+        ];
+        $fileName = $this->reportFileName('sales_order', 'pdf');
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0775, true);
+        }
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => $withProducts ? 'A3' : 'A4',
+            'orientation' => 'L',
+            'margin_left' => 8,
+            'margin_right' => 8,
+            'margin_top' => 10,
+            'margin_bottom' => 10,
+            'tempDir' => $tempDir,
+            'autoScriptToLang' => true,
+            'autoLangToFont' => true,
+            'default_font' => 'freesans',
+        ]);
+        $mpdf->SetTitle($fileName);
+
+        $sharedView = [
+            'report' => 'sales_order',
+            'withProducts' => $withProducts,
+            'reportTotals' => $reportTotals,
+            'restaurant' => RestaurantSetting::first(),
+            'filterLabel' => $filters['filterLabel'],
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+        ];
+        $mpdf->WriteHTML(view('admin.reports.partials.sales_pdf_header', $sharedView)->render());
+
+        // Load only the columns used by this PDF. Eager-load items exclusively
+        // for "With Product", preventing per-order N+1 queries.
+        $rowsQuery = (clone $baseQuery)->select([
+            'id', 'order_number', 'customer_id', 'table_id', 'order_type',
+            'subtotal', 'discount_amount', 'product_discount_amount',
+            'service_charge', 'tips_amount', 'given_money', 'change_amount',
+            'grand_total', 'payment_type', 'paid_in_cash', 'paid_in_card',
+            'paid_in_mfc', 'card_type', 'mfs_provider', 'status',
+            'created_at', 'kitchen_to_payment_minutes',
+        ])->with(['customer:id,name', 'table:id,table_number']);
+
+        if ($withProducts) {
+            $rowsQuery->with([
+                'orderDetails:id,order_id,product_name,quantity,is_unavailable,product_discount_type,product_discount_value,product_discount_amount',
+            ]);
+        }
+
+        $rowOffset = 0;
+        $rowsQuery->chunkByIdDesc(100, function ($dataRows) use (
+            $mpdf, $sharedView, $reportTotals, &$rowOffset
+        ) {
+            $mpdf->WriteHTML(view('admin.reports.partials.sales_pdf_table', $sharedView + [
+                'dataRows' => $dataRows,
+                'rowOffset' => $rowOffset,
+                'showTotals' => $rowOffset + $dataRows->count() >= $reportTotals['order_count'],
+                'periodTotalSale' => $reportTotals['grand_total'],
+            ])->render());
+            $rowOffset += $dataRows->count();
+        });
+
+        if ($rowOffset === 0) {
+            $mpdf->WriteHTML(view('admin.reports.partials.sales_pdf_table', $sharedView + [
+                'dataRows' => collect(),
+                'rowOffset' => 0,
+                'showTotals' => true,
+                'periodTotalSale' => 0,
+            ])->render());
+        }
+
+        $mpdf->WriteHTML(view('admin.reports.partials.sales_pdf_footer', $sharedView)->render());
+
+        // mPDF writes to a temporary PDF file; Laravel streams that file to the
+        // browser, avoiding a second full-size PDF buffer in the PHP response.
+        $pdfPath = tempnam($tempDir, 'sales_pdf_');
+        if ($pdfPath === false) {
+            throw new \RuntimeException('Unable to create PDF temporary file.');
+        }
+        try {
+            $mpdf->Output($pdfPath, Destination::FILE);
+        } catch (\Throwable $exception) {
+            @unlink($pdfPath);
+            throw $exception;
+        }
+        unset($mpdf);
+
+        return response()->file($pdfPath, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'max-age=0',
+        ])->deleteFileAfterSend(true);
+    }
+
     public function exportPdf(Request $request)
     {
         $this->authorizeRequestedReportExport($request);
-        // 1. বড় HTML স্ট্রিং পার্স করার জন্য লিমিটগুলো বাড়িয়ে দিন
+        // PDF output can still be large; keep the previous server limits for
+        // both chunked and legacy reports.
         @ini_set('pcre.backtrack_limit', '50000000');
         @ini_set('memory_limit', '1024M');
         @ini_set('max_execution_time', '300');
         @set_time_limit(300);
+        if ($request->get('report', 'sales_order') === 'sales_order') {
+            return $this->exportSalesOrderPdfInChunks($request);
+        }
 
-        // 2. এরপর আপনার আগের কোডগুলো থাকবে
+        // Product details are an opt-in option for Sales & Order PDF only.
+        // Other reports and Excel exports retain their existing layouts.
         $viewData = $this->exportViewData($request);
+        $viewData['withProducts'] = $viewData['report'] === 'sales_order'
+            && $request->query('product_mode') === 'with';
         $html = view('admin.reports.pdf_export', $viewData)->render();
         $fileName = $this->reportFileName($viewData['report'], 'pdf');
         $tempDir = storage_path('app/mpdf-temp');
@@ -2229,7 +2365,7 @@ class ReportController extends Controller
 
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
-            'format' => 'A4',
+            'format' => $viewData['withProducts'] ? 'A3' : 'A4',
             'orientation' => in_array($viewData['report'], ['payment_type_sales', 'sales_order', 'complimentary_orders'], true) ? 'L' : 'P',
             'margin_left' => 8,
             'margin_right' => 8,
