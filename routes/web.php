@@ -72,6 +72,121 @@ Route::post('/reset-password', [CustomResetPasswordController::class, 'resetPass
 
 Route::middleware(['auth'])->group(function () {
 
+// Accounting V2.1 Phase 1 — single-company foundation, permission-gated.
+Route::prefix('accounting')->name('accounting.')->group(function () {
+    // Phase 5: only POSTED General Ledger contributes to official reports.
+    Route::get('/financial-dashboard', fn() => redirect()->route('accounting.dashboard'))->name('financial-dashboard');
+    Route::get('/financial-reports', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'index'])->name('reports');
+    Route::get('/reports/balance-sheet', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'balanceSheet'])->name('reports.balance-sheet');
+    Route::get('/reports/profit-loss', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'profitLoss'])->name('reports.profit-loss');
+    Route::get('/reports/general-ledger', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'generalLedger'])->name('reports.general-ledger');
+    Route::get('/reports/cash-flow', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'cashFlow'])->name('reports.cash-flow');
+    Route::get('/reports/trial-balance', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'trialBalance'])->name('reports.trial-balance');
+    Route::get('/reports/tax', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'taxActivity'])->name('reports.tax');
+    Route::get('/reports/aging', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'agingReport'])->name('reports.aging');
+    Route::get('/financial-reports/pdf', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'pdf'])->name('reports.pdf');
+    Route::get('/financial-reports/export', [\App\Http\Controllers\Admin\Accounting\FinancialReports\FinancialReportsController::class,'export'])->name('reports.export');
+    Route::get('/financial-report-rules', [\App\Http\Controllers\Admin\Accounting\ReportingRules\ReportingRulesController::class,'rules'])->name('report-rules');
+    Route::post('/financial-report-rules', [\App\Http\Controllers\Admin\Accounting\ReportingRules\ReportingRulesController::class,'saveRules'])->name('report-rules.save');
+    Route::get('/opening-cutover', [\App\Http\Controllers\Admin\Accounting\OpeningBalances\OpeningBalancesController::class,'cutover'])->name('cutover');
+    Route::post('/opening-cutover', [\App\Http\Controllers\Admin\Accounting\OpeningBalances\OpeningBalancesController::class,'prepareCutover'])->name('cutover.prepare');
+    Route::post('/opening-cutover/{id}/items', [\App\Http\Controllers\Admin\Accounting\OpeningBalances\OpeningBalancesController::class,'addOpeningItem'])->whereNumber('id')->name('cutover.items');
+    Route::post('/opening-items/{itemId}/allocate', [\App\Http\Controllers\Admin\Accounting\OpeningBalances\OpeningBalancesController::class,'allocateOpening'])->whereNumber('itemId')->name('cutover.allocate');
+    Route::post('/opening-cutover/{id}/approve', [\App\Http\Controllers\Admin\Accounting\OpeningBalances\OpeningBalancesController::class,'approveCutover'])->whereNumber('id')->name('cutover.approve');
+    Route::get('/budgets', [\App\Http\Controllers\Admin\Accounting\Budgets\BudgetsController::class,'budgets'])->name('budgets');
+    Route::post('/budgets', [\App\Http\Controllers\Admin\Accounting\Budgets\BudgetsController::class,'createBudget'])->name('budgets.create');
+    Route::post('/budgets/{id}/lines', [\App\Http\Controllers\Admin\Accounting\Budgets\BudgetsController::class,'saveBudgetLine'])->whereNumber('id')->name('budgets.lines');
+    Route::post('/budgets/{id}/approve', [\App\Http\Controllers\Admin\Accounting\Budgets\BudgetsController::class,'approveBudget'])->whereNumber('id')->name('budgets.approve');
+    Route::get('/closing-review', [\App\Http\Controllers\Admin\Accounting\PeriodClosing\PeriodClosingController::class,'closingReview'])->name('closing');
+    Route::post('/closing-review/year/{yearId}/draft', [\App\Http\Controllers\Admin\Accounting\PeriodClosing\PeriodClosingController::class,'yearEnd'])->whereNumber('yearId')->name('closing.year-draft');
+    Route::post('/closing-review/year/{yearId}/refresh', [\App\Http\Controllers\Admin\Accounting\PeriodClosing\PeriodClosingController::class,'refreshYearEnd'])->whereNumber('yearId')->name('closing.year-refresh');
+    Route::post('/closing-review/year/{yearId}/finish', [\App\Http\Controllers\Admin\Accounting\PeriodClosing\PeriodClosingController::class,'finishYear'])->whereNumber('yearId')->name('closing.year-finish');
+
+    Route::get('/', [\App\Http\Controllers\Admin\Accounting\FinancialDashboard\FinancialDashboardController::class,'dashboard'])->name('dashboard');
+    // Phase 4 — Extended Ledger. Mutations are permission-gated in controllers.
+    Route::get('/payroll-ledger', [\App\Http\Controllers\Admin\Accounting\Payroll\PayrollAccountingController::class,'payroll'])->name('payroll');
+    Route::post('/payroll-ledger/funding', [\App\Http\Controllers\Admin\Accounting\Payroll\PayrollAccountingController::class,'verifyFunding'])->name('payroll.funding');
+    Route::post('/payroll-ledger/repayment', [\App\Http\Controllers\Admin\Accounting\Payroll\PayrollAccountingController::class,'verifyRepayment'])->name('payroll.repayment');
+    Route::get('/due-terms', [\App\Http\Controllers\Admin\Accounting\PaymentTerms\PaymentTermsController::class,'dueTerms'])->name('due-terms');
+    Route::post('/due-terms', [\App\Http\Controllers\Admin\Accounting\PaymentTerms\PaymentTermsController::class,'saveTerms'])->name('due-terms.save');
+    Route::post('/due-terms/followups', [\App\Http\Controllers\Admin\Accounting\PaymentTerms\PaymentTermsController::class,'followup'])->name('due-terms.followup');
+    Route::get('/cost-centers', [\App\Http\Controllers\Admin\Accounting\CostCenters\CostCentersController::class,'costCenters'])->name('cost-centers');
+    Route::post('/cost-centers', [\App\Http\Controllers\Admin\Accounting\CostCenters\CostCentersController::class,'saveCenter'])->name('cost-centers.save');
+    Route::post('/cost-centers/allocate', [\App\Http\Controllers\Admin\Accounting\CostCenters\CostCentersController::class,'allocate'])->name('cost-centers.allocate');
+    Route::get('/bank-matching', [\App\Http\Controllers\Admin\Accounting\BankReconciliation\BankReconciliationController::class,'bank'])->name('bank');
+    Route::post('/bank-matching', [\App\Http\Controllers\Admin\Accounting\BankReconciliation\BankReconciliationController::class,'saveBankLine'])->name('bank.save');
+    Route::post('/bank-matching/{id}/match', [\App\Http\Controllers\Admin\Accounting\BankReconciliation\BankReconciliationController::class,'matchBank'])->whereNumber('id')->name('bank.match');
+    Route::post('/bank-matching/{id}/unmatch', [\App\Http\Controllers\Admin\Accounting\BankReconciliation\BankReconciliationController::class,'unmatchBank'])->whereNumber('id')->name('bank.unmatch');
+    Route::get('/deferrals', [\App\Http\Controllers\Admin\Accounting\Deferrals\DeferralsController::class,'deferrals'])->name('deferrals');
+    Route::post('/deferrals', [\App\Http\Controllers\Admin\Accounting\Deferrals\DeferralsController::class,'createDeferral'])->name('deferrals.save');
+    Route::post('/deferrals/lines/{id}/generate', [\App\Http\Controllers\Admin\Accounting\Deferrals\DeferralsController::class,'generateDeferral'])->whereNumber('id')->name('deferrals.generate');
+    Route::get('/assets', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'assets'])->name('assets');
+    Route::post('/assets/policy', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'approveAssetPolicy'])->name('assets.policy');
+    Route::post('/assets', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'addAsset'])->name('assets.save');
+    Route::post('/assets/{id}/depreciate', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'depreciation'])->whereNumber('id')->name('assets.depreciate');
+    Route::get('/company-loans', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'loans'])->name('loans');
+    Route::post('/company-loans', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'createLoan'])->name('loans.save');
+    Route::post('/company-loans/{id}/repay', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'repayLoan'])->whereNumber('id')->name('loans.repay');
+
+    // Phase 2: receipts, POS clearing, cash reconciliation; Phase 3: expenses, costs, supplier tax.
+    Route::get('/credit-notes', [\App\Http\Controllers\Admin\Accounting\CreditNotes\CreditNotesController::class,'index'])->name('credits');
+    Route::post('/credit-notes/sales', [\App\Http\Controllers\Admin\Accounting\CreditNotes\CreditNotesController::class,'sale'])->name('credits.sales');
+    Route::post('/credit-notes/deposits', [\App\Http\Controllers\Admin\Accounting\CreditNotes\CreditNotesController::class,'booking'])->name('credits.booking');
+    Route::post('/credit-notes/suppliers', [\App\Http\Controllers\Admin\Accounting\CreditNotes\CreditNotesController::class,'supplier'])->name('credits.supplier');
+    Route::get('/vouchers', [\App\Http\Controllers\Admin\Accounting\Vouchers\VouchersController::class,'vouchers'])->name('vouchers');
+    Route::post('/vouchers', [\App\Http\Controllers\Admin\Accounting\Vouchers\VouchersController::class,'storeVoucher'])->name('vouchers.store');
+    Route::post('/expenses/{id}/attachment', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'attachExpense'])->whereNumber('id')->name('expenses.attach');
+    Route::get('/expense-attachments/{id}', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'downloadExpenseAttachment'])->whereNumber('id')->name('expenses.attachment');
+    Route::post('/cash-reconciliations/{id}/approve', [\App\Http\Controllers\Admin\Accounting\CashReconciliation\CashReconciliationController::class,'approveSession'])->whereNumber('id')->name('sessions.approve');
+    Route::get('/expenses', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'expenses'])->name('expenses');
+    Route::post('/expenses', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'storeExpense'])->name('expenses.store');
+    Route::post('/expenses/{id}/approve', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'approveExpense'])->whereNumber('id')->name('expenses.approve');
+    Route::get('/inventory-cost', [\App\Http\Controllers\Admin\Accounting\InventoryCost\InventoryCostController::class,'costs'])->name('costs');
+    Route::post('/inventory-cost/{id}/verify', [\App\Http\Controllers\Admin\Accounting\InventoryCost\InventoryCostController::class,'verifyCost'])->whereNumber('id')->name('costs.verify');
+    Route::get('/payment-clearing', [\App\Http\Controllers\Admin\Accounting\PaymentClearing\PaymentClearingController::class,'clearing'])->name('clearing');
+    Route::post('/payment-clearing/{transactionId}/settle', [\App\Http\Controllers\Admin\Accounting\PaymentClearing\PaymentClearingController::class,'settle'])->whereNumber('transactionId')->name('clearing.settle');
+    Route::get('/withholdings', [\App\Http\Controllers\Admin\Accounting\WithholdingTax\WithholdingTaxController::class,'withholdings'])->name('withholdings');
+    Route::post('/withholdings', [\App\Http\Controllers\Admin\Accounting\WithholdingTax\WithholdingTaxController::class,'storeWithholding'])->name('withholdings.store');
+    Route::get('/cash-reconciliations', [\App\Http\Controllers\Admin\Accounting\CashReconciliation\CashReconciliationController::class,'sessions'])->name('sessions');
+    Route::post('/cash-reconciliations/{id}', [\App\Http\Controllers\Admin\Accounting\CashReconciliation\CashReconciliationController::class,'reconcileSession'])->whereNumber('id')->name('sessions.reconcile');
+    Route::get('/settings', [\App\Http\Controllers\Admin\Accounting\Settings\AccountingSettingsController::class,'settings'])->name('settings');
+    Route::post('/settings', [\App\Http\Controllers\Admin\Accounting\Settings\AccountingSettingsController::class,'saveSettings'])->name('settings.save');
+    Route::get('/chart-of-accounts', [\App\Http\Controllers\Admin\Accounting\ChartOfAccounts\ChartOfAccountsController::class,'accounts'])->name('accounts');
+    Route::post('/chart-of-accounts', [\App\Http\Controllers\Admin\Accounting\ChartOfAccounts\ChartOfAccountsController::class,'saveAccount'])->name('accounts.save');
+    Route::get('/fiscal-periods', [\App\Http\Controllers\Admin\Accounting\FiscalPeriods\FiscalPeriodsController::class,'periods'])->name('periods');
+    Route::post('/fiscal-periods/years', [\App\Http\Controllers\Admin\Accounting\FiscalPeriods\FiscalPeriodsController::class,'createYear'])->name('periods.year');
+    Route::post('/fiscal-periods/{id}/status', [\App\Http\Controllers\Admin\Accounting\FiscalPeriods\FiscalPeriodsController::class,'changePeriod'])->whereNumber('id')->name('periods.change');
+    Route::get('/journal-types', [\App\Http\Controllers\Admin\Accounting\JournalTypes\JournalTypesController::class,'journalTypes'])->name('journal-types');
+    Route::post('/journal-types', [\App\Http\Controllers\Admin\Accounting\JournalTypes\JournalTypesController::class,'saveJournalType'])->name('journal-types.save');
+    Route::get('/audit-log', [\App\Http\Controllers\Admin\Accounting\AuditLog\AccountingAuditController::class,'audit'])->name('audit');
+    Route::get('/mappings', [\App\Http\Controllers\Admin\Accounting\AccountMappings\AccountMappingsController::class,'mappings'])->name('mappings');
+    Route::post('/mappings', [\App\Http\Controllers\Admin\Accounting\AccountMappings\AccountMappingsController::class,'saveMapping'])->name('mappings.save');
+    Route::get('/pending-events', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'events'])->name('events');
+    Route::post('/pending-events/{id}/generate', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'generate'])->whereNumber('id')->name('events.generate');
+    // Safe deletes are limited to unused master data and unposted drafts; immutable GL has no delete endpoint.
+    Route::delete('/chart-of-accounts/{id}', [\App\Http\Controllers\Admin\Accounting\ChartOfAccounts\ChartOfAccountsController::class,'deleteAccount'])->whereNumber('id')->name('accounts.delete');
+    Route::delete('/journal-types/{id}', [\App\Http\Controllers\Admin\Accounting\JournalTypes\JournalTypesController::class,'deleteJournalType'])->whereNumber('id')->name('journal-types.delete');
+    Route::patch('/journal-types/{id}/deactivate', [\App\Http\Controllers\Admin\Accounting\JournalTypes\JournalTypesController::class,'deactivateJournalType'])->whereNumber('id')->name('journal-types.deactivate');
+    Route::delete('/mappings/{id}', [\App\Http\Controllers\Admin\Accounting\AccountMappings\AccountMappingsController::class,'deleteMapping'])->whereNumber('id')->name('mappings.delete');
+    Route::delete('/cost-centers/{id}', [\App\Http\Controllers\Admin\Accounting\CostCenters\CostCentersController::class,'deleteCenter'])->whereNumber('id')->name('cost-centers.delete');
+    Route::delete('/expenses/{id}', [\App\Http\Controllers\Admin\Accounting\Expenses\ExpensesController::class,'deleteExpense'])->whereNumber('id')->name('expenses.delete');
+    Route::delete('/budgets/{id}', [\App\Http\Controllers\Admin\Accounting\Budgets\BudgetsController::class,'deleteBudget'])->whereNumber('id')->name('budgets.delete');
+    Route::delete('/bank-matching/{id}', [\App\Http\Controllers\Admin\Accounting\BankReconciliation\BankReconciliationController::class,'deleteBankLine'])->whereNumber('id')->name('bank.delete');
+    Route::delete('/journals/{id}', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'deleteDraft'])->whereNumber('id')->name('journals.delete');
+
+    Route::get('/trial-balance', [\App\Http\Controllers\Admin\Accounting\TrialBalance\TrialBalanceController::class,'trialBalance'])->name('trial-balance');
+    Route::get('/journals', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'index'])->name('journals.index');
+    Route::get('/journals/create', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'create'])->name('journals.create');
+    Route::post('/journals', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'store'])->name('journals.store');
+    Route::get('/journals/{id}', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'show'])->whereNumber('id')->name('journals.show');
+    Route::get('/journals/{id}/edit', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'edit'])->whereNumber('id')->name('journals.edit');
+    Route::put('/journals/{id}', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'update'])->whereNumber('id')->name('journals.update');
+    Route::post('/journals/{id}/action', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'action'])->whereNumber('id')->name('journals.action');
+    Route::post('/journals/{id}/attachment', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'upload'])->whereNumber('id')->name('journals.upload');
+    Route::get('/attachments/{id}/download', [\App\Http\Controllers\Admin\Accounting\Journals\JournalsController::class,'attachment'])->whereNumber('id')->name('journals.attachment');
+});
+
+
 // Refresh CSRF token for long-open AJAX pages like Kitchen Board
 Route::get('/refresh-csrf-token', function () {
     return response()->json(['csrf_token' => csrf_token()]);

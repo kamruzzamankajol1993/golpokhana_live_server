@@ -1,0 +1,33 @@
+{{-- Accounting view: explicit Blade control-flow blocks prevent ambiguous compiler output. --}}
+@extends('admin.master.master')
+@section('title','VDS / TDS Withholding')
+@section('body')
+<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<div class="row g-3"><div class="col-lg-5">
+@can('accounting-reconcile')
+<div class="acc-panel"><h3>New Verified Supplier Withholding</h3><p class="acc-hint">Do not assume Bangladesh statutory rates. Enter only accountant-verified withheld BDT and evidence. Records Dr AP / Cr Withholding Payable; never charge the supplier a second payment.</p><form method="post" action="{{ route('accounting.withholdings.store') }}">@csrf
+<div class="mb-3"><label>Received Purchase</label><select class="form-select" name="purchase_id" required><option value="">Select</option>
+@foreach($purchases as $p)
+<option value="{{ $p->id }}">{{ $p->purchase_no }} — {{ $p->total }}</option>
+@endforeach
+</select></div>
+<div class="row g-2 mb-3"><div class="col-6"><label>Tax</label><select class="form-select" name="tax_type"><option>TDS</option><option>VDS</option></select></div><div class="col-6"><label>Amount BDT</label><input name="amount" class="form-control" required min="0.0001" step="0.0001" type="number"></div></div>
+<div class="mb-3"><label>Date</label><input class="form-control" name="entry_date" type="date" required value="{{ date('Y-m-d') }}"></div>
+<div class="mb-3"><label>Withholding Certificate / Reference</label><input class="form-control" name="reference" maxlength="200" required></div><div class="mb-3"><label>Evidence and Authority</label><textarea class="form-control" name="evidence" rows="2" required minlength="10" maxlength="3000"></textarea></div><button class="btn btn-primary">Create Review Draft</button></form></div>
+@endcan
+</div>
+<div class="col-lg-7"><div class="acc-panel"><h3>Withholding Register</h3>
+@php 
+$accPager1 = \App\Support\Accounting\TablePaginator::paginate($records, 'acc_withholding_tax_1'); 
+@endphp
+<div class="acc-ajax-list" id="acc-list-withholding-tax-1">
+<table class="table"><thead><tr><th>Purchase</th><th>Tax</th><th>BDT</th><th>Reference</th><th>Journal</th></tr></thead><tbody>
+@forelse($accPager1 as $w)
+<tr><td>{{ $w->purchase_no }}</td><td>{{ $w->tax_type }}</td><td>{{ number_format($w->amount,4) }}</td><td>{{ $w->reference }}<div class="acc-hint">{{ $w->status }}</div></td><td><a href="{{ route('accounting.journals.show',$w->journal_entry_id) }}" class="btn btn-sm btn-outline-primary acc-icon-action" title="View journal" aria-label="View journal"><i class="bi bi-eye" aria-hidden="true"></i></a></td></tr>
+@empty
+<tr><td colspan="5">No withholding entries.</td></tr>
+@endforelse
+</tbody></table>
+@include('admin.accounting.shared._pagination', ['paginator'=>$accPager1, 'label'=>'records'])
+</div></div></div></div></main>
+@endsection

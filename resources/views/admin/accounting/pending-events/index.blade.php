@@ -1,0 +1,38 @@
+{{-- Accounting view: explicit Blade control-flow blocks prevent ambiguous compiler output. --}}
+@extends('admin.master.master')
+@section('title','Pending Accounting Events')
+@section('body')
+<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<div class="acc-panel"><div class="d-flex justify-content-between flex-wrap gap-2"><h3>Pending Accounting Event Queue</h3><span class="acc-hint">Only ON-window source events appear</span></div>
+<form method="get" class="d-flex gap-2 mb-3 flex-wrap"><input name="source_type" class="form-control" placeholder="Source type" style="max-width:180px" value="{{ request('source_type') }}"><select name="status" class="form-select" style="max-width:200px"><option value="">All statuses</option>
+@foreach(['PENDING','MAPPING_ERROR','DRAFT','APPROVED','POSTED'] as $status)
+<option value="{{ $status }}" @selected(request('status')===$status)>{{ $status }}</option>
+@endforeach
+</select><button class="btn btn-primary">Filter</button></form>
+<div class="table-responsive">
+@php 
+$accPager1 = \App\Support\Accounting\TablePaginator::paginate($events, 'acc_pending_events_1'); 
+@endphp
+<div class="acc-ajax-list" id="acc-list-pending-events-1">
+<table class="table table-hover"><thead><tr><th>ID</th><th>Source / Version</th><th>Occurred / Business Date</th><th>Amount</th><th>Status / Errors</th><th>Action</th></tr></thead><tbody>
+@forelse($accPager1 as $event)
+<tr><td>#{{ $event->id }}</td><td><b>{{ $event->source_type }} / {{ $event->source_id }}</b><div class="acc-hint">{{ $event->event_type }} · v{{ $event->source_version }}</div></td><td>{{ $event->occurred_at }}<div class="acc-hint">{{ $event->business_date }}</div></td><td>৳{{ number_format((float)$event->amount,2) }}</td><td><span class="badge {{ $event->status==='POSTED'?'bg-success':'bg-warning text-dark' }}">{{ $event->status }}</span>
+@if($event->last_error)
+<div class="text-danger small">{{ $event->last_error }}</div>
+@endif
+</td>
+<td>
+@if($event->journal_entry_id)
+<a class="btn btn-sm btn-outline-primary acc-icon-action" href="{{ route('accounting.journals.show',$event->journal_entry_id) }}" title="View journal" aria-label="View journal"><i class="bi bi-journal-text" aria-hidden="true"></i></a>
+@elseif(auth()->user()->can('accounting-event-process'))
+<form data-acc-confirm="Generate journal draft from saved source snapshot?" method="post" action="{{ route('accounting.events.generate',$event->id) }}">@csrf<button class="btn btn-sm btn-primary acc-icon-action" title="Generate draft or retry" aria-label="Generate draft or retry"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button></form>
+@endif
+</td></tr>
+@empty
+<tr><td colspan="6">No accounting events yet. Capture OFF or no qualifying source transactions yet.</td></tr>
+@endforelse
+</tbody></table>
+@include('admin.accounting.shared._pagination', ['paginator'=>$accPager1, 'label'=>'events'])
+</div></div></div>
+</main>
+@endsection

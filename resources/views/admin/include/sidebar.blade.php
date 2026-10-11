@@ -84,6 +84,54 @@
     </div>
     @endcanany
 
+ @can('accounting-view')
+    @php
+        $accountingOpen = request()->routeIs('accounting.*');
+        $accountingGroups = config('accounting_navigation', []);
+        $accountingGroupIcons = [
+          'Setup'=>'bi-sliders',
+          'Journals & Operations'=>'bi-journal-text',
+          'Cash & Settlements'=>'bi-cash-stack',
+          'Extended Ledger'=>'bi-diagram-3',
+          'Reports & Closing'=>'bi-bar-chart-line',
+        ];
+    @endphp
+    <div class="progga-nav-section"><div class="progga-nav-section-label">Finance</div></div>
+    <div class="progga-nav-item">
+      <a class="progga-nav-link {{ $accountingOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#accountingModuleDropdown" role="button" aria-expanded="{{ $accountingOpen ? 'true' : 'false' }}" aria-controls="accountingModuleDropdown">
+        <i class="bi bi-journal-check progga-nav-icon"></i><span>Accounting</span>
+        <i class="bi bi-chevron-down ms-auto" style="font-size:11px"></i>
+      </a>
+      <div class="collapse {{ $accountingOpen ? 'show' : '' }}" id="accountingModuleDropdown">
+        <a class="progga-nav-link {{ request()->routeIs('accounting.dashboard') ? 'active' : '' }}" href="{{ route('accounting.dashboard') }}" style="padding-left:42px;font-size:13px">
+          <i class="bi bi-speedometer2 progga-nav-icon"></i><span>Dashboard</span>
+        </a>
+        @foreach($accountingGroups as $group => $items)
+          @php
+            // Render only groups containing at least one authorized child link.
+            $visibleItems = collect($items)->filter(fn ($entry) => auth()->user()?->can($entry['permission']));
+            $groupOpen = $visibleItems->contains(fn ($entry) => request()->routeIs($entry['route']));
+            $groupId = 'accountingSubmenu'.\Illuminate\Support\Str::studly($group);
+          @endphp
+          @if($visibleItems->isNotEmpty())
+            <a class="progga-nav-link {{ $groupOpen ? 'active' : '' }}" data-bs-toggle="collapse" href="#{{ $groupId }}" role="button" aria-expanded="{{ $groupOpen ? 'true' : 'false' }}" aria-controls="{{ $groupId }}" style="padding-left:42px;font-size:13px">
+              <i class="bi {{ $accountingGroupIcons[$group] ?? 'bi-folder2' }} progga-nav-icon"></i><span>{{ $group }}</span>
+              <i class="bi bi-chevron-down ms-auto" style="font-size:10px"></i>
+            </a>
+            <div id="{{ $groupId }}" class="collapse {{ $groupOpen ? 'show' : '' }}" data-bs-parent="#accountingModuleDropdown">
+              @foreach($visibleItems as $entry)
+                <a class="progga-nav-link {{ request()->routeIs($entry['route']) ? 'active' : '' }}" href="{{ route($entry['route']) }}" style="padding-left:59px;font-size:12px">
+                  <i class="bi bi-circle-fill progga-nav-icon" style="font-size:5px"></i><span>{{ $entry['label'] }}</span>
+                </a>
+              @endforeach
+            </div>
+          @endif
+        @endforeach
+      </div>
+    </div>
+ @endcan
+
+
  @canany(['inventory-dashboard-view', 'inventory-kitchen-dashboard-view', 'inventory-kitchen-stock-view', 'inventory-view', 'inventory-units-manage', 'inventory-ingredients-manage', 'inventory-recipes-manage', 'inventory-vendors-manage', 'inventory-purchase-voucher-manage', 'inventory-purchase-approve', 'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-return-post', 'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete', 'inventory-reports-view', 'inventory-transaction-history-view', 'inventory-negative-stock-adjust'])
     <div class="progga-nav-section"><div class="progga-nav-section-label">Inventory</div></div>
     <div class="progga-nav-item">

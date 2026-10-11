@@ -27,6 +27,46 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Accounting V2.1 Phases 2-3: source listeners only register callbacks.
+        // Actual capture occurs AFTER the operational DB commit and respects Capture OFF.
+        \App\Models\Order::saved(static function (\App\Models\Order $order): void {
+            if (strcasecmp((string)$order->status,'Completed')===0 &&
+                ($order->wasRecentlyCreated || $order->wasChanged('status'))) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('order',(int)$order->id);
+            }
+        });
+        \App\Models\OrderDuePayment::created(static function (\App\Models\OrderDuePayment $p): void {
+            \App\Services\Accounting\AccountingSourceBridge::schedule('due',(int)$p->id);
+        });
+        \App\Models\TableBooking::saved(static function (\App\Models\TableBooking $b): void {
+            if ($b->wasRecentlyCreated || $b->wasChanged('advance_amount')) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('booking',(int)$b->id);
+            }
+        });
+        \App\Models\Purchase::saved(static function (\App\Models\Purchase $p): void {
+            if ($p->status===\App\Models\Purchase::STATUS_RECEIVED &&
+                ($p->wasRecentlyCreated || $p->wasChanged('status'))) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('purchase',(int)$p->id);
+            }
+        });
+        \App\Models\VendorPayment::created(static function (\App\Models\VendorPayment $p): void {
+            \App\Services\Accounting\AccountingSourceBridge::schedule('vendor_payment',(int)$p->id);
+        });
+        \App\Models\StockMovement::saved(static function (\App\Models\StockMovement $m): void {
+            if ($m->status===\App\Models\StockMovement::STATUS_POSTED && $m->wasChanged('status')) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('stock_movement',(int)$m->id);
+            }
+        });
+        // Phase 4: per-employee approved payroll is the accrual boundary.
+        \App\Models\PayrollItem::saved(static function (\App\Models\PayrollItem $item): void {
+            if (in_array($item->status,['approved','paid'],true) &&
+                ($item->wasChanged('status') || $item->wasChanged('approved_at'))) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('payroll_item',(int)$item->id);
+            }
+        });
+        \App\Models\PayrollPayment::created(static function (\App\Models\PayrollPayment $p): void {
+            \App\Services\Accounting\AccountingSourceBridge::schedule('payroll_payment',(int)$p->id);
+        });
         try {
             // ১. ডাটাবেস থেকে সেটিংসের প্রথম রেকর্ডগুলো ফেচ করা হচ্ছে
             $restaurantSetting = RestaurantSetting::first();

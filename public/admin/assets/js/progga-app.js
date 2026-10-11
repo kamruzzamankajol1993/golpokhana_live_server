@@ -10,8 +10,8 @@
   function initSelect2(context) {
     if (typeof $.fn.select2 === 'undefined') return;
     /* Target all <select> elements not already initialized and not inside a modal */
-    var $selects = $('select:not(.select2-hidden-accessible):not([data-no-select2])', context || document);
-    $selects.not('.modal select, .modal-body select').each(function () {
+    var $selects = $('select:not(.select2-hidden-accessible):not([data-no-select2]):not(.swal2-select)', context || document);
+    $selects.not('.modal select, .modal-body select, .swal2-container select, .swal2-select').each(function () {
       $(this).select2({
         theme: 'progga-theme',
         width: '100%',
@@ -232,7 +232,7 @@
   function initModalSelect2() {
     document.querySelectorAll('.modal').forEach(function (modal) {
       modal.addEventListener('shown.bs.modal', function () {
-        $(modal).find('select:not(.select2-hidden-accessible):not([data-no-select2])').each(function () {
+        $(modal).find('select:not(.select2-hidden-accessible):not([data-no-select2]):not(.swal2-select').each(function () {
           $(this).select2({
             theme: 'progga-theme',
             width: '100%',
