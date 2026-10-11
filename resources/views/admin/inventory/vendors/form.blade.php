@@ -5,7 +5,7 @@
     <div class="progga-page-header">
         <div>
             <h1 class="progga-page-title">{{ $vendor->exists ? 'Edit Vendor' : 'Add Vendor' }}</h1>
-            <p class="text-muted mb-0">Maintain supplier contact, tax and compliance details for inventory purchasing.</p>
+            <p class="text-muted mb-0">Maintain supplier contact, compliance and document details for inventory purchasing.</p>
         </div>
         <a href="{{ $vendor->exists ? route('inventory.vendors.show',$vendor) : route('inventory.vendors.index') }}" class="progga-btn progga-btn-outline">Back</a>
     </div>
@@ -39,13 +39,13 @@
 
             <div class="border-top my-4"></div>
             <div class="mb-3">
-                <h5 class="mb-1">Tax & Compliance</h5>
-                <div class="text-muted small">TIN, BIN and Tax support both text/reference and document upload. TDS and VDS are text fields.</div>
+                <h5 class="mb-1">Compliance & Documents</h5>
+                <div class="text-muted small">TIN No, BIN No and Others support both text/reference and document upload. TDS Percentage and VDS Percentage are text fields.</div>
             </div>
 
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="progga-form-label">TIN</label>
+                    <label class="progga-form-label">TIN No</label>
                     <input type="text" name="tin" value="{{ old('tin',$vendor->tin) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-8">
@@ -57,7 +57,7 @@
                 </div>
 
                 <div class="col-md-4">
-                    <label class="progga-form-label">BIN</label>
+                    <label class="progga-form-label">BIN No</label>
                     <input type="text" name="bin" value="{{ old('bin',$vendor->bin) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-8">
@@ -69,22 +69,22 @@
                 </div>
 
                 <div class="col-md-4">
-                    <label class="progga-form-label">TDS</label>
+                    <label class="progga-form-label">TDS Percentage</label>
                     <input type="text" name="tds" value="{{ old('tds',$vendor->tds) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-4">
-                    <label class="progga-form-label">VDS</label>
+                    <label class="progga-form-label">VDS Percentage</label>
                     <input type="text" name="vds" value="{{ old('vds',$vendor->vds) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-4">
-                    <label class="progga-form-label">Tax</label>
+                    <label class="progga-form-label">Others</label>
                     <input type="text" name="tax" value="{{ old('tax',$vendor->tax) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-8 offset-md-4">
-                    <label class="progga-form-label">Tax File</label>
+                    <label class="progga-form-label">Others Upload</label>
                     <input type="file" name="tax_file" class="progga-form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
                     @if($vendor->exists && $vendor->tax_file_path)
-                        <small class="d-block mt-1">Current: <a href="{{ route('inventory.vendors.document',[$vendor,'tax']) }}">{{ $vendor->tax_file_name ?: 'Tax document' }}</a></small>
+                        <small class="d-block mt-1">Current: <a href="{{ route('inventory.vendors.document',[$vendor,'tax']) }}">{{ $vendor->tax_file_name ?: 'Others document' }}</a></small>
                     @endif
                 </div>
             </div>
