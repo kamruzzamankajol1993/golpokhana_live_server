@@ -123,9 +123,16 @@ Route::prefix('accounting')->name('accounting.')->group(function () {
     Route::get('/assets', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'assets'])->name('assets');
     Route::post('/assets/policy', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'approveAssetPolicy'])->name('assets.policy');
     Route::post('/assets', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'addAsset'])->name('assets.save');
+    Route::post('/assets/{id}/dispose', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'dispose'])->whereNumber('id')->name('assets.dispose');
+    Route::post('/assets/{id}/dispose-cancel', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'cancelDisposal'])->whereNumber('id')->name('assets.dispose-cancel');
     Route::post('/assets/{id}/depreciate', [\App\Http\Controllers\Admin\Accounting\FixedAssets\FixedAssetsController::class,'depreciation'])->whereNumber('id')->name('assets.depreciate');
+    Route::get('/financial-details/export/pdf', [\App\Http\Controllers\Admin\Accounting\FinancialDetailsController::class,'pdf'])->name('financial-details.pdf');
+    Route::get('/financial-details/export/excel', [\App\Http\Controllers\Admin\Accounting\FinancialDetailsController::class,'excel'])->name('financial-details.excel');
+    Route::get('/financial-details', [\App\Http\Controllers\Admin\Accounting\FinancialDetailsController::class,'index'])->name('financial-details');
     Route::get('/company-loans', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'loans'])->name('loans');
     Route::post('/company-loans', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'createLoan'])->name('loans.save');
+    Route::post('/company-loans/installments/{id}/adjust', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'adjustInstallment'])->whereNumber('id')->name('loans.installment-adjust');
+    Route::post('/company-loans/{id}/schedule', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'schedule'])->whereNumber('id')->name('loans.schedule');
     Route::post('/company-loans/{id}/repay', [\App\Http\Controllers\Admin\Accounting\CompanyLoans\CompanyLoansController::class,'repayLoan'])->whereNumber('id')->name('loans.repay');
 
     // Phase 2: receipts, POS clearing, cash reconciliation; Phase 3: expenses, costs, supplier tax.
@@ -162,7 +169,9 @@ Route::prefix('accounting')->name('accounting.')->group(function () {
     Route::get('/mappings', [\App\Http\Controllers\Admin\Accounting\AccountMappings\AccountMappingsController::class,'mappings'])->name('mappings');
     Route::post('/mappings', [\App\Http\Controllers\Admin\Accounting\AccountMappings\AccountMappingsController::class,'saveMapping'])->name('mappings.save');
     Route::get('/pending-events', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'events'])->name('events');
+    Route::post('/pending-events/{id}/generate-post', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'generatePost'])->whereNumber('id')->name('events.generate-post');
     Route::post('/pending-events/{id}/generate', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'generate'])->whereNumber('id')->name('events.generate');
+    Route::post('/pending-events/bulk-generate', [\App\Http\Controllers\Admin\Accounting\PendingEvents\PendingEventsController::class,'bulkGenerate'])->name('events.bulk-generate');
     // Safe deletes are limited to unused master data and unposted drafts; immutable GL has no delete endpoint.
     Route::delete('/chart-of-accounts/{id}', [\App\Http\Controllers\Admin\Accounting\ChartOfAccounts\ChartOfAccountsController::class,'deleteAccount'])->whereNumber('id')->name('accounts.delete');
     Route::delete('/journal-types/{id}', [\App\Http\Controllers\Admin\Accounting\JournalTypes\JournalTypesController::class,'deleteJournalType'])->whereNumber('id')->name('journal-types.delete');

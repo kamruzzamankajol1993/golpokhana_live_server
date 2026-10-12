@@ -89,6 +89,35 @@ $(function () {
         $('#employeeNidImageEmpty').hide();
     });
 
+    // Keep each new array index unique, even after removing a previously added row.
+    let nextEducationIndex = Math.max(0, ...Array.from(document.querySelectorAll('#employeeEducationRows input[name^="educations["]'))
+        .map(input => Number((input.name.match(/^educations\[(\d+)\]/) || [])[1]))
+        .filter(Number.isFinite)) + 1;
+    let nextCertificateIndex = Math.max(0, ...Array.from(document.querySelectorAll('#employeeCertificateRows input[name^="certificates["]'))
+        .map(input => Number((input.name.match(/^certificates\[(\d+)\]/) || [])[1]))
+        .filter(Number.isFinite)) + 1;
+
+    function toggleEmptyNotes() {
+        $('#employeeEducationEmpty').toggle($('#employeeEducationRows .employee-education-row').length === 0);
+        $('#employeeCertificateEmpty').toggle($('#employeeCertificateRows .employee-certificate-row').length === 0);
+    }
+    function addRepeatableRow(templateId, targetId, index) {
+        const template = document.getElementById(templateId);
+        document.getElementById(targetId).insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__INDEX__', String(index)));
+        toggleEmptyNotes();
+    }
+    $('#employeeAddEducation').on('click', function () {
+        addRepeatableRow('employeeEducationTemplate', 'employeeEducationRows', nextEducationIndex++);
+    });
+    $('#employeeAddCertificate').on('click', function () {
+        addRepeatableRow('employeeCertificateTemplate', 'employeeCertificateRows', nextCertificateIndex++);
+    });
+    $(document).on('click', '#employeeEducationRows .employee-remove-row, #employeeCertificateRows .employee-remove-row', function () {
+        $(this).closest('.employee-education-row, .employee-certificate-row').remove();
+        toggleEmptyNotes();
+    });
+    toggleEmptyNotes();
+
     $('#employeeForm').on('submit', function () {
         $(this).find('button[type="submit"]').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
     });

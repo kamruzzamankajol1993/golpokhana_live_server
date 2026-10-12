@@ -31,7 +31,7 @@
     <div class="progga-card-header">
       <div>
         <div class="progga-card-title">Due Orders</div>
-        <div class="text-muted small">Only orders with remaining due amount are shown here.</div>
+        <div class="text-muted small">Only completed orders with a remaining due balance are shown here.</div>
       </div>
       <div class="d-flex flex-column align-items-end gap-2">
         <div class="d-flex gap-2">
@@ -51,7 +51,7 @@
     </div>
 
     <div id="order_data_container">
-      @include('admin.order.partials._order_table', ['orders' => $orders, 'showPagination' => true, 'dueListPage' => true])
+      @include('admin.order.partials._due_list_table', ['orders' => $orders, 'showPagination' => true])
     </div>
   </div>
 </main>

@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title','Expense Management')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="row g-3"><div class="col-lg-4">
 @can('accounting-expense')
 <div class="acc-panel"><h3>Record an Expense</h3><p class="acc-hint">Create → independent approval → accounting draft → submit / approve / post. Payment is separate and must clear accrued liability.</p>

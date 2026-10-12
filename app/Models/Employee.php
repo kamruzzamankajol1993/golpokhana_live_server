@@ -59,6 +59,16 @@ class Employee extends Model
         return $this->hasOne(Waiter::class, 'hr_employee_id');
     }
 
+    public function educations()
+    {
+        return $this->hasMany(EmployeeEducation::class);
+    }
+
+    public function certificates()
+    {
+        return $this->hasMany(EmployeeCertificate::class);
+    }
+
     public function attendances()
     {
         return $this->hasMany(Attendance::class);

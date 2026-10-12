@@ -209,6 +209,28 @@ final class AccountingReportService
             ->where('j.status','POSTED')->whereBetween('j.entry_date',[$from,$to])
             ->groupBy('w.tax_type')->select('w.tax_type')
             ->selectRaw('SUM(w.amount) as amount, COUNT(*) as count')->get();
+        // Include vendor-payment withholding already posted inside AP_SETTLEMENT,
+        // without changing existing report page, exports or manual withholding totals.
+        if (DB::getSchemaBuilder()->hasColumn('vendor_payments','tds_amount')) {
+            $automatic=DB::table('vendor_payments as vp')
+                ->join('accounting_events as e', function ($j) {
+                    $j->on('e.source_id','=','vp.id')->where('e.source_type','vendor_payments')
+                        ->where('e.event_type','AP_SETTLEMENT');
+                })
+                ->join('journal_entries as j','j.id','=','e.journal_entry_id')
+                ->where('j.status','POSTED')->whereBetween('j.entry_date',[$from,$to])
+                ->select('vp.tds_amount','vp.vds_amount')->get();
+            $merged=[];
+            foreach ($withholdings as $w) $merged[$w->tax_type]=['amount'=>(float)$w->amount,'count'=>(int)$w->count];
+            foreach ($automatic as $payment) foreach (['TDS'=>'tds_amount','VDS'=>'vds_amount'] as $type=>$field) {
+                if ((float)$payment->$field<=0) continue;
+                if (!isset($merged[$type])) $merged[$type]=['amount'=>0,'count'=>0];
+                $merged[$type]['amount']+=(float)$payment->$field; $merged[$type]['count']++;
+            }
+            $withholdings=collect($merged)->map(fn ($v,$type)=>(object)[
+                'tax_type'=>$type,'amount'=>number_format($v['amount'],4,'.',''),
+                'count'=>$v['count'],])->values();
+        }
         return compact('rows','withholdings');
     }
 

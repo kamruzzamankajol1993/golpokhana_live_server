@@ -40,6 +40,11 @@ final class WithholdingTaxController extends \App\Http\Controllers\Admin\Account
             'amount'=>'required|numeric|gt:0','entry_date'=>'required|date',
             'reference'=>'required|string|max:200','evidence'=>'required|string|min:10|max:3000']);
         $id=DB::transaction(function() use($d) {
+            if (DB::getSchemaBuilder()->hasColumn('vendor_payments','tds_amount') &&
+                DB::table('vendor_payments')->where('purchase_id',$d['purchase_id'])
+                    ->where(fn ($q)=>$q->where('tds_amount','>',0)->orWhere('vds_amount','>',0))->exists()) {
+                throw ValidationException::withMessages(['purchase_id'=>'This purchase already has automatic vendor withholding. Do not create a second manual withholding entry.']);
+            }
             $payable=DB::table('vendor_payables')->where('purchase_id',$d['purchase_id'])->first();
             if (!$payable) throw ValidationException::withMessages(['purchase_id'=>'Purchase AP must first be captured for accounting.']);
             if (!DB::table('accounting_events')->where('source_type','purchases')->where('source_id',(string)$d['purchase_id'])

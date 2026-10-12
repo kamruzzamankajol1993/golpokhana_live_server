@@ -94,7 +94,7 @@
         @endcan
     @endif
 
-    @if(in_array($kitchenRequest->status,['SUBMITTED','PARTIALLY_ISSUED','FULLY_ISSUED'],true))
+    @if(in_array($kitchenRequest->status,['SUBMITTED','PARTIALLY_ISSUED','FULLY_ISSUED'],true) && !($kitchenRequest->status === 'SUBMITTED' && auth()->user()?->can('inventory-kitchen-request-create')))
         @can('inventory-kitchen-request-review')
         <div class="d-flex justify-content-end mb-4"><form method="POST" action="{{ route('inventory.kitchen-requests.close',$kitchenRequest) }}" id="closeRequestForm">@csrf<button type="button" class="progga-btn progga-btn-outline" onclick="confirmCloseRequest()">Close Request</button></form></div>
         @endcan

@@ -1,51 +1,49 @@
 <?php
+
 /**
- * Accounting menu catalog: a single permission-aware source for Accounting tabs
- * and the main RMS sidebar. Do not reuse display labels as route names.
+ * Accounting V2.1 navigation, Phases 1–5.
+ * One company-wide ledger: no restaurant branch selector or inter-branch entries.
+ * Each item points to a registered Accounting GET route and has the matching
+ * permission so both the RMS sidebar and Accounting pages can render it.
  */
 return [
     'Setup' => [
-        ['label' => 'Settings', 'route' => 'accounting.settings', 'permission' => 'accounting-settings'],
-        ['label' => 'Chart of Accounts', 'route' => 'accounting.accounts', 'permission' => 'accounting-view'],
-        ['label' => 'Fiscal Periods', 'route' => 'accounting.periods', 'permission' => 'accounting-view'],
-        ['label' => 'Journal Types', 'route' => 'accounting.journal-types', 'permission' => 'accounting-view'],
-        ['label' => 'Account Mappings', 'route' => 'accounting.mappings', 'permission' => 'accounting-mapping'],
-        ['label' => 'Audit Log', 'route' => 'accounting.audit', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.settings', 'label' => 'Accounting Settings', 'permission' => 'accounting-settings'],
+        ['route' => 'accounting.accounts', 'label' => 'Chart of Accounts', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.periods', 'label' => 'Fiscal Periods', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.journal-types', 'label' => 'Journal Types', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.mappings', 'label' => 'Source Mappings', 'permission' => 'accounting-view'],
     ],
     'Journals & Operations' => [
-        ['label' => 'Journal Entries', 'route' => 'accounting.journals.index', 'permission' => 'accounting-view'],
-        ['label' => 'New Journal', 'route' => 'accounting.journals.create', 'permission' => 'accounting-journal-create'],
-        ['label' => 'Pending Events', 'route' => 'accounting.events', 'permission' => 'accounting-event-view'],
-        ['label' => 'Receipt / Payment / Contra', 'route' => 'accounting.vouchers', 'permission' => 'accounting-view'],
-        ['label' => 'Expenses', 'route' => 'accounting.expenses', 'permission' => 'accounting-view'],
-        ['label' => 'Credits & Refunds', 'route' => 'accounting.credits', 'permission' => 'accounting-view'],
-        ['label' => 'Inventory Cost', 'route' => 'accounting.costs', 'permission' => 'accounting-view'],
-        ['label' => 'TDS / VDS', 'route' => 'accounting.withholdings', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.journals.index', 'label' => 'Journal Entries', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.journals.create', 'label' => 'New Journal', 'permission' => 'accounting-journal-create'],
+        ['route' => 'accounting.events', 'label' => 'Pending Source Events', 'permission' => 'accounting-event-view'],
+        ['route' => 'accounting.expenses', 'label' => 'Expenses', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.vouchers', 'label' => 'Payment Vouchers', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.credits', 'label' => 'Credit Notes', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.costs', 'label' => 'Inventory Cost Review', 'permission' => 'accounting-view'],
     ],
     'Cash & Settlements' => [
-        ['label' => 'Card & MFS Clearing', 'route' => 'accounting.clearing', 'permission' => 'accounting-view'],
-        ['label' => 'POS Cash Sessions', 'route' => 'accounting.sessions', 'permission' => 'accounting-view'],
-        ['label' => 'Bank Reconciliation', 'route' => 'accounting.bank', 'permission' => 'accounting-view'],
-        ['label' => 'Payment Terms', 'route' => 'accounting.due-terms', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.sessions', 'label' => 'POS Cash Reconciliation', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.clearing', 'label' => 'Card / MFS Clearing', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.bank', 'label' => 'Bank Reconciliation', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.withholdings', 'label' => 'Withholding Register', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.due-terms', 'label' => 'Payment Terms', 'permission' => 'accounting-view'],
     ],
     'Extended Ledger' => [
-        ['label' => 'Payroll & Staff Loans', 'route' => 'accounting.payroll', 'permission' => 'accounting-view'],
-        ['label' => 'Cost Centers', 'route' => 'accounting.cost-centers', 'permission' => 'accounting-view'],
-        ['label' => 'Deferrals & Prepayments', 'route' => 'accounting.deferrals', 'permission' => 'accounting-view'],
-        ['label' => 'Fixed Assets', 'route' => 'accounting.assets', 'permission' => 'accounting-view'],
-        ['label' => 'Company Loans', 'route' => 'accounting.loans', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.payroll', 'label' => 'Payroll Ledger', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.cost-centers', 'label' => 'Cost Centers', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.deferrals', 'label' => 'Accruals & Deferrals', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.assets', 'label' => 'Fixed Assets', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.loans', 'label' => 'Company Loans', 'permission' => 'accounting-view'],
     ],
     'Reports & Closing' => [
-        ['label' => 'Balance Sheet', 'route' => 'accounting.reports.balance-sheet', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'Profit & Loss', 'route' => 'accounting.reports.profit-loss', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'General Ledger', 'route' => 'accounting.reports.general-ledger', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'Cash Flow', 'route' => 'accounting.reports.cash-flow', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'Trial Balance', 'route' => 'accounting.reports.trial-balance', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'Tax Activity', 'route' => 'accounting.reports.tax', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'AR / AP Aging', 'route' => 'accounting.reports.aging', 'permission' => 'accounting-financial-reports'],
-        ['label' => 'Cash Flow / Tax Rules', 'route' => 'accounting.report-rules', 'permission' => 'accounting-report-mapping'],
-        ['label' => 'Budget vs Actual', 'route' => 'accounting.budgets', 'permission' => 'accounting-budget'],
-        ['label' => 'Opening Balances', 'route' => 'accounting.cutover', 'permission' => 'accounting-cutover'],
-        ['label' => 'Period / Year Closing', 'route' => 'accounting.closing', 'permission' => 'accounting-year-end'],
+        ['route' => 'accounting.reports', 'label' => 'Financial Reports', 'permission' => 'accounting-financial-reports'],
+        ['route' => 'accounting.trial-balance', 'label' => 'Trial Balance', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.report-rules', 'label' => 'Report Mapping Rules', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.cutover', 'label' => 'Opening Cutover', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.budgets', 'label' => 'Budgets', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.closing', 'label' => 'Period / Year Closing', 'permission' => 'accounting-view'],
+        ['route' => 'accounting.audit', 'label' => 'Accounting Audit Log', 'permission' => 'accounting-view'],
     ],
 ];

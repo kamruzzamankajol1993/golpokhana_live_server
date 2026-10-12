@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title',$entry ? 'Edit Draft Journal' : 'Create Manual Journal')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="acc-panel"><h3>{{ $entry ? 'Edit Journal Draft #'.$entry->id : 'New Manual Journal Voucher' }}</h3>
 <div class="alert alert-info small">Only DRAFT journals are editable. Posting requires an OPEN fiscal period, balanced lines and independent approval. A posted entry cannot be changed.</div>
 <form method="post" action="{{ $entry ? route('accounting.journals.update',$entry->id) : route('accounting.journals.store') }}">@csrf

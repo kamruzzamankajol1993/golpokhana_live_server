@@ -268,6 +268,16 @@ class KitchenRequestController extends Controller
             'items.*.unit_choice' => ['nullable', 'string', 'regex:/^(u|c):[1-9][0-9]*$/'],
         ]);
 
+        // A user may intentionally assign 0.00. This is an acknowledged no-op:
+        // do not create a zero-quantity stock transfer or change the request status.
+        $hasPositiveQuantity = collect($data['items'])->contains(
+            fn ($item) => (float) ($item['quantity'] ?? 0) > 0
+        );
+        if (!$hasPositiveQuantity) {
+            return redirect()->route('inventory.kitchen-requests.assign', $kitchenRequest)
+                ->with('success', '0.00 quantity accepted. No stock was transferred; the request remains open.');
+        }
+
         $service->issueRequest(
             $kitchenRequest,
             $data['items'],

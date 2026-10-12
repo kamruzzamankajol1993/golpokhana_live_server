@@ -23,6 +23,15 @@
         <div class="col-md-4"><div class="progga-card h-100"><div class="p-4"><small class="text-muted">Current Due</small><div class="fs-3 fw-bold {{ $totalDue > 0 ? 'text-danger' : 'text-success' }} mt-1">৳{{ number_format($totalDue,2) }}</div></div></div></div>
     </div>
 
+    <div class="progga-card mb-3">
+        <div class="progga-card-header"><strong>Vendor TDS / VDS Rate Change History</strong></div>
+        <div class="table-responsive"><table class="table mb-0"><thead><tr><th>Date</th><th>Tax</th><th>Previous %</th><th>New %</th><th>User ID</th></tr></thead><tbody>
+            @forelse($vendorRateHistories as $h)
+            <tr><td>{{ $h->effective_at }}</td><td>{{ $h->tax_type }}</td><td>{{ $h->old_rate===null?'Initial':$h->old_rate.'%' }}</td><td>{{ $h->new_rate }}%</td><td>{{ $h->changed_by?:'System' }}</td></tr>
+            @empty<tr><td colspan="5" class="text-center text-muted">No rate changes recorded since history activation.</td></tr>@endforelse
+        </tbody></table></div>
+    </div>
+
     <div class="row g-4 mb-4">
         <div class="col-lg-7">
             <div class="progga-card h-100">
@@ -65,7 +74,18 @@
                             <div class="col-md-6"><label class="progga-form-label">Payment Date</label><input type="text" name="payment_date" value="{{ old('payment_date',now()->format('Y-m-d')) }}" class="progga-form-control progga-datepicker" required></div>
                             <div class="col-md-6"><label class="progga-form-label">Payment Type</label><select name="payment_type" id="vendorPaymentType" class="progga-form-control" required><option value="Cash" @selected(old('payment_type','Cash')==='Cash')>Cash</option><option value="Card" @selected(old('payment_type')==='Card')>Card</option><option value="MFS" @selected(old('payment_type')==='MFS')>MFS</option><option value="Split" @selected(old('payment_type')==='Split')>Split</option></select></div>
                         </div>
-                        <div class="mb-3"><label class="progga-form-label">Amount <span class="progga-required">*</span></label><input type="number" step="0.01" min="0.01" name="amount" id="vendorPaymentAmount" value="{{ old('amount') }}" class="progga-form-control" required><small class="text-muted" id="vendorPaymentDueText"></small></div>
+                        <div class="mb-3"><label class="progga-form-label">Gross AP to settle <span class="progga-required">*</span></label><input type="number" step="0.01" min="0.01" name="amount" id="vendorPaymentAmount" value="{{ old('amount') }}" class="progga-form-control" required><small class="text-muted" id="vendorPaymentDueText"></small></div>
+                        <div class="mb-3"><label class="progga-form-label">Withholding Tax Base (optional)</label>
+                            <input type="number" name="withholding_base" id="vendorWithholdingBase" step="0.01" min="0.01" value="{{ old('withholding_base') }}" class="progga-form-control" placeholder="Blank = gross settlement amount">
+                            <small class="text-muted">Select the taxable part of this settlement according to the supplier invoice and applicable tax law. Cannot exceed gross amount.</small>
+                        </div>
+                        <div class="alert alert-light border small" id="vendorTaxPreview"
+                             data-tds="{{ (float)$vendor->tds }}" data-vds="{{ (float)$vendor->vds }}">
+                            TDS (<span id="previewTdsRate">{{ $vendor->tds ?: '0' }}</span>%): ৳<span id="previewTds">0.00</span><br>
+                            VDS (<span id="previewVdsRate">{{ $vendor->vds ?: '0' }}</span>%): ৳<span id="previewVds">0.00</span><br>
+                            <strong>Net paid to Vendor: ৳<span id="previewNet">0.00</span></strong>
+                            <div class="text-muted">Current Vendor rates will be frozen on this Payment. Gross settles purchase AP; net is paid in Cash/Card/MFS.</div>
+                        </div>
 
                         <div id="singleCardFields" class="payment-extra d-none">
                             <div class="row g-2 mb-3"><div class="col-md-6"><label class="progga-form-label">Card Type</label><select name="card_type" class="progga-form-control"><option value="">Select card</option>@foreach($cardTypes as $type)<option value="{{ $type }}" @selected(old('card_type')===$type)>{{ $type }}</option>@endforeach</select></div><div class="col-md-6"><label class="progga-form-label">Bank / Card Reference</label><input name="card_reference" value="{{ old('card_reference') }}" class="progga-form-control"></div></div>
@@ -75,7 +95,7 @@
                         </div>
                         <div id="splitFields" class="payment-extra d-none">
                             <div class="row g-2 mb-2"><div class="col-md-4"><label class="progga-form-label">Cash</label><input type="number" step="0.01" min="0" name="paid_in_cash" id="vendorSplitCash" value="{{ old('paid_in_cash',0) }}" class="progga-form-control"></div><div class="col-md-4"><label class="progga-form-label">Card</label><input type="number" step="0.01" min="0" name="paid_in_card" id="vendorSplitCard" value="{{ old('paid_in_card',0) }}" class="progga-form-control"></div><div class="col-md-4"><label class="progga-form-label">MFS</label><input type="number" step="0.01" min="0" name="paid_in_mfs" id="vendorSplitMfs" value="{{ old('paid_in_mfs',0) }}" class="progga-form-control"></div></div>
-                            <div class="small text-muted mb-3">For Split, Cash + Card + MFS must equal Amount.</div>
+                            <div class="small text-muted mb-3">For Split, Cash + Card + MFS must equal Net Paid after TDS/VDS.</div>
                         </div>
 
                         <div class="mb-3"><label class="progga-form-label">Note</label><textarea name="note" rows="2" class="progga-form-control">{{ old('note') }}</textarea></div>
@@ -117,7 +137,7 @@
         <div class="progga-card-header"><div><strong>Payment History</strong><div class="small text-muted">Complete vendor payment history.</div></div></div>
         <div class="table-responsive">
             <table class="table align-middle mb-0">
-                <thead><tr><th>Payment</th><th>Date</th><th>Purchase</th><th>Method</th><th>Breakdown / Reference</th><th class="text-end">Amount</th><th>By</th></tr></thead>
+                <thead><tr><th>Payment</th><th>Date</th><th>Purchase</th><th>Method</th><th>Breakdown / Reference</th><th class="text-end">Gross settled</th><th>By</th></tr></thead>
                 <tbody>
                 @forelse($payments as $payment)
                     <tr>
@@ -130,7 +150,13 @@
                             @if((float)$payment->paid_in_card > 0)<div>Card: ৳{{ number_format((float)$payment->paid_in_card,2) }} · {{ $payment->card_type }} · {{ $payment->card_reference }}</div>@endif
                             @if((float)$payment->paid_in_mfs > 0)<div>MFS: ৳{{ number_format((float)$payment->paid_in_mfs,2) }} · {{ $payment->mfs_provider }} · {{ $payment->mfs_reference }}</div>@endif
                         </td>
-                        <td class="text-end fw-semibold">৳{{ number_format((float)$payment->amount,2) }}</td>
+                        <td class="text-end fw-semibold">৳{{ number_format((float)$payment->amount,2) }}
+                            @if((float)($payment->tds_amount ?? 0)>0 || (float)($payment->vds_amount ?? 0)>0)
+                            <div class="small text-muted">TDS: ৳{{ number_format((float)$payment->tds_amount,2) }} ({{ $payment->tds_rate_snapshot }}%)</div>
+                            <div class="small text-muted">VDS: ৳{{ number_format((float)$payment->vds_amount,2) }} ({{ $payment->vds_rate_snapshot }}%)</div>
+                            <div class="small text-success">Net: ৳{{ number_format((float)$payment->paid_in_cash+(float)$payment->paid_in_card+(float)$payment->paid_in_mfs,2) }}</div>
+                            @endif
+                        </td>
                         <td>{{ $payment->creator?->name ?: '—' }}</td>
                     </tr>
                 @empty
@@ -166,9 +192,24 @@
         if(dueText)dueText.textContent=due>0?'Available due: ৳'+due.toFixed(2):'';
         if(amount && due>0)amount.max=due.toFixed(2); else if(amount)amount.removeAttribute('max');
     }
+    const preview=document.getElementById('vendorTaxPreview');
+    const tds=parseFloat(preview?.dataset?.tds||0),vds=parseFloat(preview?.dataset?.vds||0);
+    function updateTax(){
+        const gross=Math.max(0,Number(amount?.value||0));
+        const explicitBase=Number(document.getElementById('vendorWithholdingBase')?.value||0);
+        const base=explicitBase>0?explicitBase:gross;
+        const withheldTds=Math.round(base*tds*100)/100;
+        const withheldVds=Math.round(base*vds*100)/100;
+        const net=Math.max(0,gross-withheldTds-withheldVds);
+        document.getElementById('previewTds').textContent=withheldTds.toFixed(2);
+        document.getElementById('previewVds').textContent=withheldVds.toFixed(2);
+        document.getElementById('previewNet').textContent=net.toFixed(2);
+    }
+    amount?.addEventListener('input',updateTax);
+    document.getElementById('vendorWithholdingBase')?.addEventListener('input',updateTax);
     type.addEventListener('change',togglePaymentFields);
     purchase?.addEventListener('change',updateDue);
-    togglePaymentFields(); updateDue();
+    togglePaymentFields(); updateDue(); updateTax();
 })();
 </script>
 @endsection

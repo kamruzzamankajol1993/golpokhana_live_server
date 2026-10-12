@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title','Journal Entry Details')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="acc-panel"><div class="d-flex justify-content-between flex-wrap gap-2"><h3>{{ $entry->number ?? 'Draft #'.$entry->id }} · {{ $entry->journal_name }}</h3><span class="badge {{ $entry->status==='POSTED'?'bg-success':'bg-warning text-dark' }}">{{ $entry->status }}</span></div>
 <div class="row small mb-3"><div class="col-md-4"><b>Entry Date</b>: {{ $entry->entry_date }}</div><div class="col-md-4"><b>Business Date</b>: {{ $entry->business_date ?? '—' }}</div><div class="col-md-4"><b>Reference</b>: {{ $entry->reference ?? '—' }}</div></div>
 <p><b>Narration:</b> {{ $entry->narration }}</p>

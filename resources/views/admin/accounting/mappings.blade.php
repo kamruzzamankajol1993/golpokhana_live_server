@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title','Account Mapping Rules')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="acc-panel"><h3>Source Event → Multi-line Debit/Credit Mapping</h3><p class="acc-hint">Phase 1: prepare approved mappings; source-specific POS and Purchase capture hooks are introduced in later phases. An inactive mapping never generates a journal. The saved source snapshot determines amounts; a mapping may select their accounts, not modify source totals.</p>
 @can('accounting-mapping')
 @php 

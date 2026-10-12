@@ -125,6 +125,7 @@ final class JournalPostingService
         DB::transaction(function () use($id,$action,$actor,$reason) {
             $entry=DB::table('journal_entries')->where('id',$id)->lockForUpdate()->first();
             if (!$entry) throw ValidationException::withMessages(['journal'=>'Journal not found.']);
+            $this->assertNotSuperseded($entry);
             $next=match ($action) {
                 'SUBMIT' => $entry->status==='DRAFT' ? 'SUBMITTED' : null,
                 'APPROVE' => $entry->status==='SUBMITTED' ? 'APPROVED' : null,
@@ -165,9 +166,30 @@ final class JournalPostingService
         return DB::transaction(function () use($id,$actor,$auto) {
             $entry=DB::table('journal_entries')->where('id',$id)->lockForUpdate()->first();
             if (!$entry) throw ValidationException::withMessages(['journal'=>'Journal not found.']);
+            $this->assertNotSuperseded($entry);
             if ($entry->status==='POSTED') return $entry->number;
             if ($entry->status!==($auto ? 'DRAFT' : 'APPROVED')) {
                 throw ValidationException::withMessages(['journal'=>'Journal must be APPROVED (or validated automatic DRAFT) before posting.']);
+            }
+            if ($auto && $actor!==null) {
+                // Explicit human fast path, NEVER maker-checker bypass. Already-approved
+                // mandatory mappings must still use SUBMIT -> independent APPROVE -> POST.
+                abort_unless(auth()->id()===$actor && auth()->user()?->can('accounting-event-process')
+                    && auth()->user()?->can('accounting-journal-post'),403);
+                $event=DB::table('accounting_events')->where('id',$entry->accounting_event_id)->first();
+                if (!$event || $event->status==='SUPERSEDED')
+                    throw ValidationException::withMessages(['event'=>'Valid current source event required.']);
+                $type=match($event->event_type) {
+                    'SALES_CORRECTION'=>'SALES_COMPLETED','TIPS_CORRECTION'=>'TIPS_RECEIVED',
+                    default=>$event->event_type,
+                };
+                $mapping=DB::table('account_mappings')->where('source_type',$event->source_type)
+                    ->where('event_type',$type)->where('is_active',true)->first();
+                if (!$mapping || $mapping->requires_approval)
+                    throw ValidationException::withMessages(['approval'=>'This event requires independent journal approval before posting.']);
+                $settings=DB::table('accounting_settings')->where('id',1)->first();
+                if (!$settings || !$settings->capture_enabled)
+                    throw ValidationException::withMessages(['capture'=>'Accounting Capture is OFF.']);
             }
             if ($auto && $entry->origin!=='SOURCE') {
                 throw ValidationException::withMessages(['journal'=>'Automatic posting permitted only for source-generated journals.']);
@@ -247,6 +269,109 @@ final class JournalPostingService
                     ]);
                     DB::table('negative_inventory_cost_pending')->where('id',$costRow->id)
                         ->update(['status'=>'POSTED','updated_at'=>now()]);
+                }
+            }
+            // Asset disposal is effective ONLY upon POST. A draft remains an active asset.
+            if (DB::getSchemaBuilder()->hasTable('accounting_asset_disposals')) {
+                $disposal=DB::table('accounting_asset_disposals')->where('journal_entry_id',$id)->lockForUpdate()->first();
+                if ($disposal) {
+                    $asset=DB::table('fixed_assets')->where('id',$disposal->fixed_asset_id)->lockForUpdate()->first();
+                    if (!$asset || $asset->status!=='ACTIVE' || $disposal->status!=='PENDING')
+                        throw ValidationException::withMessages(['asset'=>'Disposal is no longer eligible.']);
+                    DB::table('fixed_assets')->where('id',$asset->id)->update(['status'=>'DISPOSED','updated_at'=>now()]);
+                    DB::table('accounting_asset_disposals')->where('id',$disposal->id)->update(['status'=>'POSTED','updated_at'=>now()]);
+                }
+                if ($entry->reversal_of_id) {
+                    $reversal=DB::table('accounting_asset_disposals')->where('journal_entry_id',$entry->reversal_of_id)->lockForUpdate()->first();
+                    if ($reversal && $reversal->status==='POSTED') {
+                        DB::table('fixed_assets')->where('id',$reversal->fixed_asset_id)->update(['status'=>'ACTIVE','updated_at'=>now()]);
+                        DB::table('accounting_asset_disposals')->where('id',$reversal->id)->update(['status'=>'REVERSED','updated_at'=>now()]);
+                    }
+                }
+            }
+            // Only a POSTED correction changes the receivable's source-linked opening amount.
+            // Recorded due collections remain separate; do not recalculate or re-post those cash receipts.
+            if ($entry->accounting_event_id) {
+                $postedEvent=DB::table('accounting_events')->where('id',$entry->accounting_event_id)->first();
+                if ($postedEvent && in_array($postedEvent->event_type,['SALES_COMPLETED','SALES_CORRECTION'],true)) {
+                    $snapshot=json_decode((string)$postedEvent->snapshot,true);
+                    $full=$snapshot['source']['full_amounts'] ?? $snapshot['amounts'] ?? [];
+                    $dueUnits=AccountingMoney::units((string)($full['ar_due'] ?? '0'));
+                    $orderId=(int)$postedEvent->source_id;
+                    $collected=DB::table('receivable_allocations as a')
+                        ->join('customer_receivables as r','r.id','=','a.receivable_id')
+                        ->where('r.order_id',$orderId)->sum('a.amount');
+                    if ($dueUnits<AccountingMoney::units((string)$collected)) {
+                        throw ValidationException::withMessages(['journal'=>'Corrected original Due is smaller than already allocated collections. Review refunds first.']);
+                    }
+                    $receivable=DB::table('customer_receivables')->where('order_id',$orderId)->first();
+                    if ($receivable) {
+                        DB::table('customer_receivables')->where('id',$receivable->id)->update([
+                            'original_due'=>AccountingMoney::format($dueUnits),'updated_at'=>now(),
+                        ]);
+                    } elseif ($dueUnits>0) {
+                        $customer=DB::table('orders')->where('id',$orderId)->value('customer_id');
+                        DB::table('customer_receivables')->insert([
+                            'order_id'=>$orderId,'customer_id'=>$customer,
+                            'original_due'=>AccountingMoney::format($dueUnits),
+                            'created_at'=>now(),'updated_at'=>now(),
+                        ]);
+                    }
+                }
+            }
+            // Keep the Card/MFS clearing subledger consistent with a POSTED sale correction.
+            // Before settlement the provider's expected net is updated from the versioned snapshot;
+            // after settlement the historical bank receipt is immutable and a REVIEW adjustment is logged.
+            if ($entry->accounting_event_id && DB::getSchemaBuilder()->hasTable('payment_account_transactions')) {
+                $correction=DB::table('accounting_events')->where('id',$entry->accounting_event_id)
+                    ->where('event_type','SALES_CORRECTION')->first();
+                if ($correction) {
+                    $snap=json_decode((string)$correction->snapshot,true);
+                    $full=$snap['source']['full_amounts'] ?? [];
+                    foreach (['card_paid'=>'Card','mfs_paid'=>'MFS'] as $key=>$method) {
+                        $delta=(string)($snap['amounts'][$key] ?? '0');
+                        if (AccountingMoney::units(ltrim($delta,'-'))===0) continue;
+                        $account=DB::table('payment_accounts')->where('method',$method)
+                            ->where('active',true)->orderBy('id')->first();
+                        if (!$account) continue;
+                        $newAmount=AccountingMoney::units((string)($full[$key] ?? '0'));
+                        $priorRows=DB::table('payment_account_transactions as t')
+                            ->join('accounting_events as ev','ev.id','=','t.accounting_event_id')
+                            ->where('t.payment_account_id',$account->id)
+                            ->where('ev.source_type','orders')->where('ev.source_id',$correction->source_id)
+                            ->whereIn('ev.event_type',['SALES_COMPLETED','SALES_CORRECTION'])
+                            ->select('t.*')->orderBy('t.id')->lockForUpdate()->get();
+                        $unsettled=$priorRows->first(fn ($row)=>in_array($row->status,['UNSETTLED','CANCELLED'],true)
+                            && $row->direction==='IN'
+                            && (!DB::getSchemaBuilder()->hasTable('accounting_bank_settlements')
+                                || !DB::table('accounting_bank_settlements')
+                                    ->where('payment_account_transaction_id',$row->id)->exists()));
+                        if ($unsettled) {
+                            DB::table('payment_account_transactions')->where('id',$unsettled->id)->update([
+                                'amount'=>AccountingMoney::format($newAmount),
+                                'status'=>$newAmount>0 ? 'UNSETTLED' : 'CANCELLED','updated_at'=>now(),
+                            ]);
+                        } elseif ($priorRows->isEmpty() && $newAmount>0) {
+                            DB::table('payment_account_transactions')->insertOrIgnore([
+                                'payment_account_id'=>$account->id,
+                                'reference'=>sprintf('orders:%s:CORRECTION:v%d',$correction->source_id,$correction->source_version),
+                                'direction'=>'IN','amount'=>AccountingMoney::format($newAmount),
+                                'status'=>'UNSETTLED','accounting_event_id'=>$correction->id,
+                                'created_at'=>now(),'updated_at'=>now(),
+                            ]);
+                        } else {
+                            // A provider settlement already exists (or is reserved). Do not rewrite it.
+                            $negative=str_starts_with($delta,'-');
+                            DB::table('payment_account_transactions')->insertOrIgnore([
+                                'payment_account_id'=>$account->id,
+                                'reference'=>sprintf('orders:%s:REVIEW:v%d',$correction->source_id,$correction->source_version),
+                                'direction'=>$negative ? 'OUT' : 'IN',
+                                'amount'=>AccountingMoney::format(AccountingMoney::units(ltrim($delta,'-'))),
+                                'status'=>'REVIEW','accounting_event_id'=>$correction->id,
+                                'created_at'=>now(),'updated_at'=>now(),
+                            ]);
+                        }
+                    }
                 }
             }
             // Provider receivables exist only after source journal POSTED; no duplicate income.
@@ -381,6 +506,37 @@ final class JournalPostingService
                 throw ValidationException::withMessages(['loan'=>'Repayment credit must use an approved cash/bank/MFS asset account.']);
             $expected[]=[$cash->account_id,0,$p+$interest];
         }
+        $disposal=DB::getSchemaBuilder()->hasTable('accounting_asset_disposals')
+            ? DB::table('accounting_asset_disposals as d')->join('fixed_assets as a','a.id','=','d.fixed_asset_id')
+                ->where('d.journal_entry_id',$id)->select('d.*','a.cost','a.asset_account_id',
+                    'a.accumulated_depreciation_account_id','a.status as asset_status')->first() : null;
+        if ($disposal) {
+            if ($disposal->status!=='PENDING' || $disposal->asset_status!=='ACTIVE')
+                throw ValidationException::withMessages(['asset'=>'Only a pending disposal of an active asset may post.']);
+            $depreciations=DB::table('asset_depreciations as d')->join('journal_entries as j','j.id','=','d.journal_entry_id')
+                ->where('d.fixed_asset_id',$disposal->fixed_asset_id)->get(['d.amount','j.id as journal_id','j.status']);
+            $accum=0;
+            foreach($depreciations as $dep) {
+                if(in_array($dep->status,['DRAFT','SUBMITTED','APPROVED'],true))
+                    throw ValidationException::withMessages(['asset'=>'Pending depreciation must be resolved before disposal posting.']);
+                if($dep->status==='POSTED' && !DB::table('journal_entries')->where('status','POSTED')
+                        ->where('reversal_of_id',$dep->journal_id)->exists())
+                    $accum+=AccountingMoney::units((string)$dep->amount);
+            }
+            $cost=AccountingMoney::units((string)$disposal->cost);
+            $proceeds=AccountingMoney::units((string)$disposal->sale_proceeds);
+            $book=$cost-$accum;$gain=$proceeds-$book;
+            if($book<0 || $accum!==AccountingMoney::units((string)$disposal->accumulated_depreciation)
+                || $book!==AccountingMoney::units((string)$disposal->book_value)
+                || $gain!==($disposal->gain_loss[0]==='-'? -AccountingMoney::units(substr((string)$disposal->gain_loss,1))
+                    : AccountingMoney::units((string)$disposal->gain_loss)))
+                throw ValidationException::withMessages(['asset'=>'Asset valuation changed since disposal draft. Cancel/recreate after reconciliation.']);
+            $expected=[];
+            if ($proceeds) $expected[]=[(int)$disposal->cash_account_id,$proceeds,0];
+            if ($accum) $expected[]=[(int)$disposal->accumulated_depreciation_account_id,$accum,0];
+            $expected[]=[(int)$disposal->asset_account_id,0,$cost];
+            if ($gain) $expected[]=[(int)$disposal->gain_loss_account_id,max(0,-$gain),max(0,$gain)];
+        }
         if ($expected===null) return;
         $real=DB::table('journal_lines')->where('journal_entry_id',$id)->get();
         $actual=[];
@@ -392,13 +548,39 @@ final class JournalPostingService
         if($actual!==$expected) throw ValidationException::withMessages(['journal'=>'DRAFT financial lines no longer match the Phase-4 registered amounts/accounts. Create an approved replacement instead.']);
     }
 
+    private function assertNotSuperseded(object $entry): void
+    {
+        if ($entry->accounting_event_id && DB::table('accounting_events')
+            ->where('id',$entry->accounting_event_id)->where('status','SUPERSEDED')->exists()) {
+            throw ValidationException::withMessages(['journal'=>'This source journal belongs to an older Order version. Use its replacement event instead.']);
+        }
+    }
+
     /** An AR/AP settlement must never post before its originating liability/receivable exists in GL. */
     private function assertSourceDependencyPosted(object $entry): void
     {
         if (!$entry->accounting_event_id) return;
         $event=DB::table('accounting_events')->where('id',$entry->accounting_event_id)->first();
         if (!$event) return;
+        if ($event->status==='SUPERSEDED') {
+            throw ValidationException::withMessages(['journal'=>'Superseded Order versions cannot be posted.']);
+        }
         $requires=null;
+        if (in_array($event->event_type,['SALES_CORRECTION','TIPS_CORRECTION'],true)) {
+            $originalType=$event->event_type==='SALES_CORRECTION' ? 'SALES_COMPLETED' : 'TIPS_RECEIVED';
+            if (!DB::table('accounting_events')->where('source_type','orders')->where('source_id',$event->source_id)
+                ->where('event_type',$originalType)->where('status','POSTED')->exists()) {
+                throw ValidationException::withMessages(['journal'=>'Original source journal must be POSTED before its correction.']);
+            }
+            // Corrections use only posted-accounting baseline; newer unposted corrections are superseded.
+            $snapshot=json_decode((string)$event->snapshot,true);
+            $previousVersion=(int)($snapshot['source']['baseline_version'] ?? 0);
+            if ($previousVersion>1 && !DB::table('accounting_events')
+                ->where('source_type','orders')->where('source_id',$event->source_id)
+                ->where('source_version',$previousVersion)->whereIn('event_type',[$originalType,$event->event_type])->where('status','POSTED')->exists()) {
+                throw ValidationException::withMessages(['journal'=>'Previous posted correction baseline is missing.']);
+            }
+        }
         if ($event->event_type==='AR_SETTLEMENT') {
             $orderId=DB::table('order_due_payments')->where('id',$event->source_id)->value('order_id');
             if ($orderId) $requires=['orders',(string)$orderId,'SALES_COMPLETED'];

@@ -40,7 +40,7 @@
             <div class="border-top my-4"></div>
             <div class="mb-3">
                 <h5 class="mb-1">Compliance & Documents</h5>
-                <div class="text-muted small">TIN No, BIN No and Others support both text/reference and document upload. TDS Percentage and VDS Percentage are text fields.</div>
+                <div class="text-muted small">TIN No, BIN No and Others support both text/reference and document upload. Enter numeric TDS/VDS percentages (0–100); applied rates are captured on each purchase and payment.</div>
             </div>
 
             <div class="row g-3">
@@ -70,11 +70,11 @@
 
                 <div class="col-md-4">
                     <label class="progga-form-label">TDS Percentage</label>
-                    <input type="text" name="tds" value="{{ old('tds',$vendor->tds) }}" class="progga-form-control">
+                    <input type="number" step="0.0001" min="0" max="100" name="tds" value="{{ old('tds',$vendor->tds) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-4">
                     <label class="progga-form-label">VDS Percentage</label>
-                    <input type="text" name="vds" value="{{ old('vds',$vendor->vds) }}" class="progga-form-control">
+                    <input type="number" step="0.0001" min="0" max="100" name="vds" value="{{ old('vds',$vendor->vds) }}" class="progga-form-control">
                 </div>
                 <div class="col-md-4">
                     <label class="progga-form-label">Others</label>

@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title','Bank / Card / MFS Clearing')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="acc-panel"><h3>Provider Clearing Register</h3><p class="acc-hint">Only posted sales/due/booking journals create clearing receivables. Settlements use Dr Bank (net) + Dr Provider Fees / Cr Clearing (gross). Each provider transaction can be settled once; posting is approval-controlled.</p>
 <div class="table-responsive"><table class="table"><thead><tr><th>Provider</th><th>Source</th><th>Gross (BDT)</th><th>Status</th><th>Prepare Settlement</th></tr></thead><tbody>
 @forelse($clearing as $t)

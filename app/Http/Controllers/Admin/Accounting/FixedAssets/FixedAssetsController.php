@@ -26,6 +26,7 @@ final class FixedAssetsController extends \App\Http\Controllers\Admin\Accounting
             'depreciations'=>DB::table('asset_depreciations')->orderByDesc('period_month')->paginate(20, ['*'], 'acc_fixed_assets_2')->withQueryString(),
             'categories'=>DB::table('asset_categories')->where('is_active',true)->get(),
             'accounts'=>DB::table('chart_of_accounts')->where('is_header',false)->where('is_active',true)->get(),
+            'disposals'=>DB::table('accounting_asset_disposals as d')->join('fixed_assets as a','a.id','=','d.fixed_asset_id')->select('d.*','a.code as asset_code')->orderByDesc('d.id')->limit(100)->get(),
         ]);
     
         } catch (\Throwable $accountingException) {
@@ -102,6 +103,7 @@ final class FixedAssetsController extends \App\Http\Controllers\Admin\Accounting
         $journal=DB::transaction(function() use($id,$d){
             $a=DB::table('fixed_assets')->where('id',$id)->lockForUpdate()->first();
             if (!$a || $a->status!=='ACTIVE') throw ValidationException::withMessages(['asset'=>'Asset is not active.']);
+            if(DB::table('accounting_asset_disposals')->where('fixed_asset_id',$id)->where('status','PENDING')->exists()) throw ValidationException::withMessages(['asset'=>'Pending disposal must be completed or cancelled before depreciation.']);
             $month=Carbon::parse($d['period_month']);
             if ($month->day!==1 || $month->lt(Carbon::parse($a->in_service_on)->startOfMonth()))
                 throw ValidationException::withMessages(['period_month'=>'Invalid depreciation month.']);
@@ -127,5 +129,91 @@ final class FixedAssetsController extends \App\Http\Controllers\Admin\Accounting
             $this->logAccountingException($accountingException, __METHOD__);
             throw $accountingException;
         }
+    }
+
+    /** Disposal generates a DRAFT. Asset status changes only after approved POST. */
+    public function dispose(Request $r,int $id)
+    {
+        $this->gate('accounting-assets');
+        $d=$r->validate(['disposal_type'=>'required|in:SALE,WRITE_OFF',
+            'disposed_on'=>'required|date_format:Y-m-d','reference'=>'required|string|max:100',
+            'reason'=>'required|string|min:10|max:2000',
+            'sale_proceeds'=>'required|numeric|min:0',
+            'cash_account_id'=>'nullable|integer|exists:chart_of_accounts,id',
+            'gain_loss_account_id'=>'nullable|integer|exists:chart_of_accounts,id']);
+        $journal=DB::transaction(function() use($id,$d){
+            $asset=DB::table('fixed_assets')->where('id',$id)->lockForUpdate()->first();
+            if (!$asset || $asset->status!=='ACTIVE')
+                throw ValidationException::withMessages(['asset'=>'Only ACTIVE assets may be disposed.']);
+            if($d['disposed_on']<$asset->in_service_on)
+                throw ValidationException::withMessages(['disposed_on'=>'Cannot dispose before the in-service date.']);
+            if(DB::table('accounting_asset_disposals')->where('fixed_asset_id',$id)
+                ->whereIn('status',['PENDING','POSTED'])->exists())
+                throw ValidationException::withMessages(['asset'=>'Asset already has an active disposal.']);
+            $deps=DB::table('asset_depreciations as d')
+                ->join('journal_entries as j','j.id','=','d.journal_entry_id')
+                ->where('d.fixed_asset_id',$id)->get(['d.amount','d.period_month','j.id as journal_id','j.status']);
+            $accum=0;
+            foreach($deps as $dep){
+                if(in_array($dep->status,['DRAFT','SUBMITTED','APPROVED'],true))
+                    throw ValidationException::withMessages(['depreciation'=>'Resolve pending depreciation journal before disposal.']);
+                if($dep->status!=='POSTED') continue;
+                if(DB::table('journal_entries')->where('status','POSTED')->where('reversal_of_id',$dep->journal_id)->exists()) continue;
+                if(Carbon::parse($dep->period_month)->endOfMonth()->toDateString()>$d['disposed_on'])
+                    throw ValidationException::withMessages(['disposed_on'=>'Disposal cannot predate posted depreciation.']);
+                $accum+=$this->u($dep->amount);
+            }
+            $cost=$this->u($asset->cost); $book=$cost-$accum;
+            if($book<0) throw ValidationException::withMessages(['asset'=>'Depreciation exceeds acquisition cost.']);
+            $sale=$this->u($d['sale_proceeds']);
+            if($d['disposal_type']==='WRITE_OFF' && $sale>0)
+                throw ValidationException::withMessages(['sale_proceeds'=>'Write-off cannot have sale proceeds. Select SALE.']);
+            if($d['disposal_type']==='SALE' && $sale<=0)
+                throw ValidationException::withMessages(['sale_proceeds'=>'Sale proceeds must be positive.']);
+            $gain=$sale-$book;
+            $lines=[];
+            if($sale>0){
+                if(empty($d['cash_account_id'])) throw ValidationException::withMessages(['cash_account_id'=>'Select receiving bank/cash account.']);
+                $cash=$this->leaf((int)$d['cash_account_id'],'asset');
+                if(!in_array($cash->code,['1100','1110','1120','1150'],true))
+                    throw ValidationException::withMessages(['cash_account_id'=>'Select cash/bank account.']);
+                $lines[]=$this->line($cash->id,$sale,0,'Asset sale proceeds');
+            }
+            if($accum>0) $lines[]=$this->line($asset->accumulated_depreciation_account_id,$accum,0,'Remove accumulated depreciation');
+            $lines[]=$this->line($asset->asset_account_id,0,$cost,'Remove disposed asset at cost');
+            if($gain!==0){
+                if(empty($d['gain_loss_account_id'])) throw ValidationException::withMessages(['gain_loss_account_id'=>'Select disposal gain/loss posting account.']);
+                $acc=$this->leaf((int)$d['gain_loss_account_id'],$gain>0?'income':'expense');
+                $lines[]=$this->line($acc->id,max(0,-$gain),max(0,$gain),'Asset disposal '.($gain>0?'gain':'loss'));
+            }
+            // Checks period/amount balance before writing any disposal row.
+            $journal=$this->draft($d['disposed_on'],$d['reference'],'Asset disposal: '.$asset->code.' — '.$d['reason'],$lines,'ADJ');
+            DB::table('accounting_asset_disposals')->insert([
+                'fixed_asset_id'=>$id,'journal_entry_id'=>$journal,'disposal_type'=>$d['disposal_type'],
+                'disposed_on'=>$d['disposed_on'],'sale_proceeds'=>$this->f($sale),
+                'cash_account_id'=>$sale?(int)$d['cash_account_id']:null,
+                'gain_loss_account_id'=>$gain?(int)$d['gain_loss_account_id']:null,
+                'accumulated_depreciation'=>$this->f($accum), 'book_value'=>$this->f($book),
+                'gain_loss'=>$this->f($gain),'status'=>'PENDING','reference'=>$d['reference'],
+                'reason'=>$d['reason'],'created_by'=>auth()->id(),'created_at'=>now(),'updated_at'=>now(),
+            ]);
+            return $journal;
+        },3);
+        return redirect()->route('accounting.journals.show',$journal)
+            ->with('success','Disposal DRAFT created. Asset remains ACTIVE until independent approval and posting.');
+    }
+
+    public function cancelDisposal(Request $r,int $id)
+    {
+        $this->gate('accounting-assets');
+        DB::transaction(function() use($id){
+            $d=DB::table('accounting_asset_disposals')->where('id',$id)->lockForUpdate()->first();
+            if(!$d || $d->status!=='PENDING') throw ValidationException::withMessages(['asset'=>'Only pending disposal may be cancelled.']);
+            $j=DB::table('journal_entries')->where('id',$d->journal_entry_id)->lockForUpdate()->first();
+            if(!$j || $j->status!=='DRAFT') throw ValidationException::withMessages(['asset'=>'Only unused DRAFT may be cancelled; submitted journals require approval workflow.']);
+            DB::table('accounting_asset_disposals')->where('id',$id)->update(['status'=>'CANCELLED','updated_at'=>now()]);
+            DB::table('journal_entries')->where('id',$j->id)->update(['status'=>'CANCELLED','updated_at'=>now()]);
+        },3);
+        return back()->with('success','Unused disposal draft cancelled. Asset remains active.');
     }
 }

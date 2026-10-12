@@ -27,12 +27,58 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Tax rate histories record configuration changes, even while Accounting Capture is OFF.
+        // These are setting audit records, never automatic journal/event rows.
+        \App\Models\TaxSetting::saved(static function (\App\Models\TaxSetting $setting): void {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('vat_rate_histories')) return;
+            $oldRate=$setting->wasRecentlyCreated ? null : (float)$setting->getOriginal('vat_rate');
+            $newRate=(float)$setting->vat_rate;
+            $oldIncl=$setting->wasRecentlyCreated ? null : (bool)$setting->getOriginal('is_tax_included');
+            $newIncl=(bool)$setting->is_tax_included;
+            if ($oldRate!==null && abs($oldRate-$newRate)<0.00001 && $oldIncl===$newIncl) return;
+            \Illuminate\Support\Facades\DB::table('vat_rate_histories')->insert([
+                'tax_setting_id'=>$setting->id,'old_rate'=>$oldRate,'new_rate'=>$newRate,
+                'old_included'=>$oldIncl,'new_included'=>$newIncl,'effective_at'=>now(),
+                'changed_by'=>auth()->id(),'created_at'=>now(),'updated_at'=>now(),
+            ]);
+        });
+        $recordVendorRate = static function (\App\Models\Vendor $vendor, bool $isCreate): void {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('vendor_tax_rate_histories')) return;
+            $tax=app(\App\Services\Inventory\VendorWithholdingService::class);
+            foreach (['tds','vds'] as $type) {
+                $legacy=$isCreate ? null : (string)$vendor->getOriginal($type);
+                try { $old=$legacy===null ? null : $tax->rate($legacy); }
+                catch (\Illuminate\Validation\ValidationException $e) { $old=null; } // legacy free-text rate
+                $new=$tax->rate($vendor->{$type});
+                if ($old!==null && $old===$new) continue;
+                \Illuminate\Support\Facades\DB::table('vendor_tax_rate_histories')->insert([
+                    'vendor_id'=>$vendor->id,'tax_type'=>strtoupper($type),
+                    'old_rate'=>$old,'new_rate'=>$new,'effective_at'=>now(),
+                    'changed_by'=>auth()->id(),'created_at'=>now(),'updated_at'=>now(),
+                ]);
+            }
+        };
+        \App\Models\Vendor::created(static fn (\App\Models\Vendor $v) => $recordVendorRate($v, true));
+        \App\Models\Vendor::updated(static fn (\App\Models\Vendor $v) => $recordVendorRate($v, false));
+        // Snapshot actual VAT rate on first saved POS order / VAT change only. Never backfill
+        // historical orders from current VAT settings, or replace old invoice VAT amounts.
+        \App\Models\Order::saving(static function (\App\Models\Order $order): void {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('orders','vat_rate_snapshot')) return;
+            if (!$order->exists || $order->isDirty('vat_tax')) {
+                $rate=\Illuminate\Support\Facades\DB::table('tax_settings')->value('vat_rate');
+                if ($rate!==null) $order->vat_rate_snapshot=$rate;
+            }
+        });
         // Accounting V2.1 Phases 2-3: source listeners only register callbacks.
         // Actual capture occurs AFTER the operational DB commit and respects Capture OFF.
         \App\Models\Order::saved(static function (\App\Models\Order $order): void {
             if (strcasecmp((string)$order->status,'Completed')===0 &&
                 ($order->wasRecentlyCreated || $order->wasChanged('status'))) {
                 \App\Services\Accounting\AccountingSourceBridge::schedule('order',(int)$order->id);
+            } elseif (strcasecmp((string)$order->status,'Completed')===0 &&
+                $order->wasChanged(['subtotal','grand_total','discount_amount','product_discount_amount','vat_tax',
+                    'service_charge','delivery_charge','booking_advance','tips_amount'])) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('order_edit',(int)$order->id);
             }
         });
         \App\Models\OrderDuePayment::created(static function (\App\Models\OrderDuePayment $p): void {
@@ -40,7 +86,9 @@ class AppServiceProvider extends ServiceProvider
         });
         \App\Models\TableBooking::saved(static function (\App\Models\TableBooking $b): void {
             if ($b->wasRecentlyCreated || $b->wasChanged('advance_amount')) {
-                \App\Services\Accounting\AccountingSourceBridge::schedule('booking',(int)$b->id);
+                \App\Services\Accounting\AccountingSourceBridge::schedule('booking',(int)$b->id, [
+                    'previous_advance'=>$b->wasRecentlyCreated ? '0' : (string)($b->getOriginal('advance_amount') ?? '0'),
+                ]);
             }
         });
         \App\Models\Purchase::saved(static function (\App\Models\Purchase $p): void {

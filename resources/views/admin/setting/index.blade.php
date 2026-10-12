@@ -143,6 +143,17 @@
                 </form>
             </div>
         </div>
+        <div class="progga-card mt-3">
+            <div class="progga-card-header"><strong>VAT Rate Change History</strong></div>
+            <div class="table-responsive"><table class="table mb-0">
+                <thead><tr><th>Changed at</th><th>Old %</th><th>New %</th><th>Price treatment</th><th>User ID</th></tr></thead>
+                <tbody>
+                @forelse($vatRateHistory as $history)
+                    <tr><td>{{ $history->effective_at }}</td><td>{{ $history->old_rate === null ? 'Initial' : $history->old_rate.'%' }}</td>
+                        <td>{{ $history->new_rate }}%</td><td>{{ $history->new_included ? 'Inclusive' : 'Exclusive' }}</td><td>{{ $history->changed_by ?: 'System' }}</td></tr>
+                @empty<tr><td colspan="5" class="text-center text-muted">No VAT changes recorded since history activation.</td></tr>@endforelse
+                </tbody></table></div>
+        </div>
     </div>
 
     <div id="settingsInvoice" style="display:none;">

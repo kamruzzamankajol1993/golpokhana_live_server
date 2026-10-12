@@ -58,6 +58,29 @@ $accPager1 = \App\Support\Accounting\TablePaginator::paginate($assets, 'acc_fixe
 </tbody></table>
 @include('admin.accounting.shared._pagination', ['paginator'=>$accPager1, 'label'=>'assets'])
 </div></div>
+<div class="acc-panel"><h3>Asset Disposal / Sale (Approval Required)</h3>
+<p class="acc-hint">A disposal produces a journal DRAFT. The asset remains ACTIVE until that journal is independently approved and POSTED. Write-off has zero sale proceeds. Gain or loss account must match income/expense.</p>
+@can('accounting-assets')
+<form method="post" action="{{ route('accounting.assets.dispose',$assets->first()->id??0) }}" id="acc-dispose-form" class="row g-2" data-acc-confirm="Create asset disposal journal DRAFT?" onsubmit="this.action=this.action.replace(/\d+\/dispose$/,document.getElementById('acc-dispose-id').value+'/dispose')">@csrf
+<div class="col-md-4"><label>Active Asset</label><select id="acc-dispose-id" class="form-select" required>
+@foreach($assets as $a)@if($a->status==='ACTIVE' && !$disposals->where('fixed_asset_id',$a->id)->whereIn('status',['PENDING','POSTED'])->count())
+<option value="{{ $a->id }}">{{ $a->code }} – {{ $a->name }}</option>@endif @endforeach</select></div>
+<div class="col-md-2"><label>Type</label><select name="disposal_type" class="form-select"><option value="SALE">Sale</option><option value="WRITE_OFF">Write-off</option></select></div>
+<div class="col-md-3"><label>Disposal Date</label><input name="disposed_on" type="date" class="form-control" required></div>
+<div class="col-md-3"><label>Sale Proceeds</label><input name="sale_proceeds" type="number" min="0" step="0.0001" value="0" class="form-control" required></div>
+<div class="col-md-6"><label>Receiving Bank/Cash Account (Sale)</label><select name="cash_account_id" class="form-select"><option value="">None / write-off</option>
+@foreach($accounts->whereIn('code',['1100','1110','1120','1150']) as $a)<option value="{{ $a->id }}">{{ $a->code }} – {{ $a->name }}</option>@endforeach</select></div>
+<div class="col-md-6"><label>Gain (Income) or Loss (Expense) GL Account</label><select name="gain_loss_account_id" class="form-select"><option value="">No gain or loss</option>
+@foreach($accounts->whereIn('type',['income','expense']) as $a)<option value="{{ $a->id }}">{{ $a->code }} – {{ $a->name }} ({{ $a->type }})</option>@endforeach</select></div>
+<div class="col-md-3"><label>Unique Reference</label><input name="reference" class="form-control" required maxlength="100"></div>
+<div class="col-md-7"><label>Reason / Evidence</label><input name="reason" minlength="10" maxlength="2000" class="form-control" required></div>
+<div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary" {{ $assets->isEmpty()?'disabled':'' }}>Draft Disposal</button></div></form>
+@endcan
+<div class="table-responsive mt-3"><table class="table table-sm"><thead><tr><th>Asset</th><th>Date / Type</th><th>Proceeds</th><th>Book Value</th><th>Gain/Loss</th><th>Status</th><th>Journal</th><th>Action</th></tr></thead><tbody>
+@forelse($disposals as $d)
+<tr><td>{{ $d->asset_code }}</td><td>{{ $d->disposed_on }} / {{ $d->disposal_type }}</td><td>{{ $d->sale_proceeds }}</td><td>{{ $d->book_value }}</td><td>{{ $d->gain_loss }}</td><td>{{ $d->status }}</td><td><a href="{{ route('accounting.journals.show',$d->journal_entry_id) }}">#{{ $d->journal_entry_id }}</a></td><td>
+@can('accounting-assets') @if($d->status==='PENDING')<form action="{{ route('accounting.assets.dispose-cancel',$d->id) }}" method="post" data-acc-confirm="Cancel only unused disposal draft?">@csrf<button class="btn btn-sm btn-outline-danger">Cancel Draft</button></form>@endif @endcan</td></tr>
+@empty<tr><td colspan="8">No disposals recorded.</td></tr>@endforelse</tbody></table></div></div>
 <div class="acc-panel"><h3>Depreciation Audit</h3>
 @php 
 $accPager2 = \App\Support\Accounting\TablePaginator::paginate($depreciations, 'acc_fixed_assets_2'); 

@@ -44,6 +44,9 @@
                 @if($purchase->voucher)<div class="col-md-4"><small class="text-muted">Approved Voucher</small><div><a href="{{ route('inventory.purchase-vouchers.show',$purchase->voucher) }}">{{ $purchase->voucher->voucher_no }} / R{{ $purchase->voucher->revision_no }}</a></div></div>@endif
                 <div class="col-md-4"><small class="text-muted">Created By</small><div>{{ $purchase->creator?->name ?: '—' }}</div></div>
                 <div class="col-md-4"><small class="text-muted">Received By</small><div>{{ $purchase->receiver?->name ?: '—' }}</div></div>
+                <div class="col-md-4"><small class="text-muted">Applied TDS % (snapshot)</small><div>{{ $purchase->tds_rate_snapshot === null ? 'Legacy / not recorded' : $purchase->tds_rate_snapshot.'%' }}</div></div>
+                <div class="col-md-4"><small class="text-muted">Applied VDS % (snapshot)</small><div>{{ $purchase->vds_rate_snapshot === null ? 'Legacy / not recorded' : $purchase->vds_rate_snapshot.'%' }}</div></div>
+                <div class="col-12"><small class="text-muted">TDS/VDS are preview rates on the Purchase; actual withholding is calculated and frozen at Vendor Payment.</small></div>
                 <div class="col-12"><small class="text-muted">Notes</small><div>{{ $purchase->notes ?: '—' }}</div></div>
             </div></div></div>
         </div>
@@ -115,7 +118,12 @@
         <div class="progga-card-header"><div><strong>Vendor Payment History</strong><div class="small text-muted">Payments posted against this purchase.</div></div><a href="{{ route('inventory.vendors.show',$purchase->vendor) }}" class="progga-btn progga-btn-outline progga-btn-sm">Open Vendor Account</a></div>
         <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Payment</th><th>Date</th><th>Type</th><th>Reference</th><th class="text-end">Amount</th><th>By</th></tr></thead><tbody>
             @forelse($purchase->vendorPayments as $payment)
-                <tr><td>{{ $payment->payment_no }}</td><td>{{ optional($payment->payment_date)->format('d M Y') }}</td><td>{{ $payment->payment_type }}</td><td class="small">@if($payment->card_reference)Card: {{ $payment->card_reference }}@endif @if($payment->mfs_reference)<div>MFS: {{ $payment->mfs_reference }}</div>@endif @if(!$payment->card_reference && !$payment->mfs_reference)—@endif</td><td class="text-end fw-semibold">৳{{ number_format((float)$payment->amount,2) }}</td><td>{{ $payment->creator?->name ?: '—' }}</td></tr>
+                <tr><td>{{ $payment->payment_no }}</td><td>{{ optional($payment->payment_date)->format('d M Y') }}</td><td>{{ $payment->payment_type }}</td><td class="small">@if($payment->card_reference)Card: {{ $payment->card_reference }}@endif @if($payment->mfs_reference)<div>MFS: {{ $payment->mfs_reference }}</div>@endif @if(!$payment->card_reference && !$payment->mfs_reference)—@endif</td><td class="text-end fw-semibold">৳{{ number_format((float)$payment->amount,2) }}
+                @if((float)($payment->tds_amount??0)>0 || (float)($payment->vds_amount??0)>0)
+                <div class="small text-muted">TDS ৳{{ number_format((float)$payment->tds_amount,2) }} · VDS ৳{{ number_format((float)$payment->vds_amount,2) }}</div>
+                <div class="small text-success">Net ৳{{ number_format((float)$payment->paid_in_cash+(float)$payment->paid_in_card+(float)$payment->paid_in_mfs,2) }}</div>
+                @endif
+                </td><td>{{ $payment->creator?->name ?: '—' }}</td></tr>
             @empty<tr><td colspan="6" class="text-center text-muted py-4">No payment posted for this purchase.</td></tr>@endforelse
         </tbody></table></div>
     </div>

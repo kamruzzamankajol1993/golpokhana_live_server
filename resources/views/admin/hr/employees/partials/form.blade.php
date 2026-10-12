@@ -15,6 +15,11 @@
         ? asset('public/' . ltrim($employee->image, '/'))
         : 'https://ui-avatars.com/api/?name=' . urlencode($isEdit ? $employee->name : 'Employee') . '&background=21352a&color=d5aa65&size=160&bold=true';
     $nidImage = $isEdit && $employee->nid_image ? asset('public/' . ltrim($employee->nid_image, '/')) : null;
+    $savedEducations = $isEdit ? $employee->educations->map(fn ($item) => $item->toArray())->all() : [];
+    $savedCertificates = $isEdit ? $employee->certificates->map(fn ($item) => $item->toArray())->all() : [];
+    $educationRows = old('educations', $savedEducations);
+    $certificateRows = old('certificates', $savedCertificates);
+
 @endphp
 
 @if(session('error') || $errors->any())
@@ -206,6 +211,54 @@
                         @error('exit_date')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="hr-card mb-3" id="employeeEducationCard">
+            <div class="hr-card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div><div class="hr-card-title"><i class="bi bi-mortarboard me-2"></i>Education Information</div>
+                    <div class="hr-card-subtitle">Add multiple education records using the plus button.</div></div>
+                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddEducation"><i class="bi bi-plus-lg"></i> Add Education</button>
+            </div>
+            <div class="hr-card-body">
+                <input type="hidden" name="sync_educations" value="1">
+                <div id="employeeEducationRows">
+                    @foreach($educationRows as $rowIndex => $row)
+                        @include('admin.hr.employees.partials.education-row', ['row' => $row, 'rowIndex' => $rowIndex])
+                    @endforeach
+                </div>
+                <div class="hr-muted employee-empty-note" id="employeeEducationEmpty">No education record added yet.</div>
+                <template id="employeeEducationTemplate">
+                    @include('admin.hr.employees.partials.education-row', ['row' => [], 'rowIndex' => '__INDEX__'])
+                </template>
+            </div>
+        </div>
+
+        <div class="hr-card mb-3" id="employeeCertificateCard">
+            <div class="hr-card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div><div class="hr-card-title"><i class="bi bi-award me-2"></i>Certificates</div>
+                    <div class="hr-card-subtitle">Add certificates with title and file; existing files are retained unless changed or removed.</div></div>
+                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddCertificate"><i class="bi bi-plus-lg"></i> Add Certificate</button>
+            </div>
+            <div class="hr-card-body">
+                <input type="hidden" name="sync_certificates" value="1">
+                <div id="employeeCertificateRows">
+                    @foreach($certificateRows as $rowIndex => $row)
+                        @php
+                            // After a validation redirect, retain existing file links for previously saved rows.
+                            $row = (array) $row;
+                            if ($isEdit && !empty($row['id'])) {
+                                $savedCertificate = $employee->certificates->firstWhere('id', (int) $row['id']);
+                                $row['file_path'] = $savedCertificate?->file_path;
+                            }
+                        @endphp
+                        @include('admin.hr.employees.partials.certificate-row', ['row' => $row, 'rowIndex' => $rowIndex])
+                    @endforeach
+                </div>
+                <div class="hr-muted employee-empty-note" id="employeeCertificateEmpty">No certificate added yet.</div>
+                <template id="employeeCertificateTemplate">
+                    @include('admin.hr.employees.partials.certificate-row', ['row' => [], 'rowIndex' => '__INDEX__'])
+                </template>
             </div>
         </div>
 

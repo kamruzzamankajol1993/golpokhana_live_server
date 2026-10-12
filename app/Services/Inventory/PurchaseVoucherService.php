@@ -54,6 +54,8 @@ class PurchaseVoucherService
 
             $voucher->fill([
                 'vendor_id' => $vendor->id,
+                'tds_rate_snapshot'=>app(\App\Services\Inventory\VendorWithholdingService::class)->rate($vendor->tds),
+                'vds_rate_snapshot'=>app(\App\Services\Inventory\VendorWithholdingService::class)->rate($vendor->vds),
                 'voucher_date' => $header['voucher_date'],
                 'status' => PurchaseVoucher::STATUS_DRAFT,
                 'subtotal' => $subtotal,

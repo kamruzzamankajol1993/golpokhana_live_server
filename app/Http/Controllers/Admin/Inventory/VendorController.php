@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Purchase;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
+use App\Services\Inventory\VendorWithholdingService;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,7 +49,7 @@ class VendorController extends Controller
 
     public function store(Request $request)
     {
-        $vendor = Vendor::query()->create($this->validated($request));
+        $vendor = DB::transaction(fn () => Vendor::query()->create($this->validated($request)));
         $this->persistDocuments($request, $vendor);
 
         return redirect()->route('inventory.vendors.show', $vendor)->with('success', 'Vendor created successfully.');
@@ -83,12 +85,13 @@ class VendorController extends Controller
         $totalPaid = (float) $vendor->payments()->sum('amount');
         $totalDue = max(0, round($totalPurchase - $totalPaid, 4));
 
+        $vendorRateHistories = Schema::hasTable('vendor_tax_rate_histories') ? DB::table('vendor_tax_rate_histories')->where('vendor_id',$vendor->id)->orderByDesc('id')->limit(30)->get() : collect();
         $cardTypes = VendorPayment::CARD_TYPES;
         $mfsProviders = VendorPayment::MFS_PROVIDERS;
 
         return view('admin.inventory.vendors.show', compact(
             'vendor', 'purchases', 'payments', 'outstandingPurchases',
-            'totalPurchase', 'totalPaid', 'totalDue', 'cardTypes', 'mfsProviders'
+            'totalPurchase', 'totalPaid', 'totalDue', 'cardTypes', 'mfsProviders', 'vendorRateHistories'
         ));
     }
 
@@ -99,13 +102,13 @@ class VendorController extends Controller
 
     public function update(Request $request, Vendor $vendor)
     {
-        $vendor->update($this->validated($request, $vendor));
+        DB::transaction(fn () => $vendor->update($this->validated($request, $vendor)));
         $this->persistDocuments($request, $vendor);
 
         return redirect()->route('inventory.vendors.show', $vendor)->with('success', 'Vendor updated successfully.');
     }
 
-    public function storePayment(Request $request, Vendor $vendor)
+    public function storePayment(Request $request, Vendor $vendor, VendorWithholdingService $withholding)
     {
         $data = $request->validate([
             'purchase_id' => ['required', 'integer', 'exists:purchases,id'],
@@ -117,6 +120,7 @@ class VendorController extends Controller
                 VendorPayment::TYPE_SPLIT,
             ])],
             'amount' => ['required', 'numeric', 'gt:0'],
+            'withholding_base' => ['nullable','numeric','gt:0'],
             'paid_in_cash' => ['nullable', 'numeric', 'gte:0'],
             'paid_in_card' => ['nullable', 'numeric', 'gte:0'],
             'paid_in_mfs' => ['nullable', 'numeric', 'gte:0'],
@@ -127,7 +131,12 @@ class VendorController extends Controller
             'note' => ['nullable', 'string', 'max:3000'],
         ]);
 
-        $amount = round((float) $data['amount'], 4);
+        $amount = round((float) $data['amount'], 4); // GROSS supplier payable settled
+        $tdsRate=$withholding->rate($vendor->tds);
+        $vdsRate=$withholding->rate($vendor->vds);
+        $tax=$withholding->calculate($amount,$tdsRate,$vdsRate, isset($data['withholding_base']) ? (float)$data['withholding_base'] : null);
+        $net=$tax['net'];
+
         $cash = 0.0;
         $card = 0.0;
         $mfs = 0.0;
@@ -137,9 +146,9 @@ class VendorController extends Controller
         $mfsReference = null;
 
         if ($data['payment_type'] === VendorPayment::TYPE_CASH) {
-            $cash = $amount;
+            $cash = $net;
         } elseif ($data['payment_type'] === VendorPayment::TYPE_CARD) {
-            $card = $amount;
+            $card = $net;
             $cardType = trim((string) ($data['card_type'] ?? ''));
             $cardReference = trim((string) ($data['card_reference'] ?? ''));
             if ($cardType === '' || $cardReference === '') {
@@ -148,7 +157,7 @@ class VendorController extends Controller
                 ]);
             }
         } elseif ($data['payment_type'] === VendorPayment::TYPE_MFS) {
-            $mfs = $amount;
+            $mfs = $net;
             $mfsProvider = trim((string) ($data['mfs_provider'] ?? ''));
             $mfsReference = trim((string) ($data['mfs_reference'] ?? ''));
             if ($mfsProvider === '' || $mfsReference === '') {
@@ -162,9 +171,9 @@ class VendorController extends Controller
             $mfs = round(max(0, (float) ($data['paid_in_mfs'] ?? 0)), 4);
             $splitTotal = round($cash + $card + $mfs, 4);
 
-            if ($splitTotal <= 0 || abs($splitTotal - $amount) > 0.0099) {
+            if ($splitTotal <= 0 || abs($splitTotal - $net) > 0.0001) {
                 throw ValidationException::withMessages([
-                    'amount' => 'For Split payment, Cash + Card + MFS must exactly match the total payment amount.',
+                    'amount' => 'For Split payment, Cash + Card + MFS must equal the NET vendor payment after TDS/VDS deductions.',
                 ]);
             }
 
@@ -189,7 +198,7 @@ class VendorController extends Controller
             }
         }
 
-        DB::transaction(function () use ($request, $vendor, $data, $amount, $cash, $card, $mfs, $cardType, $mfsProvider, $cardReference, $mfsReference) {
+        DB::transaction(function () use ($request, $vendor, $data, $amount, $cash, $card, $mfs, $cardType, $mfsProvider, $cardReference, $mfsReference, $tax, $tdsRate, $vdsRate) {
             $purchase = Purchase::query()
                 ->whereKey((int) $data['purchase_id'])
                 ->where('vendor_id', $vendor->id)
@@ -202,6 +211,12 @@ class VendorController extends Controller
                 ]);
             }
 
+            // Manual accounting withholding already exists on this Purchase: mixing
+            // direct journal adjustments with automatic payment deductions is unsafe.
+            if (Schema::hasTable('accounting_withholdings') && DB::table('accounting_withholdings')
+                ->where('purchase_id',$purchase->id)->exists()) {
+                throw ValidationException::withMessages(['purchase_id'=>'Manual withholding already exists on this purchase. Reconcile or reverse it with the Accountant before automatic vendor deduction.']);
+            }
             $alreadyPaid = (float) VendorPayment::query()
                 ->where('purchase_id', $purchase->id)
                 ->lockForUpdate()
@@ -221,7 +236,10 @@ class VendorController extends Controller
                 'payment_no' => $this->nextPaymentNumber(),
                 'payment_date' => $data['payment_date'],
                 'payment_type' => $data['payment_type'],
-                'amount' => $amount,
+                'amount' => $amount, // Gross AP settlement, includes the withheld amount
+                'tds_rate_snapshot'=>$tdsRate,'vds_rate_snapshot'=>$vdsRate,
+                'withholding_base'=>$tax['base'],
+                'tds_amount'=>$tax['tds'],'vds_amount'=>$tax['vds'],
                 'paid_in_cash' => $cash,
                 'paid_in_card' => $card,
                 'paid_in_mfs' => $mfs,
@@ -294,8 +312,8 @@ class VendorController extends Controller
             'address' => ['nullable', 'string', 'max:2000'],
             'tin' => ['nullable', 'string', 'max:160'],
             'bin' => ['nullable', 'string', 'max:160'],
-            'tds' => ['nullable', 'string', 'max:160'],
-            'vds' => ['nullable', 'string', 'max:160'],
+            'tds' => ['nullable', 'regex:/^\d{1,3}(?:\.\d{1,4})?$/D', 'numeric', 'between:0,100'],
+            'vds' => ['nullable', 'regex:/^\d{1,3}(?:\.\d{1,4})?$/D', 'numeric', 'between:0,100'],
             'tax' => ['nullable', 'string', 'max:160'],
             'tin_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
             'bin_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
@@ -303,6 +321,9 @@ class VendorController extends Controller
         ]);
 
         unset($data['tin_file'], $data['bin_file'], $data['tax_file']);
+        if ((float)($data['tds']??0)+(float)($data['vds']??0)>=100) {
+            throw ValidationException::withMessages(['tds'=>'Combined TDS + VDS rate must be below 100%.']);
+        }
         $data['is_active'] = $request->boolean('is_active');
 
         return $data;

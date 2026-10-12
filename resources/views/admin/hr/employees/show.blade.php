@@ -102,6 +102,40 @@
             </div>
         </div>
 
+        <div class="row g-3 mb-3">
+            <div class="col-xl-6">
+                <div class="hr-card h-100">
+                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-mortarboard me-2"></i>Education Information</div></div>
+                    <div class="hr-card-body">
+                        @forelse($employee->educations as $education)
+                            <div class="border-bottom pb-2 mb-2">
+                                <strong>{{ $education->qualification }}</strong>
+                                @if($education->institution)<div>{{ $education->institution }}</div>@endif
+                                <div class="hr-muted">{{ collect([$education->field_of_study, $education->passing_year, $education->result])->filter()->join(' · ') }}</div>
+                            </div>
+                        @empty
+                            <div class="hr-muted">No education information added.</div>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-6">
+                <div class="hr-card h-100">
+                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-award me-2"></i>Certificates</div></div>
+                    <div class="hr-card-body">
+                        @forelse($employee->certificates as $certificate)
+                            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2 gap-2">
+                                <strong>{{ $certificate->title }}</strong>
+                                <a href="{{ asset('public/' . ltrim($certificate->file_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-arrow-down"></i> View File</a>
+                            </div>
+                        @empty
+                            <div class="hr-muted">No certificates uploaded.</div>
+                        @endforelse
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row g-3">
             <div class="col-xl-4">
                 <div class="hr-card mb-3">

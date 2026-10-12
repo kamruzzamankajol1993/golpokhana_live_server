@@ -475,12 +475,30 @@ class PayrollController extends Controller
         }
 
         DB::transaction(function () use ($payrollRun) {
-            $payrollRun->items()->where('status', 'draft')->update([
+            // The mass update below bypasses Eloquent saved observers.
+            // Select draft IDs within this transaction so only NEW approvals
+            // are sent to Accounting, never previously approved payroll rows.
+            $newlyApprovedIds = $payrollRun->items()
+                ->where('status', 'draft')
+                ->lockForUpdate()
+                ->pluck('id');
+
+            if ($newlyApprovedIds->isEmpty()) {
+                return;
+            }
+
+            $payrollRun->items()->whereIn('id', $newlyApprovedIds)->where('status', 'draft')->update([
                 'status' => 'approved',
                 'approved_by' => auth()->id(),
                 'approved_at' => now(),
             ]);
             $payrollRun->syncWorkflowStatus(auth()->id());
+
+            foreach ($newlyApprovedIds as $itemId) {
+                // Bridge checks Accounting Capture ON/OFF and defers processing
+                // until the surrounding transaction has committed successfully.
+                \App\Services\Accounting\AccountingSourceBridge::schedule('payroll_item', (int) $itemId);
+            }
         });
 
         return back()->with('success', 'All remaining Draft employee payroll records were approved.');

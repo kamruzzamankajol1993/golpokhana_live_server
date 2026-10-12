@@ -2,7 +2,7 @@
 @extends('admin.master.master')
 @section('title','POS Cash Reconciliation')
 @section('body')
-<main class="progga-content acc-shell">@include('admin.accounting.shared._common')
+<main class="progga-content acc-shell">@include('admin.accounting._nav')
 <div class="acc-panel"><h3>Closed POS Session Cash Checks</h3><p class="acc-hint">Expected = opening float + Cash portions of POSTED accounting events during session. Unposted source events, operator withdrawals and other unknown cash movements must be reviewed separately. A variance is not automatically an Income or Expense.</p><div class="table-responsive"><table class="table"><thead><tr><th>Session</th><th>Open / Close</th><th>Opening</th><th>Reconciled Amounts</th><th>Counted Drawer Cash</th></tr></thead><tbody>
 @forelse($sessions as $s)
 

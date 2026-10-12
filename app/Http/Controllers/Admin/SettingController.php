@@ -23,6 +23,8 @@ class SettingController extends Controller
     {
         $restaurant = RestaurantSetting::first();
         $tax        = TaxSetting::first();
+        $vatRateHistory = Schema::hasTable('vat_rate_histories')
+            ? DB::table('vat_rate_histories')->orderByDesc('id')->limit(30)->get() : collect();
         $invoice    = InvoiceSetting::first();
         $pos        = PosSetting::first();
         $roles      = Role::with('permissions')->get(); // রোলের জন্য
@@ -63,6 +65,7 @@ class SettingController extends Controller
         return view('admin.setting.index', compact(
             'restaurant',
             'tax',
+            'vatRateHistory',
             'invoice',
             'pos',
             'roles',
@@ -116,11 +119,15 @@ class SettingController extends Controller
 
     public function updateTax(Request $request)
     {
+        $request->validate([
+            'vat_rate'=>['required','numeric','between:0,100'],
+            'service_charge'=>['nullable','numeric','between:0,100'],
+        ]);
         $data = $request->except(['_token']);
         $data['is_tax_included'] = $request->has('is_tax_included');
 
         $tax = TaxSetting::first() ?? new TaxSetting();
-        $tax->fill($data)->save();
+        DB::transaction(function () use ($tax,$data) { $tax->fill($data)->save(); });
         return back()->with('success', 'Vat configuration updated!');
     }
 

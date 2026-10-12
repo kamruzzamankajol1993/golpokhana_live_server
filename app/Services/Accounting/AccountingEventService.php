@@ -36,7 +36,13 @@ final class AccountingEventService
                     if (in_array($sourceType,$tables,true) && ctype_digit((string)$sourceId)
                         && DB::getSchemaBuilder()->hasColumn($sourceType,'created_at')) {
                         $original=DB::table($sourceType)->where('id',$sourceId)->value('created_at');
-                        if ($original && Carbon::parse($original)->lessThan($cutoff)) return null;
+                        // The first advance added to an older zero-advance booking is a NEW receipt,
+                    // not historical booking backfill. It must have an auditable 0 -> positive transition.
+                    $newBookingReceipt=$sourceType==='table_bookings'
+                        && $eventType==='BOOKING_ADVANCE_RECEIVED'
+                        && (string)($snapshot['source']['previous_advance'] ?? '') !== ''
+                        && AccountingMoney::units((string)$snapshot['source']['previous_advance'])===0;
+                    if ($original && Carbon::parse($original)->lessThan($cutoff) && !$newBookingReceipt) return null;
                     }
                 }
 
@@ -77,6 +83,9 @@ final class AccountingEventService
                 if (!empty(json_decode($event->snapshot,true)['invalid_reason'])) {
                     throw ValidationException::withMessages(['event'=>'Source reconciliation exception must be resolved before journal generation.']);
                 }
+                if ($event->status==='SUPERSEDED') {
+                    throw ValidationException::withMessages(['event'=>'This event was superseded by a later Order version and cannot be generated.']);
+                }
                 if ($event->journal_entry_id) {
                     // Exactly once: a repeat request gets its existing draft/posting.
                     return (int)$event->journal_entry_id;
@@ -87,8 +96,15 @@ final class AccountingEventService
                         throw ValidationException::withMessages(['event'=>'Automatic posting is not enabled.']);
                     }
                 }
+                // Corrections use the SAME approved mapping as the original sale/tip;
+                // avoid a separate configuration that could diverge from the live POS rules.
+                $mappingType=match ($event->event_type) {
+                    'SALES_CORRECTION'=>'SALES_COMPLETED',
+                    'TIPS_CORRECTION'=>'TIPS_RECEIVED',
+                    default=>$event->event_type,
+                };
                 $mapping=DB::table('account_mappings')->where('source_type',$event->source_type)
-                    ->where('event_type',$event->event_type)->where('is_active',true)->first();
+                    ->where('event_type',$mappingType)->where('is_active',true)->first();
                 if (!$mapping) throw ValidationException::withMessages(['mapping'=>'No active approved account mapping.']);
                 $snapshot=json_decode($event->snapshot,true,512,JSON_THROW_ON_ERROR);
                 $amounts=$snapshot['amounts'] ?? [];
@@ -98,11 +114,32 @@ final class AccountingEventService
                     if (!array_key_exists($rule->amount_key,$amounts)) {
                         throw ValidationException::withMessages(['mapping'=>'Missing saved amount: '.$rule->amount_key]);
                     }
-                    $units=AccountingMoney::units((string)$amounts[$rule->amount_key]);
+                    $raw=(string)$amounts[$rule->amount_key];
+                    $correction=in_array($event->event_type,['SALES_CORRECTION','TIPS_CORRECTION'],true);
+                    if (!$correction && str_starts_with($raw,'-')) {
+                        throw ValidationException::withMessages(['event'=>'Negative amounts are only allowed in versioned correction events.']);
+                    }
+                    $negative=$correction && str_starts_with($raw,'-');
+                    $units=AccountingMoney::units($negative ? substr($raw,1) : $raw);
                     if ($units===0) continue;
-                    $lines[]=['account_id'=>$rule->account_id,'debit'=>$rule->direction==='debit' ? AccountingMoney::format($units) : '0',
-                        'credit'=>$rule->direction==='credit' ? AccountingMoney::format($units) : '0',
+                    $debit=($rule->direction==='debit') !== $negative;
+                    $lines[]=['account_id'=>$rule->account_id,'debit'=>$debit ? AccountingMoney::format($units) : '0',
+                        'credit'=>!$debit ? AccountingMoney::format($units) : '0',
                         'allow_control'=>true,'memo'=>$rule->role];
+                }
+                // Direct vendor withholding is an inseparable part of the same AP_SETTLEMENT,
+                // NOT a second unlinked accounting withholding transaction.
+                if ($event->event_type==='AP_SETTLEMENT') {
+                    foreach (['tds_withheld'=>'2141','vds_withheld'=>'2142'] as $key=>$code) {
+                        $units=AccountingMoney::units((string)($amounts[$key] ?? '0'));
+                        if (!$units) continue;
+                        if ($rules->contains('amount_key',$key)) continue; // approved custom mapping already handles it
+                        $account=DB::table('chart_of_accounts')->where('code',$code)
+                            ->where('is_active',true)->where('is_header',false)->value('id');
+                        if (!$account) throw ValidationException::withMessages(['mapping'=>'Required '.$code.' withholding liability account is missing.']);
+                        $lines[]=['account_id'=>(int)$account,'debit'=>'0',
+                            'credit'=>AccountingMoney::format($units),'allow_control'=>true,'memo'=>$key];
+                    }
                 }
                 $this->posting->assertLines($lines);
                 $id=$this->posting->createDraft(['journal_id'=>$mapping->journal_id,
@@ -120,21 +157,25 @@ final class AccountingEventService
             },3);
             if ($post) {
                 $sourceEvent=DB::table('accounting_events')->where('id',$eventId)->first();
+                $policyType=match ($sourceEvent->event_type) {
+                    'SALES_CORRECTION'=>'SALES_COMPLETED',
+                    'TIPS_CORRECTION'=>'TIPS_RECEIVED',
+                    default=>$sourceEvent->event_type,
+                };
                 $policy=DB::table('account_mappings')->where('source_type',$sourceEvent->source_type)
-                    ->where('event_type',$sourceEvent->event_type)->first();
+                    ->where('event_type',$policyType)->first();
                 if ($policy && $policy->requires_approval) return $result;
                 // A failed post leaves a draft for explicit correction, never posts partial lines.
                 $journal=DB::table('journal_entries')->where('id',$result)->first();
                 if ($journal && $journal->status==='DRAFT') {
-                    if ($actor!==null) throw ValidationException::withMessages(['journal'=>'Draft generated. Submit and obtain independent approval before posting.']);
-                    $this->posting->post($result,null,true);
+                    $this->posting->post($result,$actor,true);
                 }
             }
             return $result;
         } catch (Throwable $e) {
             // Retry state and trace are written separately so they survive the failed generation transaction.
             $event=DB::table('accounting_events')->where('id',$eventId)->first();
-            if ($event && $event->status!=='POSTED') {
+            if ($event && !in_array($event->status,['POSTED','SUPERSEDED'],true)) {
                 DB::table('accounting_events')->where('id',$eventId)->update([
                     'status'=>$event->journal_entry_id ? 'DRAFT' : 'MAPPING_ERROR',
                     'last_error'=>substr($e->getMessage(),0,3000),'updated_at'=>now(),

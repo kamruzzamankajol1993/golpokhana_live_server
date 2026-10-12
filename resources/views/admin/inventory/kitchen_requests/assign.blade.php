@@ -24,20 +24,23 @@
         <div class="progga-card mb-4">
             <div class="progga-card-header d-flex justify-content-between align-items-center gap-3">
                 <div><strong>Ingredient Assignment</strong><div class="small text-muted">Food-wise recipe quantities and direct ingredients are already combined here. Assignment immediately decreases Store Stock and increases Kitchen Stock in one audited transaction.</div></div>
-                <button type="button" class="progga-btn progga-btn-light progga-btn-sm" onclick="fillAllRemaining()"><i class="bi bi-check2-all"></i> Fill All Remaining</button>
+                <button type="button" class="progga-btn progga-btn-light progga-btn-sm" onclick="autoFillAllAssignments()"><i class="bi bi-check2-all"></i> Auto Fill All</button>
             </div>
             <div class="table-responsive"><table class="table align-middle mb-0">
-                <thead><tr><th>Ingredient</th><th>Requested</th><th>Already Assigned</th><th>Remaining</th><th>Available Store</th><th style="width:170px">Assign Qty</th><th style="width:230px">Unit</th></tr></thead>
+                <thead><tr><th>Ingredient</th><th>Requested</th><th>Already Assigned</th><th>Remaining</th><th>Available Store</th><th style="min-width:225px">Assign Qty</th><th style="width:230px">Unit</th></tr></thead>
                 <tbody>
                 @foreach($kitchenRequest->ingredientItems as $item)
                     @if((float)$item->remaining_base > 0)
-                    <tr class="assign-row" data-remaining="{{ $item->remaining_base }}" data-base-unit="u:{{ $item->ingredient?->base_unit_id }}">
+                    <tr class="assign-row" data-remaining="{{ $item->remaining_base }}" data-available="{{ $item->available_main_base }}" data-base-unit="u:{{ $item->ingredient?->base_unit_id }}">
                         <td><strong>{{ $item->ingredient?->name }}</strong></td>
                         <td>{{ rtrim(rtrim((string)$item->required_base_qty,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</td>
                         <td>{{ rtrim(rtrim((string)$item->issued_base_qty,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</td>
                         <td class="fw-semibold">{{ rtrim(rtrim((string)$item->remaining_base,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</td>
                         <td><span class="{{ (float)$item->available_main_base < (float)$item->remaining_base ? 'text-danger fw-semibold' : 'text-success fw-semibold' }}">{{ rtrim(rtrim((string)$item->available_main_base,'0'),'.') }} {{ $item->ingredient?->baseUnit?->symbol }}</span></td>
-                        <td><input type="number" step="0.00000001" min="0" name="items[{{ $item->id }}][quantity]" value="{{ old('items.'.$item->id.'.quantity') }}" class="progga-form-control assign-qty" placeholder="0"></td>
+                        <td><div class="d-flex gap-2 align-items-center">
+                            <input type="number" step="0.01" min="0" name="items[{{ $item->id }}][quantity]" value="{{ old('items.'.$item->id.'.quantity') !== null && old('items.'.$item->id.'.quantity') !== '' ? number_format((float) old('items.'.$item->id.'.quantity'), 2, '.', '') : '' }}" class="progga-form-control assign-qty" placeholder="0.00" aria-label="Assign quantity">
+                            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm text-nowrap" onclick="autoFillAssignment(this)" title="Fill the smaller of remaining requested and available store quantity"><i class="bi bi-magic"></i> Auto Fill</button>
+                        </div></td>
                         <td><select name="items[{{ $item->id }}][unit_choice]" class="progga-form-control assign-unit"><option value="">Select unit / package</option>@foreach($unitOptionsByIngredient[(int)$item->ingredient_id] ?? [] as $choice)<option value="{{ $choice['value'] }}" @selected((string)old('items.'.$item->id.'.unit_choice','u:'.$item->ingredient?->base_unit_id)===(string)$choice['value'])>{{ $choice['label'] }}</option>@endforeach</select></td>
                     </tr>
                     @endif
@@ -58,12 +61,30 @@
 @endsection
 @section('script')
 <script>
-function fillAllRemaining(){document.querySelectorAll('.assign-row').forEach(row=>{const qty=row.querySelector('.assign-qty'),unit=row.querySelector('.assign-unit');qty.value=row.dataset.remaining||'';if([...unit.options].some(o=>o.value===row.dataset.baseUnit))unit.value=row.dataset.baseUnit;});}
+// Always fill the base unit: both limits are measured in ingredient base units.
+// Display two decimal places without overflowing either available stock or remaining demand.
+function autoFillAssignment(button){
+    const row = button.closest('.assign-row');
+    if(!row) return;
+    const quantity = row.querySelector('.assign-qty');
+    const unit = row.querySelector('.assign-unit');
+    const remaining = Math.max(0, Number(row.dataset.remaining) || 0);
+    const available = Math.max(0, Number(row.dataset.available) || 0);
+    const safeAmount = Math.floor(Math.min(remaining,available) * 100 + 1e-7) / 100;
+    quantity.value = safeAmount.toFixed(2);
+    if([...unit.options].some(option=>option.value===row.dataset.baseUnit)){
+        unit.value = row.dataset.baseUnit;
+    }
+    quantity.dispatchEvent(new Event('input', {bubbles:true}));
+}
+function autoFillAllAssignments(){
+    document.querySelectorAll('.assign-row').forEach(row=>autoFillAssignment(row.querySelector('button[onclick="autoFillAssignment(this)"]')));
+}
 function confirmAssignment(){
-    const hasQty=[...document.querySelectorAll('.assign-qty')].some(i=>parseFloat(i.value||'0')>0);
-    if(!hasQty){if(window.Swal){Swal.fire({title:'No quantity entered',text:'Enter at least one ingredient quantity to assign.',icon:'info'});}else{alert('Enter at least one ingredient quantity to assign.');}return;}
+    const hasQty=[...document.querySelectorAll('.assign-qty')].some(i=>i.value.trim()!=='');
+    if(!hasQty){if(window.Swal){Swal.fire({title:'No quantity entered',text:'Enter a quantity (0.00 is allowed), or use Auto Fill.',icon:'info'});}else{alert('Enter a quantity (0.00 is allowed), or use Auto Fill.');}return;}
     const form=document.getElementById('assignIngredientForm');
-    if(window.Swal){Swal.fire({title:'Approve & assign ingredients to Kitchen?',text:'Store Stock will decrease and Kitchen Stock will increase immediately.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, approve & assign',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});}else if(window.confirm('Assign these ingredients to Kitchen?')){form.submit();}
+    if(window.Swal){Swal.fire({title:'Approve & assign ingredients to Kitchen?',text:'Only positive quantities transfer stock. An assignment of 0.00 leaves stock unchanged.',icon:'question',showCancelButton:true,confirmButtonText:'Yes, approve & assign',cancelButtonText:'Cancel'}).then(r=>{if(r.isConfirmed)form.submit();});}else if(window.confirm('Assign these ingredients to Kitchen?')){form.submit();}
 }
 </script>
 @endsection

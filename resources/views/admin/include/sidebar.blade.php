@@ -88,6 +88,22 @@
     @php
         $accountingOpen = request()->routeIs('accounting.*');
         $accountingGroups = config('accounting_navigation', []);
+        // Add the three report destinations within the existing Reports & Closing group.
+        // Do not replace the site's existing accounting navigation configuration.
+        $accountingReportLinks = [
+            ['label' => 'Customer Ledger', 'route' => 'accounting.financial-details', 'permission' => 'accounting-financial-reports', 'parameters' => ['type' => 'customer-ledger']],
+            ['label' => 'Vendor Ledger', 'route' => 'accounting.financial-details', 'permission' => 'accounting-financial-reports', 'parameters' => ['type' => 'vendor-ledger']],
+            ['label' => 'Invoice Analysis', 'route' => 'accounting.financial-details', 'permission' => 'accounting-financial-reports', 'parameters' => ['type' => 'invoice-analysis']],
+        ];
+        $accountingGroups['Reports & Closing'] = $accountingGroups['Reports & Closing'] ?? [];
+        foreach ($accountingReportLinks as $reportLink) {
+            $alreadyListed = collect($accountingGroups['Reports & Closing'])->contains(function ($item) use ($reportLink) {
+                return ($item['route'] ?? null) === $reportLink['route']
+                    && ($item['parameters']['type'] ?? null) === $reportLink['parameters']['type'];
+            });
+            if (!$alreadyListed) $accountingGroups['Reports & Closing'][] = $reportLink;
+        }
+
         $accountingGroupIcons = [
           'Setup'=>'bi-sliders',
           'Journals & Operations'=>'bi-journal-text',
@@ -110,7 +126,10 @@
           @php
             // Render only groups containing at least one authorized child link.
             $visibleItems = collect($items)->filter(fn ($entry) => auth()->user()?->can($entry['permission']));
-            $groupOpen = $visibleItems->contains(fn ($entry) => request()->routeIs($entry['route']));
+            $groupOpen = $visibleItems->contains(function ($entry) {
+                return request()->routeIs($entry['route'])
+                    && (!isset($entry['parameters']['type']) || request()->query('type', 'customer-ledger') === $entry['parameters']['type']);
+            });
             $groupId = 'accountingSubmenu'.\Illuminate\Support\Str::studly($group);
           @endphp
           @if($visibleItems->isNotEmpty())
@@ -120,7 +139,7 @@
             </a>
             <div id="{{ $groupId }}" class="collapse {{ $groupOpen ? 'show' : '' }}" data-bs-parent="#accountingModuleDropdown">
               @foreach($visibleItems as $entry)
-                <a class="progga-nav-link {{ request()->routeIs($entry['route']) ? 'active' : '' }}" href="{{ route($entry['route']) }}" style="padding-left:59px;font-size:12px">
+                <a class="progga-nav-link {{ (request()->routeIs($entry['route']) && (!isset($entry['parameters']['type']) || request()->query('type', 'customer-ledger') === $entry['parameters']['type'])) ? 'active' : '' }}" href="{{ route($entry['route'], $entry['parameters'] ?? []) }}" style="padding-left:59px;font-size:12px">
                   <i class="bi bi-circle-fill progga-nav-icon" style="font-size:5px"></i><span>{{ $entry['label'] }}</span>
                 </a>
               @endforeach

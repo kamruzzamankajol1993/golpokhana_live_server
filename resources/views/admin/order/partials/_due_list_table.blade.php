@@ -110,56 +110,13 @@
             <td><span class="progga-order-time">{{ $order->created_at ? $order->created_at->format('h:i A') : '—' }}</span></td>
             <td><span class="progga-order-time">{{ is_null($order->kitchen_to_payment_minutes) ? '—' : $order->kitchen_to_payment_minutes . ' min' }}</span></td>
             <td>
-              <div class="dropdown progga-order-action-menu" style="position:static;">
-                <button type="button"
-                        class="progga-btn progga-btn-outline progga-btn-sm dropdown-toggle"
-                        data-bs-toggle="dropdown"
-                        data-bs-boundary="viewport" data-bs-popper-config="{"strategy":"fixed"}"
-                        aria-expanded="false">
-                  <i class="bi bi-three-dots-vertical"></i> Actions
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="z-index:9999;">
-                  <li>
-                    <button type="button" class="dropdown-item" onclick="viewOrder({{ $order->id }})">
-                      <i class="bi bi-eye"></i><span>View Order</span>
-                    </button>
-                  </li>
-                  @can('order-edit')
-                  <li>
-                    <a href="{{ route('order.edit', $order->id) }}" class="dropdown-item">
-                      <i class="bi bi-pencil-square"></i><span>Edit Order</span>
-                    </a>
-                  </li>
-                  @endcan
-                  <li>
-                    <a href="{{ route('pos.invoice', $order->id) }}" target="_blank" class="dropdown-item">
-                      <i class="bi bi-printer"></i><span>Print Receipt</span>
-                    </a>
-                  </li>
-                  <li>
-                    <a href="{{ route('order.details', $order->id) }}" class="dropdown-item">
-                      <i class="bi bi-card-list"></i><span>Full Details</span>
-                    </a>
-                  </li>
-                  <li>
-                    <a href="{{ route('order.due_settlement', $order->id) }}" class="dropdown-item">
-                      <i class="bi bi-cash-coin"></i><span>Due Settlement</span>
-                    </a>
-                  </li>
-                  <li>
-                    <button type="button" class="dropdown-item" onclick="viewDeleteHistory({{ $order->id }})">
-                      <i class="bi bi-clock-history"></i><span>Delete History</span>
-                    </button>
-                  </li>
-                  @can('order-delete')
-                  <li><hr class="dropdown-divider"></li>
-                  <li>
-                    <button type="button" class="dropdown-item text-danger" onclick="deleteOrder({{ $order->id }})">
-                      <i class="bi bi-trash"></i><span>Delete Order</span>
-                    </button>
-                  </li>
-                  @endcan
-                </ul>
+              <div class="d-flex align-items-center gap-2 flex-wrap due-list-actions">
+                <a href="{{ route('order.due_settlement', $order->id) }}" class="progga-btn progga-btn-primary progga-btn-sm">
+                  <i class="bi bi-cash-coin"></i> Due Settlement
+                </a>
+                <a href="{{ route('order.details', $order->id) }}" class="progga-btn progga-btn-outline progga-btn-sm">
+                  <i class="bi bi-card-list"></i> Full Details
+                </a>
               </div>
             </td>
           </tr>
@@ -186,7 +143,7 @@
 .due-list-table-scroll .progga-table {
     min-width:1900px;
 }
-.progga-order-action-menu .dropdown-menu {
-    position:fixed !important;
+.due-list-actions {
+    min-width:260px;
 }
 </style>

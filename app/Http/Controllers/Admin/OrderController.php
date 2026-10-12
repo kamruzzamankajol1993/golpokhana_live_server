@@ -60,7 +60,9 @@ class OrderController extends Controller
     public function dueList(Request $request)
     {
         $query = $this->buildOrderReportQuery($request);
-        $query->where('due', '>', 0);
+        // JK Special Due List business rule: only completed, unpaid orders.
+        // This is an operational filter, not branch-wise Accounting.
+        $query->where('status', 'Completed')->where('due', '>', 0);
         $orders = $query->orderBy('id', 'desc')->paginate(10)->appends($request->query());
         if ($request->ajax()) {
             return view('admin.order.partials._due_list_table', ['orders' => $orders, 'showPagination' => true])->render();
@@ -139,6 +141,13 @@ class OrderController extends Controller
             $query->where('due', '>', 0);
         } elseif ($status !== '') {
             $query->where('status', $status);
+        }
+
+        // Due-only exports and explicit due filters must use the same
+        // completed + outstanding-balance rule as the Due List, even if
+        // a user opens the export URL without a due_only query parameter.
+        if ($request->routeIs('due_orders.*') || $request->boolean('due_only')) {
+            $query->where('status', 'Completed')->where('due', '>', 0);
         }
 
         // Payment filter — Cash/Card/Mobile Banking/Split সব support করবে।
@@ -910,6 +919,11 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
             $order->save();
 
             DB::commit();
+            // Completed Order List edits can change payment allocation without changing the sale total.
+            // The source bridge compares persisted monetary snapshots and never treats Due Settlement as an edit.
+            if (strcasecmp((string)$order->status,'Completed')===0) {
+                \App\Services\Accounting\AccountingSourceBridge::schedule('order_edit',(int)$order->id);
+            }
 
             $successMessage = $deletedItemName
                 ? 'Product "' . $deletedItemName . '" deleted and order updated successfully.'

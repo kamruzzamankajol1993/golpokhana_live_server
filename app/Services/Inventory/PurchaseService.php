@@ -7,6 +7,7 @@ use App\Models\Purchase;
 use App\Models\Unit;
 use App\Models\Vendor;
 use App\Models\VendorIngredient;
+use App\Services\Inventory\VendorWithholdingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -78,6 +79,8 @@ class PurchaseService
                 'discount' => $discount,
                 'tax' => $tax,
                 'total' => $total,
+                'tds_rate_snapshot'=>app(VendorWithholdingService::class)->rate($vendor->tds),
+                'vds_rate_snapshot'=>app(VendorWithholdingService::class)->rate($vendor->vds),
             ]);
             $purchase->save();
 

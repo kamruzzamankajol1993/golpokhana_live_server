@@ -47,7 +47,7 @@
 
 <div class="modal fade progga-modal" id="unitModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title" id="unitModalTitle">Add Unit</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title" id="unitModalTitle">Add Unit</h5></div>
         <form id="unitForm" method="POST" action="{{ route('inventory.units.store') }}">
             @csrf
             <input type="hidden" name="_method" id="unitMethod" value="POST">

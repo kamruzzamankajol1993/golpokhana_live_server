@@ -7,6 +7,8 @@ use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\EmployeeLeaveBalance;
+use App\Models\EmployeeEducation;
+use App\Models\EmployeeCertificate;
 use App\Models\EmployeeSalaryStructure;
 use App\Models\SalaryComponent;
 use App\Models\EmploymentType;
@@ -144,6 +146,8 @@ class EmployeeController extends Controller
             'user.roles',
             'waiter',
             'currentSalaryStructure.components.salaryComponent',
+            'educations',
+            'certificates',
         ]);
 
         $monthStart = now()->startOfMonth()->toDateString();
@@ -199,6 +203,8 @@ class EmployeeController extends Controller
             'user',
             'waiter',
             'currentSalaryStructure.components.salaryComponent',
+            'educations',
+            'certificates',
             'leaveBalances' => fn ($query) => $query->where('year', now()->year),
         ]);
 
@@ -212,6 +218,7 @@ class EmployeeController extends Controller
     {
         $validated = $this->validateEmployee($request);
 
+        $uploadedCertificateFiles = [];
         DB::beginTransaction();
 
         try {
@@ -282,6 +289,12 @@ class EmployeeController extends Controller
             }
             $this->syncSalarySetup($request, $employee);
             $this->syncLeaveBalanceSetup($request, $employee);
+            if ($request->has('educations') || $request->boolean('sync_educations')) {
+                $this->syncEmployeeEducations($employee, $validated);
+            }
+            if ($request->has('certificates') || $request->boolean('sync_certificates')) {
+                $this->syncEmployeeCertificates($employee, $request, $validated, $uploadedCertificateFiles);
+            }
 
             DB::commit();
 
@@ -298,6 +311,7 @@ class EmployeeController extends Controller
                 ->with('success', "Employee created successfully. Employee ID: {$employeeCode}");
         } catch (Throwable $exception) {
             DB::rollBack();
+            foreach ($uploadedCertificateFiles as $filePath) $this->deleteImage($filePath);
             Log::error('Employee store error', ['message' => $exception->getMessage()]);
 
             if ($request->expectsJson()) {
@@ -317,6 +331,8 @@ class EmployeeController extends Controller
     {
         $logReference = 'EMP-UPD-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(6));
         $step = 'request_received';
+        $uploadedCertificateFiles = [];
+        $obsoleteCertificateFiles = [];
 
         $this->writeEmployeeEditLog('info', 'Employee update request received.', [
             'reference' => $logReference,
@@ -425,9 +441,17 @@ class EmployeeController extends Controller
             $this->syncSalarySetup($request, $employee->fresh());
             $step = 'leave_balance_sync';
             $this->syncLeaveBalanceSetup($request, $employee->fresh());
+            $step = 'education_and_certificates';
+            if ($request->has('educations') || $request->boolean('sync_educations')) {
+                $this->syncEmployeeEducations($employee, $validated);
+            }
+            if ($request->has('certificates') || $request->boolean('sync_certificates')) {
+                $this->syncEmployeeCertificates($employee, $request, $validated, $uploadedCertificateFiles, $obsoleteCertificateFiles);
+            }
 
             $step = 'commit';
             DB::commit();
+            foreach ($obsoleteCertificateFiles as $filePath) $this->deleteImage($filePath);
 
             $this->writeEmployeeEditLog('info', 'Employee updated successfully.', [
                 'reference' => $logReference,
@@ -451,6 +475,7 @@ class EmployeeController extends Controller
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
+            foreach ($uploadedCertificateFiles as $filePath) $this->deleteImage($filePath);
 
             $this->writeEmployeeEditLog('warning', 'Employee update validation failed.', [
                 'reference' => $logReference,
@@ -479,6 +504,7 @@ class EmployeeController extends Controller
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
+            foreach ($uploadedCertificateFiles as $filePath) $this->deleteImage($filePath);
 
             $context = [
                 'reference' => $logReference,
@@ -555,11 +581,14 @@ class EmployeeController extends Controller
                 ]);
             }
 
-            $this->deleteImage($employee->image);
-            $this->deleteImage($employee->nid_image);
+            $pathsToDelete = array_merge(
+                [$employee->image, $employee->nid_image],
+                $employee->certificates()->pluck('file_path')->all()
+            );
             $employee->delete();
 
             DB::commit();
+            foreach ($pathsToDelete as $filePath) $this->deleteImage($filePath);
 
             return response()->json([
                 'success' => true,
@@ -609,6 +638,10 @@ class EmployeeController extends Controller
                 }
                 if ($employee->nid_image) {
                     $imagesToDelete[] = $employee->nid_image;
+                }
+
+                foreach ($employee->certificates()->pluck('file_path') as $filePath) {
+                    $imagesToDelete[] = $filePath;
                 }
 
                 $deleted[] = $employee->name . ' (' . $employee->employee_code . ')';
@@ -709,7 +742,7 @@ class EmployeeController extends Controller
         $requiresLoginEmail = !$isEditing && $needsNewLoginAccount && $request->filled('password');
         $requiresLoginPassword = !$isEditing && $needsNewLoginAccount && $request->filled('email');
 
-        return $request->validate([
+        $validated = $request->validate([
             'name' => ['required', 'string', 'max:180'],
             'phone' => ['required', 'string', 'max:40'],
             'email' => [
@@ -747,6 +780,17 @@ class EmployeeController extends Controller
             'emergency_contact_name' => ['nullable', 'string', 'max:180'],
             'emergency_contact_phone' => ['nullable', 'string', 'max:40'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'educations' => ['nullable', 'array', 'max:30'],
+            'educations.*.id' => ['nullable', 'integer'],
+            'educations.*.qualification' => ['required', 'string', 'max:180'],
+            'educations.*.institution' => ['nullable', 'string', 'max:255'],
+            'educations.*.field_of_study' => ['nullable', 'string', 'max:180'],
+            'educations.*.passing_year' => ['nullable', 'integer', 'between:1950,2100'],
+            'educations.*.result' => ['nullable', 'string', 'max:100'],
+            'certificates' => ['nullable', 'array', 'max:30'],
+            'certificates.*.id' => ['nullable', 'integer'],
+            'certificates.*.title' => ['required', 'string', 'max:255'],
+            'certificates.*.file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx', 'max:5120'],
             'tipsoi_remote_person_id' => ['nullable', 'integer', 'exists:tipsoi_remote_people,id'],
             'tipsoi_identifier' => [
                 'nullable',
@@ -784,6 +828,105 @@ class EmployeeController extends Controller
                 'confirmed',
             ],
         ]);
+        // Validate ownership and new certificate files before opening a DB transaction,
+        // so missing uploads return normal form validation errors (HTTP 422), not 500.
+        foreach ($validated['educations'] ?? [] as $key => $row) {
+            if (!empty($row['id']) && (!$employee || !$employee->educations()->whereKey($row['id'])->exists())) {
+                throw ValidationException::withMessages([
+                    "educations.{$key}.id" => 'This education record does not belong to the employee.',
+                ]);
+            }
+        }
+        foreach ($validated['certificates'] ?? [] as $key => $row) {
+            if (!empty($row['id']) && (!$employee || !$employee->certificates()->whereKey($row['id'])->exists())) {
+                throw ValidationException::withMessages([
+                    "certificates.{$key}.id" => 'This certificate does not belong to the employee.',
+                ]);
+            }
+            if (empty($row['id']) && !$request->hasFile("certificates.{$key}.file")) {
+                throw ValidationException::withMessages([
+                    "certificates.{$key}.file" => 'Please choose a file for each new certificate.',
+                ]);
+            }
+        }
+
+        return $validated;
+    }
+
+    /** Sync education rows; missing rows on an edit are explicitly removed. */
+    private function syncEmployeeEducations(Employee $employee, array $validated): void
+    {
+        $keptIds = [];
+        foreach ($validated['educations'] ?? [] as $row) {
+            if (!empty($row['id'])) {
+                // Scope by employee: never modify another employee's record.
+                $education = $employee->educations()->findOrFail((int) $row['id']);
+            } else {
+                $education = new EmployeeEducation(['employee_id' => $employee->id]);
+            }
+            $education->fill([
+                'qualification' => trim($row['qualification']),
+                'institution' => $row['institution'] ?? null,
+                'field_of_study' => $row['field_of_study'] ?? null,
+                'passing_year' => $row['passing_year'] ?? null,
+                'result' => $row['result'] ?? null,
+            ]);
+            $education->employee_id = $employee->id;
+            $education->save();
+            $keptIds[] = $education->id;
+        }
+        $query = $employee->educations();
+        if ($keptIds) $query->whereNotIn('id', $keptIds);
+        $query->delete();
+    }
+
+    /** Retain old certificate files unless explicitly replaced or the row is removed. */
+    private function syncEmployeeCertificates(
+        Employee $employee,
+        Request $request,
+        array $validated,
+        array &$uploadedFiles,
+        array &$obsoleteFiles = []
+    ): void {
+        $keptIds = [];
+        foreach ($validated['certificates'] ?? [] as $key => $row) {
+            $certificate = !empty($row['id'])
+                ? $employee->certificates()->findOrFail((int) $row['id'])
+                : new EmployeeCertificate(['employee_id' => $employee->id]);
+            $file = $request->file("certificates.{$key}.file");
+            if (!$file && !$certificate->exists) {
+                throw ValidationException::withMessages([
+                    "certificates.{$key}.file" => 'Upload a file for each new certificate.',
+                ]);
+            }
+            if ($file) {
+                $path = $this->uploadEmployeeCertificate($file);
+                $uploadedFiles[] = $path;
+                if ($certificate->exists && $certificate->file_path) {
+                    $obsoleteFiles[] = $certificate->file_path;
+                }
+                $certificate->file_path = $path;
+            }
+            $certificate->title = trim($row['title']);
+            $certificate->employee_id = $employee->id;
+            $certificate->save();
+            $keptIds[] = $certificate->id;
+        }
+        $query = $employee->certificates();
+        if ($keptIds) $query->whereNotIn('id', $keptIds);
+        foreach ($query->get() as $outdated) {
+            $obsoleteFiles[] = $outdated->file_path;
+            $outdated->delete();
+        }
+    }
+
+    private function uploadEmployeeCertificate($file): string
+    {
+        $directory = public_path('uploads/employees/certificates');
+        if (!File::isDirectory($directory)) File::makeDirectory($directory, 0755, true);
+        $name = 'certificate_' . Str::uuid() . '.' . $file->extension();
+        $file->move($directory, $name);
+        return 'uploads/employees/certificates/' . $name;
     }
 
     private function syncSalarySetup(Request $request, Employee $employee): void
