@@ -930,6 +930,37 @@
         };
     }
 
+    // Keep the CSS grid / flex displays when switching between table and order views.
+    // jQuery fadeIn() otherwise restores the table grid as a block, breaking its columns.
+    function applyPosTableFilter(filterValue) {
+        const filter = String(filterValue || 'all').toLowerCase();
+        $('#posTableGrid .progga-pos-table-card').each(function() {
+            const matches = filter === 'all'
+                || String($(this).attr('data-status') || '').toLowerCase() === filter;
+            $(this).stop(true, true).css('display', matches ? 'flex' : 'none');
+        });
+    }
+
+    function showPosStep1View(view) {
+        const $grid = $('#posTableGrid');
+        const $tabs = $('#posTableSection');
+        const $orders = $('#posTakeawayDeliveryPanel');
+
+        if (view === 'orders') {
+            $('#posStep1').addClass('pos-s1-orders-view');
+            $grid.stop(true, true).hide();
+            $tabs.stop(true, true).hide();
+            $orders.stop(true, true).show();
+            return;
+        }
+
+        $('#posStep1').removeClass('pos-s1-orders-view');
+        $orders.stop(true, true).hide();
+        $tabs.stop(true, true).css('display', 'flex');
+        $grid.stop(true, true).css('display', 'grid');
+        applyPosTableFilter($tabs.find('.progga-pos-filter-btn.active').attr('data-table-filter') || 'all');
+    }
+
     function setPosTableStatus(tableId, status) {
         if (!tableId) return;
 
@@ -971,10 +1002,9 @@
             }
         }
 
-        const activeFilter = $('.progga-pos-filter-btn.active').data('table-filter');
+        const activeFilter = $('#posTableSection .progga-pos-filter-btn.active').attr('data-table-filter');
         if (activeFilter && activeFilter !== 'all') {
-            $('.progga-pos-table-card').hide();
-            $('.progga-pos-table-card[data-status="' + activeFilter + '"]').show();
+            applyPosTableFilter(activeFilter);
         }
     }
 
@@ -1339,14 +1369,12 @@
         });
     });
 
-   $('#modeTakeaway').click(function() {
+   $('#modeTakeaway, #modeTakeawayOrdersView').click(function() {
         openAllTypeOrderModal();
     });
 
     $('#modeTakeawayDeliveryList').click(function() {
-        $('#posTableGrid').hide();
-        $('#posTableSection').hide();
-        $('#posTakeawayDeliveryPanel').fadeIn('fast');
+        showPosStep1View('orders');
     });
 
     $('#btnCompletePendingTakeawayDelivery').click(function() {
@@ -1406,9 +1434,7 @@
     });
 
     $('#btnBackToTablesFromTdOrders').click(function() {
-        $('#posTakeawayDeliveryPanel').hide();
-        $('#posTableSection').show();
-        $('#posTableGrid').fadeIn('fast');
+        showPosStep1View('tables');
     });
 
     $(document).on('click', '.progga-pos-running-order-card', function() {
@@ -3549,18 +3575,10 @@
         loadCart();
     });
 
-    $(document).on('click', '.progga-pos-filter-btn', function() {
-        $('.progga-pos-filter-btn').removeClass('active');
+    $(document).on('click', '#posTableSection .progga-pos-filter-btn', function() {
+        $('#posTableSection .progga-pos-filter-btn').removeClass('active');
         $(this).addClass('active');
-
-        let filterValue = $(this).data('table-filter');
-
-        if(filterValue === 'all') {
-            $('.progga-pos-table-card').fadeIn('fast');
-        } else {
-            $('.progga-pos-table-card').hide();
-            $('.progga-pos-table-card[data-status="' + filterValue + '"]').fadeIn('fast');
-        }
+        showPosStep1View('tables');
     });
 
     $(document).on('click', '#posCartFab', function() {
