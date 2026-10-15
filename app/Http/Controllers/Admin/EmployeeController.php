@@ -790,6 +790,7 @@ class EmployeeController extends Controller
             'certificates' => ['nullable', 'array', 'max:30'],
             'certificates.*.id' => ['nullable', 'integer'],
             'certificates.*.title' => ['required', 'string', 'max:255'],
+            'certificates.*.description' => ['nullable', 'string', 'max:2000'],
             'certificates.*.file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx', 'max:5120'],
             'tipsoi_remote_person_id' => ['nullable', 'integer', 'exists:tipsoi_remote_people,id'],
             'tipsoi_identifier' => [
@@ -908,6 +909,8 @@ class EmployeeController extends Controller
                 $certificate->file_path = $path;
             }
             $certificate->title = trim($row['title']);
+            $description = trim((string) ($row['description'] ?? ''));
+            $certificate->description = $description !== '' ? $description : null;
             $certificate->employee_id = $employee->id;
             $certificate->save();
             $keptIds[] = $certificate->id;

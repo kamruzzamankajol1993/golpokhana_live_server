@@ -121,12 +121,17 @@
             </div>
             <div class="col-xl-6">
                 <div class="hr-card h-100">
-                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-award me-2"></i>Certificates</div></div>
+                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-award me-2"></i>All Certificate</div></div>
                     <div class="hr-card-body">
                         @forelse($employee->certificates as $certificate)
-                            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2 gap-2">
-                                <strong>{{ $certificate->title }}</strong>
-                                <a href="{{ asset('public/' . ltrim($certificate->file_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-arrow-down"></i> View File</a>
+                            <div class="d-flex justify-content-between align-items-start border-bottom pb-2 mb-2 gap-2">
+                                <div>
+                                    <strong>{{ $certificate->title }}</strong>
+                                    @if($certificate->description)
+                                        <div class="hr-muted mt-1" style="white-space: pre-line; overflow-wrap: anywhere;">{{ $certificate->description }}</div>
+                                    @endif
+                                </div>
+                                <a href="{{ asset('public/' . ltrim($certificate->file_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline progga-btn-sm flex-shrink-0"><i class="bi bi-file-earmark-arrow-down"></i> View File</a>
                             </div>
                         @empty
                             <div class="hr-muted">No certificates uploaded.</div>

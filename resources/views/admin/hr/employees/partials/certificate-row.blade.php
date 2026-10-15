@@ -14,6 +14,10 @@
                 <a class="small d-inline-block mt-1" target="_blank" rel="noopener noreferrer" href="{{ asset('public/' . ltrim($row['file_path'], '/')) }}"><i class="bi bi-file-earmark-arrow-down"></i> View existing file</a>
             @endif
         </div>
+        <div class="col-12">
+            <label class="progga-form-label">Description <span class="hr-muted">(optional)</span></label>
+            <textarea class="progga-form-control" name="certificates[{{ $rowIndex }}][description]" rows="2" maxlength="2000" placeholder="Certificate description (optional)">{{ $row['description'] ?? '' }}</textarea>
+        </div>
     </div>
     <div class="hr-muted mt-1">PDF, image, DOC or DOCX · maximum 5 MB.</div>
 </div>

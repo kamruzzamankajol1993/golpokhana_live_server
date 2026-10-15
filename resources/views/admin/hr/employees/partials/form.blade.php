@@ -236,8 +236,8 @@
 
         <div class="hr-card mb-3" id="employeeCertificateCard">
             <div class="hr-card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                <div><div class="hr-card-title"><i class="bi bi-award me-2"></i>Certificates</div>
-                    <div class="hr-card-subtitle">Add certificates with title and file; existing files are retained unless changed or removed.</div></div>
+                <div><div class="hr-card-title"><i class="bi bi-award me-2"></i>All Certificate</div>
+                    <div class="hr-card-subtitle">Add certificates with a title, optional description and file; existing files are retained unless changed or removed.</div></div>
                 <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddCertificate"><i class="bi bi-plus-lg"></i> Add Certificate</button>
             </div>
             <div class="hr-card-body">
