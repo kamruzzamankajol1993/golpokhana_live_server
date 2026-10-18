@@ -84,7 +84,7 @@
     </div>
     @endcanany
 
- @can('accounting-view')
+ {{-- @can('accounting-view')
     @php
         $accountingOpen = request()->routeIs('accounting.*');
         $accountingGroups = config('accounting_navigation', []);
@@ -148,7 +148,7 @@
         @endforeach
       </div>
     </div>
- @endcan
+ @endcan --}}
 
 
  @canany(['inventory-dashboard-view', 'inventory-kitchen-dashboard-view', 'inventory-kitchen-stock-view', 'inventory-view', 'inventory-units-manage', 'inventory-ingredients-manage', 'inventory-recipes-manage', 'inventory-vendors-manage', 'inventory-purchase-voucher-manage', 'inventory-purchase-approve', 'inventory-purchase-create', 'inventory-purchase-receive', 'inventory-kitchen-request-create', 'inventory-kitchen-request-review', 'inventory-kitchen-request-assign', 'inventory-return-post', 'inventory-wastage-view', 'inventory-wastage-create', 'inventory-wastage-edit', 'inventory-wastage-delete', 'inventory-reports-view', 'inventory-transaction-history-view', 'inventory-negative-stock-adjust'])

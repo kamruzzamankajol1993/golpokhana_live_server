@@ -33,7 +33,8 @@ class CustomerController extends Controller
                 $query->where(function($q) use ($request) {
                     $q->where('name', 'like', '%'.$request->search.'%')
                       ->orWhere('phone', 'like', '%'.$request->search.'%')
-                      ->orWhere('email', 'like', '%'.$request->search.'%');
+                      ->orWhere('email', 'like', '%'.$request->search.'%')
+                      ->orWhere('primary_id', 'like', '%'.$request->search.'%');
                 });
             }
 
@@ -69,13 +70,16 @@ class CustomerController extends Controller
     {
         $request->validate([
             'name'  => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
+            'phone'      => 'required|string|max:20',
+            'primary_id' => 'nullable|string|max:255',
+            'address'    => 'nullable|string|max:5000',
         ]);
 
         try {
-            Customer::create([
+            $customer = Customer::create([
                 'name'         => $request->name,
                 'phone'        => $request->phone,
+                'primary_id'   => $request->filled('primary_id') ? trim((string) $request->primary_id) : null,
                 'email'        => $request->email,
                 'dob'          => $request->dob,
                 'address'      => $request->address,
@@ -101,7 +105,9 @@ class CustomerController extends Controller
     {
         $request->validate([
             'name'  => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
+            'phone'      => 'required|string|max:20',
+            'primary_id' => 'nullable|string|max:255',
+            'address'    => 'nullable|string|max:5000',
         ]);
 
         try {
@@ -119,9 +125,10 @@ class CustomerController extends Controller
         $customer->points = $customer->pointHistories()->sum('point');
     }
             $customer->update([
-                'name'    => $request->name,
-                'phone'   => $request->phone,
-                'email'   => $request->email,
+                'name'       => $request->name,
+                'phone'      => $request->phone,
+                'primary_id' => $request->filled('primary_id') ? trim((string) $request->primary_id) : null,
+                'email'      => $request->email,
                 'dob'     => $request->dob,
                 'address' => $request->address,
             ]);

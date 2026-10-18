@@ -7,10 +7,12 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Shift;
 use App\Models\ShiftRoster;
+use App\Services\Hr\RecurringRosterService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Throwable;
 
@@ -27,6 +29,7 @@ class HrShiftController extends Controller
 
     public function index(Request $request)
     {
+        app(RecurringRosterService::class)->materialize(today()->toDateString(), today()->toDateString());
         $weekStart = $request->filled('week_start')
             ? Carbon::parse($request->week_start)->startOfWeek(Carbon::SATURDAY)
             : now()->startOfWeek(Carbon::SATURDAY);
@@ -128,6 +131,11 @@ class HrShiftController extends Controller
         }
 
         $employees = $query->paginate(8)->withQueryString();
+        app(RecurringRosterService::class)->materialize(
+            $dates->first()->toDateString(),
+            $dates->last()->toDateString(),
+            $employees->getCollection()->pluck('id')->all()
+        );
         $rosters = ShiftRoster::whereIn('employee_id', $employees->pluck('id'))
             ->whereBetween('roster_date', [$dates->first()->toDateString(), $dates->last()->toDateString()])
             ->get()
@@ -146,7 +154,16 @@ class HrShiftController extends Controller
             'rows.*.assignments' => ['required', 'array'],
             'rows.*.assignments.*.date' => ['required', 'date'],
             'rows.*.assignments.*.value' => ['nullable', 'string'],
+            'recurrence_mode' => ['nullable', Rule::in(['none', 'weekly', 'monthly_cycle'])],
+            // Backward compatibility with the previous checkbox UI.
+            'repeat_weekly' => ['nullable', 'boolean'],
         ]);
+
+        $recurrenceMode = $validated['recurrence_mode']
+            ?? ($request->boolean('repeat_weekly') ? 'weekly' : 'none');
+        $weekStart = Carbon::parse($validated['week_start'])->startOfWeek(Carbon::SATURDAY);
+        $hasBranchColumn = Schema::hasColumn('shift_rosters', 'branch_id');
+        $recurringRosterService = app(RecurringRosterService::class);
 
         DB::beginTransaction();
         try {
@@ -167,15 +184,50 @@ class HrShiftController extends Controller
                         throw new \RuntimeException('An invalid or inactive shift was selected.');
                     }
 
+                    $rosterValues = [
+                        'shift_id' => $shiftId,
+                        'status' => $status,
+                        'assigned_by' => auth()->id(),
+                        'is_recurring_generated' => false,
+                    ];
+                    if ($hasBranchColumn) {
+                        $rosterValues['branch_id'] = Employee::query()->whereKey($row['employee_id'])->value('branch_id');
+                    }
                     ShiftRoster::updateOrCreate(
                         ['employee_id' => $row['employee_id'], 'roster_date' => $assignment['date']],
-                        ['shift_id' => $shiftId, 'status' => $status, 'assigned_by' => auth()->id()]
+                        $rosterValues
+                    );
+                }
+
+                if ($recurrenceMode === 'weekly') {
+                    $recurringRosterService->saveWeekPattern(
+                        (int) $row['employee_id'],
+                        $weekStart,
+                        $row['assignments'],
+                        auth()->id()
+                    );
+                } elseif ($recurrenceMode === 'monthly_cycle') {
+                    $recurringRosterService->saveMonthlyCyclePattern(
+                        (int) $row['employee_id'],
+                        $weekStart,
+                        $row['assignments'],
+                        auth()->id()
                     );
                 }
             }
 
             DB::commit();
-            return response()->json(['success' => true, 'message' => 'Duty roster saved successfully.']);
+
+            if ($recurrenceMode === 'weekly') {
+                $message = 'Duty roster saved. This pattern will repeat every week and month.';
+            } elseif ($recurrenceMode === 'monthly_cycle') {
+                $cycleWeek = $recurringRosterService->monthlyCycleWeekForWeekStart($weekStart);
+                $message = "Monthly cycle Week {$cycleWeek} saved. Save each other required week once; the same week-by-week cycle will repeat in future months.";
+            } else {
+                $message = 'Duty roster saved for the selected week only. Existing recurring rules were left unchanged.';
+            }
+
+            return response()->json(['success' => true, 'message' => $message]);
         } catch (Throwable $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Failed to save roster. ' . $e->getMessage()], 500);
@@ -188,24 +240,31 @@ class HrShiftController extends Controller
         $currentStart = Carbon::parse($request->week_start)->startOfWeek(Carbon::SATURDAY);
         $previousStart = $currentStart->copy()->subWeek();
         $previousEnd = $previousStart->copy()->addDays(6);
+        app(RecurringRosterService::class)->materialize($previousStart, $previousEnd);
 
         $previousRosters = ShiftRoster::whereBetween('roster_date', [$previousStart->toDateString(), $previousEnd->toDateString()])->get();
         if ($previousRosters->isEmpty()) {
             return response()->json(['success' => false, 'message' => 'No roster was found in the previous week.'], 422);
         }
 
+        $hasBranchColumn = Schema::hasColumn('shift_rosters', 'branch_id');
         DB::beginTransaction();
         try {
             foreach ($previousRosters as $roster) {
                 $targetDate = $roster->roster_date->copy()->addWeek();
+                $rosterValues = [
+                    'shift_id' => $roster->shift_id,
+                    'status' => $roster->status === 'leave' ? 'scheduled' : $roster->status,
+                    'notes' => $roster->notes,
+                    'assigned_by' => auth()->id(),
+                    'is_recurring_generated' => (bool) $roster->is_recurring_generated,
+                ];
+                if ($hasBranchColumn) {
+                    $rosterValues['branch_id'] = Employee::query()->whereKey($roster->employee_id)->value('branch_id');
+                }
                 ShiftRoster::updateOrCreate(
                     ['employee_id' => $roster->employee_id, 'roster_date' => $targetDate->toDateString()],
-                    [
-                        'shift_id' => $roster->shift_id,
-                        'status' => $roster->status === 'leave' ? 'scheduled' : $roster->status,
-                        'notes' => $roster->notes,
-                        'assigned_by' => auth()->id(),
-                    ]
+                    $rosterValues
                 );
             }
             DB::commit();

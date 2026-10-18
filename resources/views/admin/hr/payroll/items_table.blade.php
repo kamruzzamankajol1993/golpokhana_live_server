@@ -5,6 +5,7 @@
                 <th>#</th>
                 <th>Employee</th>
                 <th>Attendance</th>
+                <th>Payable Days</th>
                 <th>Basic</th>
                 <th>Gross</th>
                 <th>Deduction</th>
@@ -37,6 +38,7 @@
                             <span>HD {{ (float) $item->half_days }}</span>
                         </div>
                     </td>
+                    <td>{{ number_format((float) $item->payable_days, 2) }}</td>
                     <td>৳{{ number_format((float) $item->prorated_basic_salary, 2) }}</td>
                     <td>৳{{ number_format((float) $item->gross_salary, 2) }}</td>
                     <td class="text-danger">৳{{ number_format((float) $item->total_deduction, 2) }}</td>
@@ -63,7 +65,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="10"><div class="hr-empty"><i class="bi bi-people"></i>No employee payroll record found.</div></td></tr>
+                <tr><td colspan="11"><div class="hr-empty"><i class="bi bi-people"></i>No employee payroll record found.</div></td></tr>
             @endforelse
         </tbody>
     </table>

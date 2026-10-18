@@ -44,7 +44,7 @@ class PayrollController extends Controller
                     'items',
                     'items as non_draft_items_count' => fn ($itemQuery) => $itemQuery->where('status', '!=', 'draft'),
                 ])
-                ->latest('payroll_month');
+                ->latest('period_start')->latest('created_at');
 
             if ($request->filled('search')) {
                 $search = trim((string) $request->search);
@@ -71,7 +71,7 @@ class PayrollController extends Controller
         }
 
         $currentMonth = now()->startOfMonth();
-        $currentRun = PayrollRun::whereDate('payroll_month', $currentMonth)->first();
+        $currentRun = PayrollRun::where('period_type', 'monthly')->whereDate('payroll_month', $currentMonth)->first();
 
         return view('admin.hr.payroll.index', [
             'currentRun' => $currentRun,
@@ -85,23 +85,29 @@ class PayrollController extends Controller
 
     public function create(Request $request)
     {
-        $month = $this->normaliseMonth((string) $request->get('month', now()->format('Y-m')));
-        $monthDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $periodType = $request->get('period_type') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $this->normaliseWeekStart($request->get('week_start'));
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $this->normaliseMonth((string) $request->get('month', now()->format('Y-m')));
+        [$periodStart, $periodEnd] = $this->calculator->periodFor($periodType, $month, $weekStart);
 
-        if ($message = $this->monthPolicyError($monthDate)) {
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return redirect()->route('hr.payroll.create')->with('error', $message);
         }
 
-        $precheck = $this->calculator->precheck($month);
-        $existingRun = PayrollRun::whereDate('payroll_month', $monthDate)->first();
-        [$periodStart, $periodEnd] = $this->calculator->period($month);
-        $eligibleEmployees = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd)
+        $precheck = $this->calculator->precheckPeriod($periodStart, $periodEnd, $periodType);
+        $existingRun = $this->runForPeriod($periodType, $periodStart, $periodEnd);
+        $eligibleEmployees = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd, $periodType)
             ->with(['department', 'designation'])
             ->orderBy('employee_code')
             ->get();
 
         return view('admin.hr.payroll.create', [
             'month' => $month,
+            'periodType' => $periodType,
+            'weekStart' => $periodStart->toDateString(),
+            'weekEnd' => $periodEnd->toDateString(),
             'precheck' => $precheck,
             'existingRun' => $existingRun,
             'eligibleEmployees' => $eligibleEmployees,
@@ -113,16 +119,24 @@ class PayrollController extends Controller
     public function precheck(Request $request)
     {
         $validated = $request->validate([
-            'month' => ['required', 'date_format:Y-m'],
+            'period_type' => ['nullable', Rule::in(['monthly', 'weekly'])],
+            'month' => ['required_unless:period_type,weekly', 'nullable', 'date_format:Y-m'],
+            'week_start' => ['required_if:period_type,weekly', 'nullable', 'date_format:Y-m-d'],
         ]);
 
-        $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
-        if ($message = $this->monthPolicyError($monthDate)) {
+        $periodType = ($validated['period_type'] ?? 'monthly') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $validated['week_start'] ?? now()->startOfWeek()->toDateString();
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $validated['month'];
+        [$periodStart, $periodEnd] = $this->calculator->periodFor($periodType, $month, $weekStart);
+
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return response()->json(['message' => $message], 422);
         }
 
-        $data = $this->calculator->precheck($validated['month']);
-        $existingRun = PayrollRun::whereDate('payroll_month', $monthDate)->first();
+        $data = $this->calculator->precheckPeriod($periodStart, $periodEnd, $periodType);
+        $existingRun = $this->runForPeriod($periodType, $periodStart, $periodEnd);
         $data['existing_run'] = $existingRun ? [
             'id' => $existingRun->id,
             'code' => $existingRun->payroll_code,
@@ -130,9 +144,10 @@ class PayrollController extends Controller
             'url' => route('hr.payroll.show', $existingRun),
         ] : null;
         $data['allow_non_current_month_payroll'] = (bool) $this->calculator->settings()->allow_non_current_month_payroll;
-        $data['is_future_month'] = $monthDate->gt(now()->startOfMonth());
-        [$periodStart, $periodEnd] = $this->calculator->period($validated['month']);
-        $data['eligible_employee_rows'] = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd)
+        $data['is_future_month'] = $periodType === 'weekly'
+            ? $periodStart->gt(now()->startOfDay())
+            : $periodStart->gt(now()->startOfMonth());
+        $data['eligible_employee_rows'] = $this->calculator->eligibleEmployeesQuery($periodStart, $periodEnd, $periodType)
             ->with('department')
             ->orderBy('employee_code')
             ->get()
@@ -149,28 +164,34 @@ class PayrollController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'month' => ['required', 'date_format:Y-m'],
+            'period_type' => ['nullable', Rule::in(['monthly', 'weekly'])],
+            'month' => ['required_unless:period_type,weekly', 'nullable', 'date_format:Y-m'],
+            'week_start' => ['required_if:period_type,weekly', 'nullable', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'manual_components' => ['nullable', 'array'],
             'manual_components.*' => ['nullable', 'array'],
             'manual_components.*.*' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ]);
 
-        $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
-        if ($message = $this->monthPolicyError($monthDate)) {
+        $periodType = ($validated['period_type'] ?? 'monthly') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $validated['week_start'] ?? now()->startOfWeek()->toDateString();
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $validated['month'];
+        [$periodStart, $periodEnd] = $this->calculator->periodFor($periodType, $month, $weekStart);
+
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return back()->withInput()->with('error', $message);
         }
 
-        $precheck = $this->calculator->precheck($validated['month']);
+        $precheck = $this->calculator->precheckPeriod($periodStart, $periodEnd, $periodType);
         if ($precheck['eligible_employees'] < 1) {
-            return back()->withInput()->with('error', 'No eligible employees were found for this month.');
+            return back()->withInput()->with('error', 'No eligible ' . $periodType . ' salary employees were found for this period.');
         }
         if ($precheck['missing_salary_count'] > 0) {
             $firstReason = $precheck['missing_salary'][0]['reason'] ?? null;
             $message = 'Salary setup is missing for ' . $precheck['missing_salary_count'] . ' employee(s).';
-            if ($firstReason) {
-                $message .= ' ' . $firstReason;
-            }
+            if ($firstReason) $message .= ' ' . $firstReason;
             return back()->withInput()->with('error', $message);
         }
         if (($precheck['missing_rule_count'] ?? 0) > 0) {
@@ -180,54 +201,56 @@ class PayrollController extends Controller
             return back()->withInput()->with('error', 'Attendance is incomplete. Check the confirmation box to continue with not-marked days excluded from deduction.');
         }
         if ($precheck['pending_leave_count'] > 0 && !$request->boolean('confirm_pending_leave')) {
-            return back()->withInput()->with('error', 'Pending leave requests exist for this month. Resolve them or confirm that you want to continue.');
+            return back()->withInput()->with('error', 'Pending leave requests exist for this period. Resolve them or confirm that you want to continue.');
         }
 
-        if (PayrollRun::whereDate('payroll_month', $monthDate)->exists()) {
-            return back()->withInput()->with('error', 'A payroll run already exists for ' . $monthDate->format('F Y') . '. Use Single Employee Payroll to add a missing employee.');
+        if ($this->runForPeriod($periodType, $periodStart, $periodEnd)) {
+            return back()->withInput()->with('error', 'A payroll run already exists for this exact period. Use Single Employee Payroll to add a missing employee.');
         }
 
         DB::beginTransaction();
         try {
-            $run = $this->createRun($validated['month'], $validated['notes'] ?? null);
+            $run = $this->createRun($periodType, $month, $weekStart, $validated['notes'] ?? null);
             $this->generateItems($run, (array) ($validated['manual_components'] ?? []));
             $run->syncWorkflowStatus(auth()->id());
-
             DB::commit();
 
             return redirect()->route('hr.payroll.show', $run)
-                ->with('success', 'Payroll draft generated successfully. Review employee amounts before approval.');
+                ->with('success', ucfirst($periodType) . ' payroll draft generated successfully. Review employee amounts before approval.');
         } catch (Throwable $exception) {
             DB::rollBack();
-
             return back()->withInput()->with('error', 'Payroll generation failed. ' . $exception->getMessage());
         }
     }
 
     public function createSingle(Request $request)
     {
-        $month = $this->normaliseMonth((string) $request->get('month', now()->format('Y-m')));
-        $monthDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $periodType = $request->get('period_type') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $this->normaliseWeekStart($request->get('week_start'));
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $this->normaliseMonth((string) $request->get('month', now()->format('Y-m')));
+        [$periodStart, $periodEnd] = $this->calculator->periodFor($periodType, $month, $weekStart);
 
-        if ($message = $this->monthPolicyError($monthDate)) {
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return redirect()->route('hr.payroll.single.create')->with('error', $message);
         }
 
-        $employees = Employee::with(['department', 'designation'])
-            ->orderBy('employee_code')
-            ->get();
-
+        $employees = Employee::with(['department', 'designation'])->orderBy('employee_code')->get();
         $selectedEmployee = null;
         $precheck = null;
         if ($request->filled('employee')) {
             $selectedEmployee = $employees->firstWhere('id', (int) $request->employee);
             if ($selectedEmployee) {
-                $precheck = $this->singlePrecheckData($selectedEmployee, $month);
+                $precheck = $this->singlePrecheckData($selectedEmployee, $periodType, $month, $weekStart);
             }
         }
 
         return view('admin.hr.payroll.create_single', [
             'month' => $month,
+            'periodType' => $periodType,
+            'weekStart' => $periodStart->toDateString(),
+            'weekEnd' => $periodEnd->toDateString(),
             'employees' => $employees,
             'selectedEmployee' => $selectedEmployee,
             'precheck' => $precheck,
@@ -240,65 +263,78 @@ class PayrollController extends Controller
     {
         $validated = $request->validate([
             'employee_id' => ['required', 'exists:employees,id'],
-            'month' => ['required', 'date_format:Y-m'],
+            'period_type' => ['nullable', Rule::in(['monthly', 'weekly'])],
+            'month' => ['required_unless:period_type,weekly', 'nullable', 'date_format:Y-m'],
+            'week_start' => ['required_if:period_type,weekly', 'nullable', 'date_format:Y-m-d'],
         ]);
 
-        $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
-        if ($message = $this->monthPolicyError($monthDate)) {
+        $periodType = ($validated['period_type'] ?? 'monthly') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $validated['week_start'] ?? now()->startOfWeek()->toDateString();
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $validated['month'];
+        [$periodStart] = $this->calculator->periodFor($periodType, $month, $weekStart);
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return response()->json(['message' => $message], 422);
         }
 
         $employee = Employee::with(['department', 'designation'])->findOrFail($validated['employee_id']);
-
-        return response()->json($this->singlePrecheckData($employee, $validated['month']));
+        return response()->json($this->singlePrecheckData($employee, $periodType, $month, $weekStart));
     }
 
     public function storeSingle(Request $request)
     {
         $validated = $request->validate([
             'employee_id' => ['required', 'exists:employees,id'],
-            'month' => ['required', 'date_format:Y-m'],
+            'period_type' => ['nullable', Rule::in(['monthly', 'weekly'])],
+            'month' => ['required_unless:period_type,weekly', 'nullable', 'date_format:Y-m'],
+            'week_start' => ['required_if:period_type,weekly', 'nullable', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'manual_components' => ['nullable', 'array'],
             'manual_components.*' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ]);
 
-        $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
-        if ($message = $this->monthPolicyError($monthDate)) {
+        $periodType = ($validated['period_type'] ?? 'monthly') === 'weekly' ? 'weekly' : 'monthly';
+        $weekStart = $validated['week_start'] ?? now()->startOfWeek()->toDateString();
+        $month = $periodType === 'weekly'
+            ? Carbon::parse($weekStart)->format('Y-m')
+            : $validated['month'];
+        [$periodStart, $periodEnd] = $this->calculator->periodFor($periodType, $month, $weekStart);
+
+        if ($message = $this->periodPolicyError($periodStart, $periodType)) {
             return back()->withInput()->with('error', $message);
         }
 
         $employee = Employee::with(['department', 'designation'])->findOrFail($validated['employee_id']);
-        $precheck = $this->singlePrecheckData($employee, $validated['month']);
+        $precheck = $this->singlePrecheckData($employee, $periodType, $month, $weekStart);
 
         if (!$precheck['eligible']) {
-            return back()->withInput()->with('error', 'This employee is not eligible for the selected payroll month based on joining/exit dates.');
+            return back()->withInput()->with('error', 'This employee is not eligible for the selected payroll period or does not use the selected salary frequency.');
         }
         if (!$precheck['salary_ready']) {
-            return back()->withInput()->with('error', $precheck['salary_message'] ?? 'Salary setup is missing for this employee in the selected month.');
+            return back()->withInput()->with('error', $precheck['salary_message'] ?? 'Salary setup is missing for this employee in the selected period.');
         }
         if (($precheck['missing_rule_count'] ?? 0) > 0) {
             return back()->withInput()->with('error', 'Payroll configuration is incomplete: ' . implode(', ', $precheck['missing_rules'] ?? []) . '. Update HR Settings or Employee Payroll Setup.');
         }
         if ($precheck['existing_item']) {
-            return redirect($precheck['existing_item']['url'])
-                ->with('error', 'Payroll already exists for this employee and month.');
+            return redirect($precheck['existing_item']['url'])->with('error', 'Payroll already exists for this employee and period.');
         }
         if ($precheck['run_locked']) {
-            return back()->withInput()->with('error', 'This month is already fully paid and Payroll Settings is configured to lock paid payroll.');
+            return back()->withInput()->with('error', 'This payroll period is already fully paid and locked by Payroll Settings.');
         }
         if ($precheck['missing_attendance_count'] > 0 && !$request->boolean('confirm_incomplete_attendance')) {
             return back()->withInput()->with('error', 'Attendance is incomplete for this employee. Confirm to continue with not-marked days excluded from deduction.');
         }
         if ($precheck['pending_leave_count'] > 0 && !$request->boolean('confirm_pending_leave')) {
-            return back()->withInput()->with('error', 'This employee has pending leave in the selected month. Resolve it or confirm to continue.');
+            return back()->withInput()->with('error', 'This employee has pending leave in the selected period. Resolve it or confirm to continue.');
         }
 
         DB::beginTransaction();
         try {
-            $run = PayrollRun::whereDate('payroll_month', $monthDate)->lockForUpdate()->first();
+            $run = $this->runForPeriod($periodType, $periodStart, $periodEnd, true);
             if (!$run) {
-                $run = $this->createRun($validated['month'], 'Created from Single Employee Payroll.');
+                $run = $this->createRun($periodType, $month, $weekStart, 'Created from Single Employee Payroll.');
             }
 
             if ($run->status === 'cancelled') {
@@ -308,19 +344,17 @@ class PayrollController extends Controller
                 throw new \RuntimeException('Paid payroll is locked by Payroll Settings.');
             }
             if ($run->items()->where('employee_id', $employee->id)->exists()) {
-                throw new \RuntimeException('Payroll already exists for this employee and month.');
+                throw new \RuntimeException('Payroll already exists for this employee and period.');
             }
 
             $item = $this->generateSingleItem($run, $employee, $validated['notes'] ?? null, (array) ($validated['manual_components'] ?? []));
             $run->syncWorkflowStatus(auth()->id());
-
             DB::commit();
 
             return redirect()->route('hr.payroll.items.show', [$run, $item])
                 ->with('success', 'Single employee payroll created as Draft. You can review and approve it individually.');
         } catch (Throwable $exception) {
             DB::rollBack();
-
             return back()->withInput()->with('error', 'Single employee payroll creation failed. ' . $exception->getMessage());
         }
     }
@@ -662,7 +696,7 @@ class PayrollController extends Controller
             'restaurant' => $restaurant,
         ])->render();
 
-        return $this->inlinePdf($html, 'payroll_summary_' . $payrollRun->payroll_month->format('Y_m') . '.pdf', 'A4', 'L');
+        return $this->inlinePdf($html, 'payroll_summary_' . (($payrollRun->period_type ?? 'monthly') === 'weekly' ? $payrollRun->period_start->format('Y_m_d') . '_' . $payrollRun->period_end->format('Y_m_d') : $payrollRun->payroll_month->format('Y_m')) . '.pdf', 'A4', 'L');
     }
 
     public function payslip(PayrollRun $payrollRun, PayrollItem $payrollItem)
@@ -676,18 +710,22 @@ class PayrollController extends Controller
             'restaurant' => $restaurant,
         ])->render();
 
-        $fileName = 'payslip_' . $payrollItem->employee_code . '_' . $payrollRun->payroll_month->format('Y_m') . '.pdf';
+        $fileName = 'payslip_' . $payrollItem->employee_code . '_' . (($payrollRun->period_type ?? 'monthly') === 'weekly' ? $payrollRun->period_start->format('Y_m_d') . '_' . $payrollRun->period_end->format('Y_m_d') : $payrollRun->payroll_month->format('Y_m')) . '.pdf';
 
         return $this->inlinePdf($html, $fileName, 'A4', 'P', false);
     }
 
-    private function createRun(string $month, ?string $notes = null): PayrollRun
+    private function createRun(string $periodType, string $month, ?string $weekStart = null, ?string $notes = null): PayrollRun
     {
-        [$start, $end] = $this->calculator->period($month);
+        [$start, $end] = $this->calculator->periodFor($periodType, $month, $weekStart);
+        $code = $periodType === 'weekly'
+            ? 'PAY-W-' . $start->format('Ymd') . '-' . $end->format('Ymd')
+            : 'PAY-' . $start->format('Ym');
 
         return PayrollRun::create([
-            'payroll_code' => 'PAY-' . $start->format('Ym'),
-            'payroll_month' => $start->toDateString(),
+            'payroll_code' => $code,
+            'payroll_month' => $start->copy()->startOfMonth()->toDateString(),
+            'period_type' => $periodType,
             'period_start' => $start->toDateString(),
             'period_end' => $end->toDateString(),
             'status' => 'draft',
@@ -700,7 +738,7 @@ class PayrollController extends Controller
     private function generateItems(PayrollRun $run, array $manualComponentAmountsByEmployee = []): void
     {
         $employees = $this->calculator
-            ->eligibleEmployeesQuery($run->period_start, $run->period_end)
+            ->eligibleEmployeesQuery($run->period_start, $run->period_end, $run->period_type ?? 'monthly')
             ->with(['department', 'designation'])
             ->orderBy('employee_code')
             ->get();
@@ -712,7 +750,7 @@ class PayrollController extends Controller
 
     private function generateSingleItem(PayrollRun $run, Employee $employee, ?string $notes = null, array $manualComponentAmounts = []): PayrollItem
     {
-        $calculation = $this->calculator->calculate($employee, $run->period_start, $run->period_end, $manualComponentAmounts);
+        $calculation = $this->calculator->calculate($employee, $run->period_start, $run->period_end, $manualComponentAmounts, $run->period_type ?? 'monthly');
         if ($notes !== null) {
             $calculation['item']['notes'] = $notes;
         }
@@ -730,11 +768,11 @@ class PayrollController extends Controller
         return $item;
     }
 
-    private function singlePrecheckData(Employee $employee, string $month): array
+    private function singlePrecheckData(Employee $employee, string $periodType, string $month, ?string $weekStart = null): array
     {
-        $data = $this->calculator->precheckEmployee($employee, $month);
-        $monthDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-        $run = PayrollRun::whereDate('payroll_month', $monthDate)->first();
+        [$start, $end] = $this->calculator->periodFor($periodType, $month, $weekStart);
+        $data = $this->calculator->precheckEmployeePeriod($employee, $start, $end, $periodType);
+        $run = $this->runForPeriod($periodType, $start, $end);
         $item = $run?->items()->where('employee_id', $employee->id)->first();
 
         $data['existing_run'] = $run ? [
@@ -751,9 +789,40 @@ class PayrollController extends Controller
         $data['run_locked'] = (bool) ($run
             && $run->status === 'paid'
             && $this->calculator->settings()->lock_paid_payroll);
-        $data['is_future_month'] = $monthDate->gt(now()->startOfMonth());
+        $data['is_future_month'] = $periodType === 'weekly'
+            ? $start->gt(now()->startOfDay())
+            : $start->gt(now()->startOfMonth());
 
         return $data;
+    }
+
+    private function runForPeriod(string $periodType, Carbon $start, Carbon $end, bool $lock = false): ?PayrollRun
+    {
+        $query = PayrollRun::where('period_type', $periodType)
+            ->whereDate('period_start', $start->toDateString())
+            ->whereDate('period_end', $end->toDateString());
+        if ($lock) $query->lockForUpdate();
+        return $query->first();
+    }
+
+    private function normaliseWeekStart(?string $date): string
+    {
+        try {
+            $parsed = Carbon::createFromFormat('!Y-m-d', (string) $date);
+            if ($parsed && $parsed->format('Y-m-d') === (string) $date) {
+                return $parsed->toDateString();
+            }
+        } catch (Throwable) {
+            // Fall through to the current week.
+        }
+
+        $default = now()->startOfWeek();
+        if (!$this->calculator->settings()->allow_non_current_month_payroll
+            && $default->format('Y-m') !== now()->format('Y-m')) {
+            $default = now()->startOfMonth();
+        }
+
+        return $default->toDateString();
     }
 
     private function normaliseMonth(string $month): string
@@ -763,6 +832,21 @@ class PayrollController extends Controller
         } catch (Throwable) {
             return now()->format('Y-m');
         }
+    }
+
+    private function periodPolicyError(Carbon $periodStart, string $periodType): ?string
+    {
+        if ($this->calculator->settings()->allow_non_current_month_payroll) {
+            return null;
+        }
+
+        if ($periodStart->format('Y-m') !== now()->format('Y-m')) {
+            return $periodType === 'weekly'
+                ? 'Payroll Settings currently allows current-month payroll only. Choose a week that starts in the current month or enable previous/next month payroll.'
+                : $this->monthPolicyError($periodStart->copy()->startOfMonth());
+        }
+
+        return null;
     }
 
     private function monthPolicyError(Carbon $monthDate): ?string

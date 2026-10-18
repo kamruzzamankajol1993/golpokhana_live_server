@@ -51,8 +51,8 @@
                     <div class="hr-card-header"><div class="hr-card-title">Current Salary</div></div>
                     <div class="hr-card-body">
                         @if($currentStructure)
-                            <div class="hr-money-box mb-2"><span>Basic Salary</span><strong>৳{{ number_format((float) $currentStructure->basic_salary, 2) }}</strong></div>
-                            <div class="hr-money-box mb-2"><span>Estimated Gross</span><strong>৳{{ number_format((float) $currentStructure->estimated_gross, 2) }}</strong></div>
+                            <div class="hr-money-box mb-2"><span>{{ ($currentStructure->salary_basis ?? 'period_rate') === 'per_day' ? 'Daily Rate' : 'Basic Salary' }}</span><strong>৳{{ number_format((float) $currentStructure->basic_salary, 2) }}</strong></div>
+                            <div class="hr-money-box mb-2"><span>{{ ($currentStructure->salary_basis ?? 'period_rate') === 'per_day' ? 'Estimated Gross per Day' : 'Estimated Gross' }}</span><strong>৳{{ number_format((float) $currentStructure->estimated_gross, 2) }}</strong></div>
                             <div class="hr-info-list">
                                 <div><span>Effective From</span><strong>{{ $currentStructure->effective_from->format('d-m-Y') }}</strong></div>
                                 <div><span>Payment Method</span><strong>{{ ucwords(str_replace('_', ' ', $currentStructure->payment_method)) }}</strong></div>
@@ -84,7 +84,7 @@
                                     <div class="hr-card-subtitle">Saving with a later effective date creates a new salary version and closes the previous one.</div>
                                 </div>
                                 <div class="hr-estimated-gross">
-                                    <span>Estimated Gross</span>
+                                    <span id="estimatedGrossLabel">{{ ($editingStructure?->salary_basis ?? 'period_rate') === 'per_day' ? 'Estimated Gross per Day' : 'Estimated Gross' }}</span>
                                     <strong id="estimatedGrossValue">৳0.00</strong>
                                 </div>
                             </div>
@@ -107,7 +107,26 @@
                                         @error('effective_from')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="progga-form-label">Basic Salary <span class="progga-required">*</span></label>
+                                        <label class="progga-form-label">Salary Frequency <span class="progga-required">*</span></label>
+                                        <select id="salaryPayFrequency" name="pay_frequency" class="salary-select2" data-search="false" required>
+                                            <option value="monthly" {{ old('pay_frequency', $editingStructure?->pay_frequency ?? 'monthly') === 'monthly' ? 'selected' : '' }}>Monthly</option>
+                                            <option value="weekly" {{ old('pay_frequency', $editingStructure?->pay_frequency ?? 'monthly') === 'weekly' ? 'selected' : '' }}>Weekly</option>
+                                        </select>
+                                        <div class="hr-muted mt-1" id="salaryFrequencyHelp">This controls when payroll is generated.</div>
+                                        @error('pay_frequency')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="progga-form-label">Salary Calculation Basis <span class="progga-required">*</span></label>
+                                        <select id="salaryBasis" name="salary_basis" class="salary-select2" data-search="false" required>
+                                            <option value="period_rate" {{ old('salary_basis', $editingStructure?->salary_basis ?? 'period_rate') === 'period_rate' ? 'selected' : '' }}>Fixed period rate</option>
+                                            <option value="per_day" {{ old('salary_basis', $editingStructure?->salary_basis ?? 'period_rate') === 'per_day' ? 'selected' : '' }}>Per attended day</option>
+                                        </select>
+                                        <div class="hr-muted mt-1">For flexible staff, choose Per attended day.</div>
+                                        @error('salary_basis')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="progga-form-label" id="salaryBasicLabel">Basic Salary <span class="progga-required">*</span></label>
+                                        <div class="hr-muted mb-1" id="salaryBasicHelp">Monthly amount for monthly staff; full 7-day rate for weekly staff.</div>
                                         <div class="input-group"><span class="input-group-text">৳</span><input type="number" step="0.01" min="0" id="basicSalary" name="basic_salary" class="progga-form-control salary-calc-input" value="{{ old('basic_salary', $editingStructure?->basic_salary ?? 0) }}" required></div>
                                         @error('basic_salary')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                                     </div>
@@ -210,7 +229,7 @@
                     </div>
                     <div class="progga-table-wrapper" style="border:0;border-radius:0">
                         <table class="progga-table">
-                            <thead><tr><th>Effective Period</th><th>Basic Salary</th><th>Estimated Gross</th><th>Payment Method</th><th>Components</th></tr></thead>
+                            <thead><tr><th>Effective Period</th><th>Basic Salary / Daily Rate</th><th>Estimated Gross</th><th>Payment Method</th><th>Components</th></tr></thead>
                             <tbody>
                                 @forelse($salaryHistory as $history)
                                     <tr>
@@ -218,8 +237,8 @@
                                             <strong>{{ $history->effective_from->format('d-m-Y') }}</strong>
                                             <div class="hr-muted">to {{ optional($history->effective_to)->format('d-m-Y') ?: 'Current' }}</div>
                                         </td>
-                                        <td>৳{{ number_format((float) $history->basic_salary, 2) }}</td>
-                                        <td>৳{{ number_format((float) $history->estimated_gross, 2) }}</td>
+                                        <td>৳{{ number_format((float) $history->basic_salary, 2) }} @if(($history->salary_basis ?? 'period_rate') === 'per_day')<small class="hr-muted">/ day</small>@endif</td>
+                                        <td>৳{{ number_format((float) $history->estimated_gross, 2) }} @if(($history->salary_basis ?? 'period_rate') === 'per_day')<small class="hr-muted">/ day</small>@endif</td>
                                         <td>{{ ucwords(str_replace('_', ' ', $history->payment_method)) }}</td>
                                         <td>{{ $history->components->where('is_active', true)->count() }}</td>
                                     </tr>
@@ -253,6 +272,19 @@
                 calculateGross();
             }
 
+            function refreshSalaryBasisLabels() {
+                const basis = $('#salaryBasis').val() || 'period_rate';
+                const frequency = $('#salaryPayFrequency').val() || 'monthly';
+                $('#salaryBasicLabel').text(basis === 'per_day' ? 'Daily Rate *' : 'Basic Salary *');
+                $('#salaryBasicHelp').text(basis === 'per_day'
+                    ? 'Rate for one payable day. Half-day counts as 0.5; fixed salary/allowance components are also daily rates.'
+                    : (frequency === 'weekly' ? 'Full 7-day week rate.' : 'Full month salary amount.'));
+                $('#salaryFrequencyHelp').text(basis === 'per_day'
+                    ? 'This controls when payroll is generated; salary is based on payable attendance days.'
+                    : (frequency === 'weekly' ? 'Weekly salary is prorated using paid attendance days.' : 'Monthly payroll is generated once per month.'));
+                $('#estimatedGrossLabel').text(basis === 'per_day' ? 'Estimated Gross per Day' : 'Estimated Gross');
+            }
+
             function calculateGross() {
                 const basic = parseFloat($('#basicSalary').val()) || 0;
                 let gross = basic;
@@ -273,6 +305,7 @@
 
             $(document).on('change', '.salary-component-enabled', refreshComponentState);
             $(document).on('input', '.salary-calc-input', calculateGross);
+            $('#salaryBasis, #salaryPayFrequency').on('change', refreshSalaryBasisLabels);
 
             $('#salaryStructureForm').on('submit', function () {
                 $(this).find('button[type="submit"]').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
@@ -285,6 +318,7 @@
                 Swal.fire('Error', @json(session('error')), 'error');
             @endif
 
+            refreshSalaryBasisLabels();
             refreshComponentState();
         });
     </script>

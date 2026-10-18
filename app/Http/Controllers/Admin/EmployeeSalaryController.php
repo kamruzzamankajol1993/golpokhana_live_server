@@ -30,6 +30,8 @@ class EmployeeSalaryController extends Controller
         $validated = $request->validate([
             'effective_from' => ['required', 'date', 'after_or_equal:' . $employee->join_date->format('Y-m-d')],
             'basic_salary' => ['required', 'numeric', 'min:0.01', 'max:999999999999.99'],
+            'pay_frequency' => ['required', 'in:monthly,weekly'],
+            'salary_basis' => ['nullable', 'in:period_rate,per_day'],
             'payment_method' => ['required', 'in:cash,bank,mobile_banking'],
             'account_name' => ['nullable', 'string', 'max:180'],
             'account_number' => ['nullable', 'string', 'max:120'],
@@ -72,6 +74,8 @@ class EmployeeSalaryController extends Controller
             $structure->effective_from = $effectiveFrom->toDateString();
             $structure->effective_to = null;
             $structure->basic_salary = $validated['basic_salary'];
+            $structure->pay_frequency = $validated['pay_frequency'];
+            $structure->salary_basis = $validated['salary_basis'] ?? ($structure->salary_basis ?: 'period_rate');
             $structure->overtime_rate = null;
             $structure->payment_method = $validated['payment_method'];
             $structure->account_name = $validated['account_name'] ?? null;

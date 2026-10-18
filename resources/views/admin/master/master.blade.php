@@ -720,7 +720,7 @@ function exportReport(type, reportName) {
     const shouldRunLoginSync = tipsoiEnabled && @json((bool) session()->get('tipsoi_login_attendance_sync_pending', false));
     let inFlight = false;
 
-    // Master kill-switch: when HR Settings -> TIPSOI is OFF, do not even
+    // Master kill-switch: when HR Settings -> Device is OFF, do not even
     // schedule browser AJAX calls. Server-side services also enforce this.
     if (!tipsoiEnabled || !syncUrl || !csrf || !window.fetch) return;
 
@@ -746,10 +746,10 @@ function exportReport(type, reportName) {
             // its own visible popup/error handling.
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
-                console.debug('TIPSOI attendance background sync skipped/failed:', data.message || response.status);
+                console.debug('Device attendance background sync skipped/failed:', data.message || response.status);
             }
         } catch (error) {
-            console.debug('TIPSOI attendance background sync error:', error);
+            console.debug('Device attendance background sync error:', error);
         } finally {
             inFlight = false;
         }

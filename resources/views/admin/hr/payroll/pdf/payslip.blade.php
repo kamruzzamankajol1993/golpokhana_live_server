@@ -27,7 +27,8 @@
         <tr><td class="label">Employee ID:</td><td class="value">{{ $item->employee_code }}</td></tr>
         <tr><td class="label">Designation:</td><td class="value">{{ $item->designation_name ?: 'N/A' }}</td></tr>
         <tr><td class="label">Department:</td><td class="value">{{ $item->department_name ?: 'N/A' }}</td></tr>
-        <tr><td class="label">Month &amp; Year:</td><td class="value">For the Month of {{ $run->payroll_month->format('F Y') }}</td></tr>
+        <tr><td class="label">Payroll Period:</td><td class="value">@if(($run->period_type ?? 'monthly') === 'weekly') {{ $run->period_start->format('d M Y') }} to {{ $run->period_end->format('d M Y') }} (Weekly) @else For the Month of {{ $run->payroll_month->format('F Y') }} @endif</td></tr>
+        <tr><td class="label">Payable Days:</td><td class="value">{{ number_format((float) $item->payable_days, 2) }}</td></tr>
     </table>
 
     <div class="spacer"></div>

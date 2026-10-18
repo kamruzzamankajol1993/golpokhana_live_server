@@ -51,6 +51,10 @@ class PayrollRun extends Model
 
     public function getMonthLabelAttribute(): string
     {
+        if (($this->period_type ?? 'monthly') === 'weekly' && $this->period_start && $this->period_end) {
+            return $this->period_start->format('d M') . ' – ' . $this->period_end->format('d M Y');
+        }
+
         return $this->payroll_month?->format('F Y') ?? '';
     }
 

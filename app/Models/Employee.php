@@ -61,12 +61,17 @@ class Employee extends Model
 
     public function educations()
     {
-        return $this->hasMany(EmployeeEducation::class);
+        return $this->hasMany(EmployeeEducation::class, 'employee_id', 'id');
     }
 
     public function certificates()
     {
         return $this->hasMany(EmployeeCertificate::class);
+    }
+
+    public function emergencyContacts()
+    {
+        return $this->hasMany(EmployeeEmergencyContact::class);
     }
 
     public function attendances()

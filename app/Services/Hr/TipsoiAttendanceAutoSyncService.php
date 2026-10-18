@@ -15,7 +15,7 @@ class TipsoiAttendanceAutoSyncService
     }
 
     /**
-     * Keep TIPSOI attendance caught up through today.
+     * Keep Device attendance caught up through today.
      *
      * Login and first Attendance-page visits can force a current-month refresh.
      * Browser heartbeat and scheduler runs are incremental and are protected by
@@ -30,7 +30,7 @@ class TipsoiAttendanceAutoSyncService
                 'ok' => true,
                 'busy' => true,
                 'skipped' => true,
-                'message' => 'Another TIPSOI attendance sync is already running.',
+                'message' => 'Another Device attendance sync is already running.',
             ];
         }
 
@@ -42,7 +42,7 @@ class TipsoiAttendanceAutoSyncService
                     'ok' => true,
                     'disabled' => true,
                     'skipped' => true,
-                    'message' => 'TIPSOI attendance sync is disabled.',
+                    'message' => 'Device attendance sync is disabled.',
                 ];
             }
 
@@ -56,7 +56,7 @@ class TipsoiAttendanceAutoSyncService
                     'ok' => true,
                     'throttled' => true,
                     'skipped' => true,
-                    'message' => 'TIPSOI attendance was synced recently.',
+                    'message' => 'Device attendance was synced recently.',
                 ];
             }
 
@@ -90,7 +90,7 @@ class TipsoiAttendanceAutoSyncService
                 'skipped' => $skipped,
                 'chunks' => $chunks,
                 'message' => sprintf(
-                    'TIPSOI attendance sync complete (%s to %s): %d attendance record(s), %d raw punch(es), %d skipped.',
+                    'Device attendance sync complete (%s to %s): %d attendance record(s), %d raw punch(es), %d skipped.',
                     $fromDate->format('d M Y'),
                     $today->format('d M Y'),
                     $saved,
@@ -129,7 +129,7 @@ class TipsoiAttendanceAutoSyncService
         }
 
         if (!$forceCurrentMonth) {
-            // Re-fetch the last covered date so a late punch that reached TIPSOI
+            // Re-fetch the last covered date so a late punch that reached Device
             // after the previous sync is still picked up on the next heartbeat.
             return $lastCovered;
         }

@@ -4,6 +4,7 @@
             <tr>
                 <th>#</th>
                 <th>Customer</th>
+                <th>Primary ID</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>Total Orders</th>
@@ -27,6 +28,7 @@
                         </div>
                     </div>
                 </td>
+                <td>{{ $customer->primary_id ?: '—' }}</td>
                 <td>{{ $customer->phone }}</td>
                 <td>{{ $customer->email ?? '—' }}</td>
                 <td><strong>{{ $customer->orders_count }}</strong></td>
@@ -43,7 +45,16 @@
 </button>
 
                         @can('customer-edit')
-<button type="button" class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm" onclick="editCustomerData({{ $customer->id }}, '{{ $customer->name }}', '{{ $customer->phone }}', '{{ $customer->email }}', '{{ $customer->dob }}', '{{ $customer->address }}', {{ $customer->points }})">
+<button type="button" class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm js-edit-customer"
+    data-id="{{ $customer->id }}"
+    data-name="{{ $customer->name }}"
+    data-phone="{{ $customer->phone }}"
+    data-primary-id="{{ $customer->primary_id }}"
+    data-email="{{ $customer->email }}"
+    data-dob="{{ $customer->dob }}"
+    data-address="{{ $customer->address }}"
+    data-points="{{ $customer->points }}"
+    title="Edit Customer">
     <i class="bi bi-pencil"></i>
 </button>
 @endcan
@@ -60,7 +71,7 @@
                 </td>
             </tr>
             @empty
-            <tr><td colspan="8" class="text-center py-4">No customers found.</td></tr>
+            <tr><td colspan="9" class="text-center py-4">No customers found.</td></tr>
             @endforelse
         </tbody>
     </table>

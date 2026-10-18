@@ -7,6 +7,7 @@ use App\Models\Attendance;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\ShiftRoster;
+use App\Services\Hr\RecurringRosterService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -20,6 +21,7 @@ class HrDashboardController extends Controller
     public function index()
     {
         $today = now()->toDateString();
+        app(RecurringRosterService::class)->materialize($today, $today);
         $activeEmployees = Employee::where('employment_status', 'active')->count();
         $attendanceCounts = Attendance::whereDate('attendance_date', $today)
             ->select('status', DB::raw('COUNT(*) AS total'))

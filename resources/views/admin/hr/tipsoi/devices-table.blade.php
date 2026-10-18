@@ -31,7 +31,7 @@
                     <td><span class="badge text-bg-{{ $device->status === 'active' ? 'success' : 'secondary' }}">{{ ucfirst($device->status ?: 'unknown') }}</span></td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="text-center py-5 text-muted"><i class="bi bi-hdd-network d-block fs-2 mb-2"></i>No device cached yet. Click “Refresh from Tipsoi”.</td></tr>
+                <tr><td colspan="10" class="text-center py-5 text-muted"><i class="bi bi-hdd-network d-block fs-2 mb-2"></i>No device cached yet. Click “Refresh from Device”.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -95,7 +95,7 @@ class TipsoiController extends Controller
             report($e);
             return $request->expectsJson()
                 ? response()->json(['success' => false, 'message' => $e->getMessage()], 422)
-                : back()->with('error', 'Tipsoi people refresh failed. ' . $e->getMessage());
+                : back()->with('error', 'Device people refresh failed. ' . $e->getMessage());
         }
     }
 
@@ -301,7 +301,7 @@ class TipsoiController extends Controller
                 $employee->refresh();
             }
             $this->tipsoiService->allocatePerson($data['device_identifier'], $employee->tipsoi_identifier ?: $employee->employee_code, $data['action']);
-            return back()->with('success', ucfirst($data['action']) . ' request sent to Tipsoi successfully.');
+            return back()->with('success', ucfirst($data['action']) . ' request sent to Device successfully.');
         } catch (Throwable $e) {
             report($e);
             return back()->withInput()->with('error', 'Device assignment failed. ' . $e->getMessage());
@@ -331,7 +331,7 @@ class TipsoiController extends Controller
                 $data['device_identifiers'],
                 $data['action']
             );
-            return back()->with('success', 'Batch ' . $data['action'] . ' request sent to Tipsoi successfully.');
+            return back()->with('success', 'Batch ' . $data['action'] . ' request sent to Device successfully.');
         } catch (Throwable $e) {
             report($e);
             return back()->withInput()->with('error', 'Batch device assignment failed. ' . $e->getMessage());
@@ -436,7 +436,7 @@ class TipsoiController extends Controller
     {
         return response()->json([
             'success' => false,
-            'message' => 'Tipsoi Device API V2.4 does not document an attendance write endpoint. Use Attendance Pull instead.',
+            'message' => 'Device API V2.4 does not document an attendance write endpoint. Use Attendance Pull instead.',
         ], 422);
     }
 }

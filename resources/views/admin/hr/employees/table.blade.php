@@ -49,11 +49,11 @@
                                 </a>
                                 <div class="hr-person-meta">{{ $employee->employee_code }} · {{ $employee->phone }}</div>
                                 @if($employee->tipsoi_sync_status === 'synced')
-                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-success"><i class="bi bi-fingerprint"></i> Tipsoi Synced</span></div>
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-success"><i class="bi bi-fingerprint"></i> Device Synced</span></div>
                                 @elseif($employee->tipsoi_sync_status === 'failed')
-                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-warning" title="{{ $employee->tipsoi_sync_error }}"><i class="bi bi-exclamation-triangle"></i> Tipsoi Failed</span></div>
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-warning" title="{{ $employee->tipsoi_sync_error }}"><i class="bi bi-exclamation-triangle"></i> Device Failed</span></div>
                                 @elseif($employee->tipsoi_person_id || $employee->tipsoi_identifier)
-                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Tipsoi Linked</span></div>
+                                    <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Device Linked</span></div>
                                 @endif
                             </div>
                         </div>
@@ -89,7 +89,7 @@
                     <td>
                         @if($salary)
                             <div style="font-weight:800">৳{{ number_format((float) $salary->basic_salary, 2) }}</div>
-                            <div class="hr-person-meta">Effective {{ $salary->effective_from?->format('d-m-Y') ?? 'N/A' }}</div>
+                            <div class="hr-person-meta">{{ ($salary->salary_basis ?? 'period_rate') === 'per_day' ? 'Daily rate' : ucfirst($salary->pay_frequency ?? 'monthly') . ' rate' }} · Effective {{ $salary->effective_from?->format('d-m-Y') ?? 'N/A' }}</div>
                         @else
                             <span class="hr-badge hr-badge-warning">Not configured</span>
                         @endif
@@ -163,7 +163,7 @@
                                     type="button"
                                     class="progga-btn progga-btn-outline progga-btn-icon progga-btn-sm employee-tipsoi-push-btn"
                                     data-url="{{ route('hr.tipsoi.employees.push-one', $employee) }}"
-                                    title="Push employee to Tipsoi"
+                                    title="Push employee to Device"
                                 >
                                     <i class="bi bi-cloud-arrow-up"></i>
                                 </button>

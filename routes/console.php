@@ -10,7 +10,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // Server-side fallback: when cPanel/server cron runs `php artisan schedule:run`
-// every five minutes, TIPSOI attendance remains synced even if no browser is open.
+// every five minutes, Device attendance remains synced even if no browser is open.
 Schedule::call(function (): void {
     app(TipsoiAttendanceAutoSyncService::class)->syncThroughToday(
         forceCurrentMonth: false,

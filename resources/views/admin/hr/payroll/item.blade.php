@@ -64,6 +64,7 @@
                             <div><span>Late</span><strong>{{ (float) $item->late_days }}</strong></div>
                             <div><span>Absent</span><strong>{{ (float) $item->absent_days }}</strong></div>
                             <div><span>Half Day</span><strong>{{ (float) $item->half_days }}</strong></div>
+                            <div><span>Payable Days</span><strong>{{ number_format((float) $item->payable_days, 2) }}</strong></div>
                             <div><span>Paid Leave</span><strong>{{ (float) $item->paid_leave_days }}</strong></div>
                             <div><span>Unpaid Leave</span><strong>{{ (float) $item->unpaid_leave_days }}</strong></div>
                             <div><span>Off Day</span><strong>{{ (float) $item->off_days }}</strong></div>

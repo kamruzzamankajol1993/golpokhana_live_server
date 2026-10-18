@@ -1981,6 +1981,11 @@ public function placeOrder(Request $request)
             return $this->posOrderClosedResponse();
         }
 
+        $request->validate([
+            'customer_primary_id' => 'nullable|string|max:255',
+            'customer_address' => 'nullable|string|max:5000',
+        ]);
+
         $actor = auth()->user();
         $isWaiterActor = $this->userHasRoleCaseInsensitive($actor, 'waiter');
         $loggedInWaiterForOrder = $isWaiterActor && $actor
@@ -2146,7 +2151,9 @@ public function placeOrder(Request $request)
                         } else if ($request->customer_name) {
                             $newCustomer = Customer::create([
                                 'name' => $request->customer_name,
-                                'phone' => $request->customer_phone
+                                'phone' => $request->customer_phone,
+                                'primary_id' => $request->filled('customer_primary_id') ? trim((string) $request->customer_primary_id) : null,
+                                'address' => $request->filled('customer_address') ? trim((string) $request->customer_address) : null,
                             ]);
                             $customerId = $newCustomer->id;
                         }
@@ -2272,7 +2279,12 @@ public function placeOrder(Request $request)
                     if ($request->customer_id) {
                         $customerId = $request->customer_id;
                     } else if ($request->customer_name) {
-                        $newCustomer = Customer::create(['name' => $request->customer_name, 'phone' => $request->customer_phone]);
+                        $newCustomer = Customer::create([
+                            'name' => $request->customer_name,
+                            'phone' => $request->customer_phone,
+                            'primary_id' => $request->filled('customer_primary_id') ? trim((string) $request->customer_primary_id) : null,
+                            'address' => $request->filled('customer_address') ? trim((string) $request->customer_address) : null,
+                        ]);
                         $customerId = $newCustomer->id;
                     }
                 }
@@ -2744,6 +2756,8 @@ public function tableReservationStatuses()
             'customer_id' => 'nullable|integer',
             'customer_name' => 'nullable|string|max:255',
             'customer_phone' => 'nullable|string|max:20',
+            'customer_primary_id' => 'nullable|string|max:255',
+            'customer_address' => 'nullable|string|max:5000',
             'customer_email' => 'nullable|email|max:255',
             'delivery_partner' => 'nullable|integer|exists:delivery_partners,id',
             'waiter_id' => 'nullable|integer|exists:waiters,id',
@@ -2832,6 +2846,8 @@ public function tableReservationStatuses()
                     $customer = Customer::create([
                         'name' => trim((string) $request->customer_name),
                         'phone' => trim((string) $request->customer_phone),
+                        'primary_id' => $request->filled('customer_primary_id') ? trim((string) $request->customer_primary_id) : null,
+                        'address' => $request->filled('customer_address') ? trim((string) $request->customer_address) : null,
                         'email' => $request->filled('customer_email') ? trim((string) $request->customer_email) : null,
                     ]);
                 } else {

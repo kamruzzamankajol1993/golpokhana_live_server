@@ -19,6 +19,15 @@
     $savedCertificates = $isEdit ? $employee->certificates->map(fn ($item) => $item->toArray())->all() : [];
     $educationRows = old('educations', $savedEducations);
     $certificateRows = old('certificates', $savedCertificates);
+    $savedEmergencyContacts = $isEdit ? $employee->emergencyContacts->map(fn ($item) => $item->toArray())->all() : [];
+    if ($isEdit && empty($savedEmergencyContacts) && ($employee->emergency_contact_name || $employee->emergency_contact_phone)) {
+        $savedEmergencyContacts = [[
+            'name' => $employee->emergency_contact_name,
+            'phone' => $employee->emergency_contact_phone,
+        ]];
+    }
+    $emergencyContactRows = old('emergency_contacts', $savedEmergencyContacts);
+    $cvPath = $isEdit ? $employee->cv_path : null;
 
 @endphp
 
@@ -224,6 +233,13 @@
                 <input type="hidden" name="sync_educations" value="1">
                 <div id="employeeEducationRows">
                     @foreach($educationRows as $rowIndex => $row)
+                        @php
+                            $row = (array) $row;
+                            if ($isEdit && !empty($row['id'])) {
+                                $savedEducation = $employee->educations->firstWhere('id', (int) $row['id']);
+                                $row['certificate_file_path'] = $savedEducation?->certificate_file_path;
+                            }
+                        @endphp
                         @include('admin.hr.employees.partials.education-row', ['row' => $row, 'rowIndex' => $rowIndex])
                     @endforeach
                 </div>
@@ -236,9 +252,9 @@
 
         <div class="hr-card mb-3" id="employeeCertificateCard">
             <div class="hr-card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                <div><div class="hr-card-title"><i class="bi bi-award me-2"></i>All Certificate</div>
-                    <div class="hr-card-subtitle">Add certificates with a title, optional description and file; existing files are retained unless changed or removed.</div></div>
-                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddCertificate"><i class="bi bi-plus-lg"></i> Add Certificate</button>
+                <div><div class="hr-card-title"><i class="bi bi-award me-2"></i>Experience Certificate</div>
+                    <div class="hr-card-subtitle">Add experience certificates with duration, description and file; existing files are retained unless changed or removed.</div></div>
+                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddCertificate"><i class="bi bi-plus-lg"></i> Add Experience Certificate</button>
             </div>
             <div class="hr-card-body">
                 <input type="hidden" name="sync_certificates" value="1">
@@ -255,10 +271,36 @@
                         @include('admin.hr.employees.partials.certificate-row', ['row' => $row, 'rowIndex' => $rowIndex])
                     @endforeach
                 </div>
-                <div class="hr-muted employee-empty-note" id="employeeCertificateEmpty">No certificate added yet.</div>
+                <div class="hr-muted employee-empty-note" id="employeeCertificateEmpty">No experience certificate added yet.</div>
                 <template id="employeeCertificateTemplate">
                     @include('admin.hr.employees.partials.certificate-row', ['row' => [], 'rowIndex' => '__INDEX__'])
                 </template>
+            </div>
+        </div>
+
+        <div class="hr-card mb-3" id="employeeCvCard">
+            <div class="hr-card-header">
+                <div>
+                    <div class="hr-card-title"><i class="bi bi-file-earmark-person me-2"></i>CV Upload</div>
+                    <div class="hr-card-subtitle">Upload the employee CV separately from education and experience certificates.</div>
+                </div>
+            </div>
+            <div class="hr-card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-8">
+                        <label class="progga-form-label">CV File</label>
+                        <input type="file" class="progga-form-control" name="cv_file" accept=".pdf,.doc,.docx">
+                        <div class="hr-muted mt-1">PDF, DOC or DOCX · Maximum 10 MB.</div>
+                        @error('cv_file')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-4">
+                        @if($cvPath)
+                            <a href="{{ asset('public/' . ltrim($cvPath, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline w-100 justify-content-center"><i class="bi bi-file-earmark-arrow-down"></i> View Current CV</a>
+                        @else
+                            <div class="hr-muted">No CV uploaded yet.</div>
+                        @endif
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -360,8 +402,27 @@
                         <div class="hr-person-meta mt-1">For the first salary setup, keep this equal to Joining Date if payroll should start from joining.</div>
                     </div>
                     <div class="col-md-3">
-                        <label class="progga-form-label">Basic Salary <span class="progga-required">*</span></label>
+                        <label class="progga-form-label">Salary Frequency <span class="progga-required">*</span></label>
+                        <select name="salary_frequency" class="employee-form-select2" data-search="false">
+                            <option value="monthly" {{ old('salary_frequency', $salaryStructure?->pay_frequency ?? 'monthly') === 'monthly' ? 'selected' : '' }}>Monthly</option>
+                            <option value="weekly" {{ old('salary_frequency', $salaryStructure?->pay_frequency ?? 'monthly') === 'weekly' ? 'selected' : '' }}>Weekly</option>
+                        </select>
+                        <div class="hr-muted mt-1" id="employeeSalaryFrequencyHelp">This controls when payroll is generated.</div>
+                        @error('salary_frequency')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-3">
+                        <label class="progga-form-label">Salary Calculation Basis <span class="progga-required">*</span></label>
+                        <select name="salary_basis" class="employee-form-select2" data-search="false">
+                            <option value="period_rate" {{ old('salary_basis', $salaryStructure?->salary_basis ?? 'period_rate') === 'period_rate' ? 'selected' : '' }}>Fixed period rate</option>
+                            <option value="per_day" {{ old('salary_basis', $salaryStructure?->salary_basis ?? 'period_rate') === 'per_day' ? 'selected' : '' }}>Per attended day</option>
+                        </select>
+                        <div class="hr-muted mt-1">Choose per attended day for staff who work different numbers of days each month.</div>
+                        @error('salary_basis')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
+                    </div>
+                    <div class="col-md-3">
+                        <label class="progga-form-label" id="employeeBasicSalaryLabel">Basic Salary <span class="progga-required">*</span></label>
                         <input type="number" step="0.01" min="0" class="progga-form-control" name="basic_salary" value="{{ old('basic_salary', $salaryStructure?->basic_salary ?? 0) }}">
+                        <div class="hr-muted mt-1" id="employeeBasicSalaryHelp">Enter the full month rate or full 7-day week rate according to Salary Frequency.</div>
                     </div>
                     <div class="col-md-3">
                         <label class="progga-form-label">Payment Method</label>
@@ -377,7 +438,7 @@
                 </div>
 
                 <div class="alert alert-info border mb-4" style="font-size:12px;">
-                    <strong>Monthly-only values are not saved on the employee.</strong> Components configured as <strong>Manual at Payroll</strong> (for example Arrear, Fine, Other and Adjustment (Last Month)) are entered when payroll is created and remain only in that month's payroll snapshot.
+                    <strong>Manual-at-payroll values are not saved on the employee.</strong> Components configured as <strong>Manual at Payroll</strong> (for example Arrear, Fine, Other and Adjustment (Last Month)) are entered when payroll is created and remain only in that payroll period snapshot.
                 </div>
 
                 @foreach(['salary'=>'Salary','allowance'=>'Allowance','deduction'=>'Deduction'] as $groupKey=>$groupLabel)
@@ -432,8 +493,8 @@
         <div class="hr-card mb-3">
             <div class="hr-card-header">
                 <div>
-                    <div class="hr-card-title"><i class="bi bi-fingerprint me-2"></i>TIPSOI Person</div>
-                    <div class="hr-card-subtitle">Person Create/Update fields used by the TIPSOI Device API. Employee Code is used when Identifier is blank.</div>
+                    <div class="hr-card-title"><i class="bi bi-fingerprint me-2"></i>Device Person</div>
+                    <div class="hr-card-subtitle">Person Create/Update fields used by the Device API. Employee Code is used when Identifier is blank.</div>
                 </div>
                 @if($isEdit && ($employee->tipsoi_sync_status || $employee->tipsoi_person_id))
                     <span class="hr-badge {{ $employee->tipsoi_sync_status === 'failed' ? 'hr-badge-warning' : 'hr-badge-success' }}">
@@ -445,7 +506,7 @@
                 @if($tipsoiImport)
                     <input type="hidden" name="tipsoi_remote_person_id" value="{{ $tipsoiImport->id }}">
                     <div class="hr-inline-note mb-3">
-                        <strong>Existing TIPSOI person selected.</strong> This HR record will link to Person ID {{ $tipsoiImport->tipsoi_person_id ?: '—' }} instead of creating a duplicate.
+                        <strong>Existing Device person selected.</strong> This HR record will link to Person ID {{ $tipsoiImport->tipsoi_person_id ?: '—' }} instead of creating a duplicate.
                         @if($tipsoiImport->total_fingerprints !== null) · Fingerprints: {{ $tipsoiImport->total_fingerprints }} @endif
                     </div>
                 @endif
@@ -453,13 +514,13 @@
                     <div class="col-md-6">
                         <label class="progga-form-label">Person Identifier</label>
                         <input type="text" class="progga-form-control" name="tipsoi_identifier" value="{{ old('tipsoi_identifier', $isEdit ? $employee->tipsoi_identifier : ($tipsoiImport?->identifier ?? '')) }}" placeholder="Blank = Employee Code">
-                        <div class="hr-muted mt-1">Unique TIPSOI person identifier.</div>
+                        <div class="hr-muted mt-1">Unique Device person identifier.</div>
                         @error('tipsoi_identifier')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                     <div class="col-md-6">
                         <label class="progga-form-label">RFID</label>
                         <input type="text" class="progga-form-control" name="tipsoi_rfid" maxlength="10" minlength="10" value="{{ old('tipsoi_rfid', $isEdit ? $employee->tipsoi_rfid : ($tipsoiImport?->rfid ?? '')) }}" placeholder="10 characters">
-                        <div class="hr-muted mt-1">Optional. TIPSOI documentation specifies a fixed 10-character RFID.</div>
+                        <div class="hr-muted mt-1">Optional. Device documentation specifies a fixed 10-character RFID.</div>
                         @error('tipsoi_rfid')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
                     </div>
                     <div class="col-md-6">
@@ -552,27 +613,30 @@
             </div>
         </div>
 
-        <div class="hr-card">
-            <div class="hr-card-header">
+        <div class="hr-card mb-3" id="employeeEmergencyCard">
+            <div class="hr-card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <div>
-                    <div class="hr-card-title">Emergency Contact & Notes</div>
+                    <div class="hr-card-title"><i class="bi bi-telephone-plus me-2"></i>Emergency Contacts</div>
+                    <div class="hr-card-subtitle">Add multiple emergency contacts. Internal note remains a single field.</div>
                 </div>
+                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="employeeAddEmergencyContact"><i class="bi bi-plus-lg"></i> Add Contact</button>
             </div>
             <div class="hr-card-body">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="progga-form-label">Emergency Contact Name</label>
-                        <input type="text" class="progga-form-control" name="emergency_contact_name" value="{{ $employeeValue('emergency_contact_name') }}">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="progga-form-label">Emergency Contact Phone</label>
-                        <input type="text" class="progga-form-control" name="emergency_contact_phone" value="{{ $employeeValue('emergency_contact_phone') }}">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="progga-form-label">Internal Notes</label>
-                        <textarea class="progga-form-control" name="notes" rows="3">{{ $employeeValue('notes') }}</textarea>
-                    </div>
+                <input type="hidden" name="sync_emergency_contacts" value="1">
+                <div id="employeeEmergencyContactRows">
+                    @foreach($emergencyContactRows as $rowIndex => $row)
+                        @include('admin.hr.employees.partials.emergency-contact-row', ['row' => $row, 'rowIndex' => $rowIndex])
+                    @endforeach
                 </div>
+                <div class="hr-muted employee-empty-note" id="employeeEmergencyContactEmpty">No emergency contact added yet.</div>
+                <template id="employeeEmergencyContactTemplate">
+                    @include('admin.hr.employees.partials.emergency-contact-row', ['row' => [], 'rowIndex' => '__INDEX__'])
+                </template>
+            </div>
+            <div class="hr-card-body pt-0">
+                <label class="progga-form-label">Internal Notes</label>
+                <textarea class="progga-form-control" name="notes" rows="3" maxlength="2000">{{ $employeeValue('notes') }}</textarea>
+                @error('notes')<div class="text-danger small mt-1">{{ $message }}</div>@enderror
             </div>
         </div>
     </div>

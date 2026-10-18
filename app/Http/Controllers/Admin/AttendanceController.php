@@ -15,6 +15,7 @@ use App\Models\HrSetting;
 use App\Models\RestaurantSetting;
 use App\Models\Shift;
 use App\Models\ShiftRoster;
+use App\Services\Hr\RecurringRosterService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -84,11 +85,12 @@ class AttendanceController extends Controller
      */
     private function attendanceTableData(Request $request, string $date): array
     {
+        app(RecurringRosterService::class)->materialize($date, $date);
         $query = Employee::with(['department', 'designation', 'defaultShift'])
             ->where('employment_status', 'active')
             // Do not show employees who had not joined yet on a historical daily sheet,
-            // unless TIPSOI/local attendance is already present for that date. Remote
-            // TIPSOI employees may initially have an inferred join date, so real
+            // unless Device/local attendance is already present for that date. Remote
+            // Device employees may initially have an inferred join date, so real
             // attendance remains stronger evidence than that local date.
             ->where(function ($employeeQuery) use ($date) {
                 $employeeQuery->whereDate('join_date', '<=', $date)
@@ -222,6 +224,7 @@ class AttendanceController extends Controller
             'rows.*.notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        app(RecurringRosterService::class)->materialize($validated['attendance_date'], $validated['attendance_date']);
         DB::beginTransaction();
         try {
             $saved = 0;
@@ -285,6 +288,7 @@ class AttendanceController extends Controller
 
         $start = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
         $end = $start->copy()->endOfMonth();
+        app(RecurringRosterService::class)->materialize($start, $end);
 
         $employees = Employee::with('defaultShift')
             ->whereDate('join_date', '<=', $end)
@@ -752,7 +756,7 @@ class AttendanceController extends Controller
         if ($validated['status'] === 'present' && $metrics['late_minutes'] > 0 && (AttendanceSetting::first()?->auto_calculate_late ?? true)) {
             $validated['status'] = 'late';
         }
-        // A deliberate HR edit becomes a manual override. TIPSOI background
+        // A deliberate HR edit becomes a manual override. Device background
         // sync respects manual rows and will not overwrite this correction.
         $attendance->update(array_merge($validated, $metrics, [
             'source' => 'manual',
@@ -847,6 +851,7 @@ class AttendanceController extends Controller
 
     private function summaryForDate(string $date): array
     {
+        app(RecurringRosterService::class)->materialize($date, $date);
         $setting = AttendanceSetting::first();
         $weeklyOffDays = collect($setting?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day));
         $isGlobalOffDay = $weeklyOffDays->contains(strtolower(Carbon::parse($date)->format('l')))
@@ -1031,7 +1036,9 @@ class AttendanceController extends Controller
     private function monthRange(string $month): array
     {
         $start = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-        return [$start, $start->copy()->endOfMonth()];
+        $end = $start->copy()->endOfMonth();
+        app(RecurringRosterService::class)->materialize($start, $end);
+        return [$start, $end];
     }
 
     private function employeesForMonthQuery(Carbon $start, Carbon $end)
@@ -1046,7 +1053,7 @@ class AttendanceController extends Controller
                                 $exitQuery->whereNull('exit_date')->orWhereDate('exit_date', '>=', $start);
                             });
                     })
-                    // TIPSOI People does not supply a joining date. If remote
+                    // Device People does not supply a joining date. If remote
                     // attendance exists in the month, that evidence must keep the
                     // employee in the report even when an auto-created local
                     // join_date was temporarily too new.
@@ -1105,7 +1112,7 @@ class AttendanceController extends Controller
 
                 // Actual attendance is stronger evidence than a locally inferred
                 // join_date. This is especially important for employees imported
-                // from TIPSOI, whose People API has no joining-date field.
+                // from Device, whose People API has no joining-date field.
                 if ($attendance) {
                     $status = $attendance->status;
                 } elseif ($outsideEmployment) {

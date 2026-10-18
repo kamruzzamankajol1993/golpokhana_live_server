@@ -11,6 +11,7 @@ use App\Models\Holiday;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Models\ShiftRoster;
+use App\Services\Hr\RecurringRosterService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
@@ -371,6 +372,7 @@ class LeaveManagementController extends Controller
 
     private function applyApprovedLeaveToAttendance(LeaveRequest $leave): void
     {
+        app(RecurringRosterService::class)->materialize($leave->from_date, $leave->to_date, [$leave->employee_id]);
         $weeklyOff = collect(AttendanceSetting::first()?->weekly_off_days ?? [])->map(fn ($day) => strtolower($day))->all();
         $holidayDates = Holiday::where('status', true)
             ->whereBetween('holiday_date', [$leave->from_date, $leave->to_date])
@@ -402,7 +404,7 @@ class LeaveManagementController extends Controller
             );
 
             if ($roster) {
-                $roster->update(['status' => 'leave']);
+                $roster->update(['status' => 'leave', 'is_recurring_generated' => false]);
             }
         }
     }

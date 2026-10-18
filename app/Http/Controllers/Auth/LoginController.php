@@ -54,8 +54,8 @@ class LoginController extends Controller
         // do not ask each user/browser to Continue Previous or Start New.
         $request->session()->forget('force_pos_unfinished_prompt');
 
-        // TIPSOI attendance bootstrap follows the Pioneer HR behavior, but only
-        // while the integration is enabled from HR Settings. When TIPSOI is OFF
+        // Device attendance bootstrap follows the Pioneer HR behavior, but only
+        // while the integration is enabled from HR Settings. When Device is OFF
         // no login/background/page attendance sync marker is created.
         $tipsoiEnabled = (bool) AttendanceSetting::query()->value('tipsoi_enabled');
 

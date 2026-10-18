@@ -52,17 +52,17 @@
 
             <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-3">
                 <div>
-                    <div class="progga-card-title"><i class="bi bi-fingerprint me-2"></i>Tipsoi API</div>
-                    <div class="hr-settings-help">Controls the complete Tipsoi integration for employee, attendance, device, enrollment and device assignment features. Demo and Live credentials are stored separately.</div>
+                    <div class="progga-card-title"><i class="bi bi-fingerprint me-2"></i>Device API</div>
+                    <div class="hr-settings-help">Controls the device integration for employee, attendance, enrollment, and device assignment. Demo and Live credentials are stored separately.</div>
                 </div>
                 <div class="text-end">
-                    <div class="small fw-semibold mb-1">Enable TIPSOI Integration</div>
+                    <div class="small fw-semibold mb-1">Enable Device Integration</div>
                     <label class="progga-toggle">
                         <input type="checkbox" name="tipsoi_enabled" value="1" {{ old('tipsoi_enabled', $attendanceSetting->tipsoi_enabled ?? false) ? 'checked' : '' }} data-on="Enabled" data-off="Disabled">
                         <span class="progga-toggle-track"><span class="progga-toggle-thumb"></span></span>
                         <span class="progga-toggle-label">{{ old('tipsoi_enabled', $attendanceSetting->tipsoi_enabled ?? false) ? 'Enabled' : 'Disabled' }}</span>
                     </label>
-                    <div class="hr-settings-help mt-1">OFF = no TIPSOI employee, attendance, device, enrollment or allocation API call will run.</div>
+                    <div class="hr-settings-help mt-1">OFF = no employee, attendance, device, enrollment, or allocation API calls will run.</div>
                 </div>
             </div>
 
@@ -105,7 +105,7 @@
 
             @if($attendanceSetting->tipsoi_last_sync_at)
                 <div class="hr-inline-note mt-3 mb-0">
-                    <strong>Last Tipsoi Sync:</strong> {{ $attendanceSetting->tipsoi_last_sync_at->format('d M Y, h:i A') }}
+                    <strong>Last Device Sync:</strong> {{ $attendanceSetting->tipsoi_last_sync_at->format('d M Y, h:i A') }}
                     · {{ strtoupper((string) ($attendanceSetting->tipsoi_last_sync_status ?? 'unknown')) }}
                     @if($attendanceSetting->tipsoi_last_sync_message)<br><span class="text-muted">{{ $attendanceSetting->tipsoi_last_sync_message }}</span>@endif
                 </div>
@@ -113,8 +113,8 @@
 
             @can('hr-setting-update')
                 <div class="d-flex justify-content-end gap-2 mt-4 flex-wrap">
-                    <button type="button" class="progga-btn progga-btn-outline" id="tipsoiTestConnectionBtn"><i class="bi bi-wifi"></i> Test Tipsoi Connection</button>
-                    <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Attendance & Tipsoi Settings</button>
+                    <button type="button" class="progga-btn progga-btn-outline" id="tipsoiTestConnectionBtn"><i class="bi bi-wifi"></i> Test Device Connection</button>
+                    <button type="submit" class="progga-btn progga-btn-primary"><i class="bi bi-check-lg"></i> Save Attendance & Device Settings</button>
                 </div>
             @endcan
         </form>

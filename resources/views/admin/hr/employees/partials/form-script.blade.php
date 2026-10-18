@@ -14,6 +14,18 @@ $(function () {
         $('#employeeSalaryFields').toggle(enabled);
     }
 
+    function refreshEmployeeSalaryBasis() {
+        const basis = $('select[name="salary_basis"]').val() || 'period_rate';
+        const frequency = $('select[name="salary_frequency"]').val() || 'monthly';
+        $('#employeeBasicSalaryLabel').text(basis === 'per_day' ? 'Daily Rate *' : 'Basic Salary *');
+        $('#employeeBasicSalaryHelp').text(basis === 'per_day'
+            ? 'Enter the rate for one payable day. Half-day attendance counts as 0.5 day; fixed salary/allowance components are also treated as daily rates.'
+            : (frequency === 'weekly' ? 'Enter the full 7-day week rate.' : 'Enter the full month rate.'));
+        $('#employeeSalaryFrequencyHelp').text(basis === 'per_day'
+            ? 'This controls when payroll is generated; payment is calculated from payable attendance days.'
+            : (frequency === 'weekly' ? 'Weekly pay is prorated by paid attendance days.' : 'Monthly payroll is generated once per month.'));
+    }
+
     function toggleEmployeeRuleRows() {
         $('.employee-payroll-rule-row').each(function () {
             const mode = $(this).find('.employee-rule-mode').val();
@@ -44,6 +56,7 @@ $(function () {
 
     $('#employeeIsWaiter, #employeeCanLogin').on('change', toggleAccessFields);
     $('#employeeSalaryEnabled').on('change', toggleSalarySetup);
+    $(document).on('change', 'select[name="salary_basis"], select[name="salary_frequency"]', refreshEmployeeSalaryBasis);
 
     @if(!$isEdit)
         let salaryEffectiveDateTouched = false;
@@ -96,10 +109,14 @@ $(function () {
     let nextCertificateIndex = Math.max(0, ...Array.from(document.querySelectorAll('#employeeCertificateRows input[name^="certificates["]'))
         .map(input => Number((input.name.match(/^certificates\[(\d+)\]/) || [])[1]))
         .filter(Number.isFinite)) + 1;
+    let nextEmergencyContactIndex = Math.max(0, ...Array.from(document.querySelectorAll('#employeeEmergencyContactRows input[name^="emergency_contacts["]'))
+        .map(input => Number((input.name.match(/^emergency_contacts\[(\d+)\]/) || [])[1]))
+        .filter(Number.isFinite)) + 1;
 
     function toggleEmptyNotes() {
         $('#employeeEducationEmpty').toggle($('#employeeEducationRows .employee-education-row').length === 0);
         $('#employeeCertificateEmpty').toggle($('#employeeCertificateRows .employee-certificate-row').length === 0);
+        $('#employeeEmergencyContactEmpty').toggle($('#employeeEmergencyContactRows .employee-emergency-contact-row').length === 0);
     }
     function addRepeatableRow(templateId, targetId, index) {
         const template = document.getElementById(templateId);
@@ -112,8 +129,11 @@ $(function () {
     $('#employeeAddCertificate').on('click', function () {
         addRepeatableRow('employeeCertificateTemplate', 'employeeCertificateRows', nextCertificateIndex++);
     });
-    $(document).on('click', '#employeeEducationRows .employee-remove-row, #employeeCertificateRows .employee-remove-row', function () {
-        $(this).closest('.employee-education-row, .employee-certificate-row').remove();
+    $('#employeeAddEmergencyContact').on('click', function () {
+        addRepeatableRow('employeeEmergencyContactTemplate', 'employeeEmergencyContactRows', nextEmergencyContactIndex++);
+    });
+    $(document).on('click', '#employeeEducationRows .employee-remove-row, #employeeCertificateRows .employee-remove-row, #employeeEmergencyContactRows .employee-remove-row', function () {
+        $(this).closest('.employee-education-row, .employee-certificate-row, .employee-emergency-contact-row').remove();
         toggleEmptyNotes();
     });
     toggleEmptyNotes();
@@ -128,6 +148,7 @@ $(function () {
 
     toggleAccessFields();
     toggleSalarySetup();
+    refreshEmployeeSalaryBasis();
     toggleEmployeeRuleRows();
     toggleLeaveBalanceRows();
 });

@@ -231,7 +231,7 @@
             <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm text-decoration-none" data-bs-toggle="modal" data-bs-target="#sessionHistoryModal">
                 <i class="bi bi-history"></i> Session History
             </button>
-            <a href="{{ route('home') }}" class="progga-pos-close m-0"><i class="bi bi-house"></i></a>
+            <a href="{{ route('order.index') }}" class="progga-pos-close m-0" title="Order List" aria-label="Order List"><i class="bi bi-house"></i></a>
         @else
             <form action="{{ route('logout') }}" method="POST" class="m-0 p-0" data-pos-logout="1">
                 @csrf
@@ -242,13 +242,18 @@
         @endif
       </div>
 
+      <a href="{{ route('order.index') }}"
+         class="progga-pos-close pos-header-mobile-trigger m-0"
+         aria-label="Order List" title="Order List">
+          <i class="bi bi-house"></i>
+      </a>
       <button type="button"
               class="progga-pos-close pos-header-mobile-trigger m-0"
               data-bs-toggle="offcanvas"
               data-bs-target="#posMobileHeaderMenu"
               aria-controls="posMobileHeaderMenu"
-              aria-label="Open POS menu">
-          <i class="bi bi-house"></i>
+              aria-label="Open POS menu" title="Open POS menu">
+          <i class="bi bi-list"></i>
       </button>
     </div>
 
@@ -810,7 +815,7 @@
     let currentOrder = {
         order_type: 'dine_in', table_id: null, table_name: '',
         waiter_id: null, waiter_name: '', customer_id: null, customer_name: '',
-        customer_phone: '', is_walk_in: 1, order_notes: '', delivery_partner: '', delivery_partner_name: '', is_complimentary_order: 0,
+        customer_phone: '', customer_primary_id: '', customer_address: '', is_walk_in: 1, order_notes: '', delivery_partner: '', delivery_partner_name: '', is_complimentary_order: 0,
         table_booking_id: null
     };
     window.currentOrder = currentOrder;
@@ -1086,7 +1091,9 @@
         isOffcanvasComplimentaryMode = false;
         $('#newCustomerForm').hide();
         $('#customerSearchContainer').show();
-        $('#new_cus_name, #new_cus_phone').val('');
+        $('#new_cus_name, #new_cus_phone, #new_cus_primary_id, #new_cus_address').val('');
+        currentOrder.customer_primary_id = '';
+        currentOrder.customer_address = '';
         $('#showNewCustomerFormBtn').text('+ Add New Customer').removeClass('progga-btn-danger').addClass('progga-btn-primary');
 
         @if(($isWaiterUser ?? false) && !empty($loggedInWaiter))
@@ -1516,13 +1523,13 @@
         if(isNewFormVisible) {
             $('#newCustomerForm').slideDown();
             $('#customerSearchContainer').hide();
+            $('#posCustomerSelect').val('');
             $(this).text('- Cancel New Customer').removeClass('progga-btn progga-btn-primary').addClass('progga-btn progga-btn-danger');
         } else {
             $('#newCustomerForm').slideUp();
             $('#customerSearchContainer').show();
             $(this).text('+ Add New Customer').removeClass('progga-btn progga-btn-danger').addClass('progga-btn progga-btn-primary');
-            $('#new_cus_name').val('');
-            $('#new_cus_phone').val('');
+            $('#new_cus_name, #new_cus_phone, #new_cus_primary_id, #new_cus_address').val('');
         }
     });
 
@@ -1660,9 +1667,19 @@
                 currentOrder.customer_name = 'Registered Customer';
             }
             currentOrder.customer_phone = $('#new_cus_phone').val();
+            if (newName) {
+                currentOrder.customer_primary_id = $('#new_cus_primary_id').val() || '';
+                currentOrder.customer_address = $('#new_cus_address').val() || '';
+            } else {
+                currentOrder.customer_primary_id = '';
+                currentOrder.customer_address = '';
+            }
         } else {
             currentOrder.customer_name = 'Walk-in Customer';
             currentOrder.customer_id = null;
+            currentOrder.customer_phone = '';
+            currentOrder.customer_primary_id = '';
+            currentOrder.customer_address = '';
         }
 
         newOrderStartedFromModal = true;
@@ -1785,6 +1802,8 @@
         currentOrder.customer_id = data.customer_id || null;
         currentOrder.customer_name = data.customer_name || 'Walk-in Customer';
         currentOrder.customer_phone = data.customer_phone || '';
+        currentOrder.customer_primary_id = data.customer_primary_id || '';
+        currentOrder.customer_address = data.customer_address || '';
         currentOrder.is_walk_in = parseInt(typeof data.is_walk_in !== 'undefined' ? data.is_walk_in : (data.customer_id ? 0 : 1));
         currentOrder.order_notes = data.notes || '';
         currentOrder.delivery_partner = data.delivery_partner || (currentOrder.order_type === 'delivery' ? 'inhouse' : '');
@@ -2016,6 +2035,8 @@
             customer_id: currentOrder.customer_id,
             customer_name: currentOrder.customer_name,
             customer_phone: currentOrder.customer_phone,
+            customer_primary_id: currentOrder.customer_primary_id,
+            customer_address: currentOrder.customer_address,
             order_notes: currentOrder.order_notes,
             delivery_partner: currentOrder.delivery_partner || '',
             is_complimentary_order: currentOrder.is_complimentary_order || 0,
@@ -3077,6 +3098,8 @@
         if (mode === 'new') {
             payload.customer_name = $.trim($form.find('[name="customer_name"]').val() || '');
             payload.customer_phone = $.trim($form.find('[name="customer_phone"]').val() || '');
+            payload.customer_primary_id = $.trim($form.find('[name="customer_primary_id"]').val() || '');
+            payload.customer_address = $.trim($form.find('[name="customer_address"]').val() || '');
 
             if (!payload.customer_name || !payload.customer_phone) {
                 Swal.fire('Customer Info', 'Please enter customer name and phone number.', 'warning');

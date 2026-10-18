@@ -24,7 +24,7 @@ class TipsoiService
     private const DEMO_URL = 'https://test.api-inovace360.com/api/v1';
     private const LIVE_URL = 'https://api-inovace360.com/api/v1';
 
-    // TIPSOI Device API V2.4 documented paths.
+    // Device API V2.4 documented paths.
     private const PATH_RAW_LOGS = 'logs';
     private const PATH_ATTENDANCE_LOGS = 'attendance_logs';
     private const PATH_PEOPLE = 'people';
@@ -35,7 +35,7 @@ class TipsoiService
         $setting = AttendanceSetting::first();
 
         if (!$setting || !$setting->tipsoi_enabled) {
-            throw new RuntimeException('Tipsoi integration is disabled. Enable it from HR Settings > Attendance.');
+            throw new RuntimeException('Device integration is disabled. Enable it from HR Settings > Attendance.');
         }
 
         $mode = in_array($setting->tipsoi_mode, ['demo', 'live'], true) ? $setting->tipsoi_mode : 'live';
@@ -47,7 +47,7 @@ class TipsoiService
             : $setting->tipsoi_live_api_key;
 
         if (blank($apiKey)) {
-            throw new RuntimeException(strtoupper($mode) . ' Tipsoi API key is missing.');
+            throw new RuntimeException(strtoupper($mode) . ' Device API key is missing.');
         }
 
         $sslMode = in_array($setting->tipsoi_ssl_mode, ['auto', 'verify', 'disable'], true)
@@ -76,7 +76,7 @@ class TipsoiService
             'remote_people' => count($people),
             'remote_devices' => count($devices),
             'ssl_mode' => $config['ssl_mode'],
-            'message' => 'Tipsoi connection successful.',
+            'message' => 'Device connection successful.',
         ];
     }
 
@@ -103,7 +103,7 @@ class TipsoiService
                 if (!$employee) {
                     $employee = Employee::create([
                         'employee_code' => $this->uniqueEmployeeCode($identifier, $personId),
-                        'name' => trim((string) ($person['name'] ?? '')) ?: 'Tipsoi Employee',
+                        'name' => trim((string) ($person['name'] ?? '')) ?: 'Device Employee',
                         'phone' => '',
                         'join_date' => now()->toDateString(),
                         'employment_status' => 'active',
@@ -119,7 +119,7 @@ class TipsoiService
             } catch (Throwable $e) {
                 $skipped++;
                 $errors[] = mb_substr($e->getMessage(), 0, 300);
-                Log::warning('[TIPSOI][KARACHI] Employee pull row failed', [
+                Log::warning('[Device][KARACHI] Employee pull row failed', [
                     'identifier' => $person['identifier'] ?? null,
                     'person_id' => $person['id'] ?? null,
                     'error' => $e->getMessage(),
@@ -127,7 +127,7 @@ class TipsoiService
             }
         }
 
-        $message = "Tipsoi employee pull complete: {$created} created, {$updated} updated, {$skipped} skipped.";
+        $message = "Device employee pull complete: {$created} created, {$updated} updated, {$skipped} skipped.";
         $this->rememberSyncResult('success', $message);
 
         return compact('created', 'updated', 'skipped', 'errors', 'message');
@@ -179,10 +179,10 @@ class TipsoiService
                 'success' => true,
                 'employee_id' => $employee->id,
                 'identifier' => $identifier,
-                'message' => $employee->name . ' pushed to Tipsoi successfully.',
+                'message' => $employee->name . ' sent to the device successfully.',
             ];
         } catch (Throwable $e) {
-            // Some Tipsoi installations can persist a person even when the create
+            // Some Device installations can persist a person even when the create
             // response itself fails. Recover by re-reading the remote person before
             // marking the local employee as failed.
             try {
@@ -201,12 +201,12 @@ class TipsoiService
                         'success' => true,
                         'employee_id' => $employee->id,
                         'identifier' => $identifier,
-                        'message' => $employee->name . ' exists in Tipsoi and was linked successfully.',
+                        'message' => $employee->name . ' already exists on the device and was linked successfully.',
                         'recovered' => true,
                     ];
                 }
             } catch (Throwable $recoveryError) {
-                Log::warning('[TIPSOI][KARACHI] Employee push recovery failed', [
+                Log::warning('[Device][KARACHI] Employee push recovery failed', [
                     'employee_id' => $employee->id,
                     'identifier' => $identifier,
                     'push_error' => $e->getMessage(),
@@ -233,7 +233,7 @@ class TipsoiService
                 'success' => 0,
                 'failed' => 0,
                 'errors' => [],
-                'message' => 'No employees selected for Tipsoi push.',
+                'message' => 'No employees selected to push to the device.',
             ];
         }
 
@@ -277,7 +277,7 @@ class TipsoiService
                     $success++;
                 }
             } catch (Throwable $batchError) {
-                Log::warning('[TIPSOI][KARACHI] Batch person create failed; falling back to single person sync', [
+                Log::warning('[Device][KARACHI] Batch person create failed; falling back to single person sync', [
                     'employee_ids' => $chunk->pluck('id')->all(),
                     'error' => $batchError->getMessage(),
                 ]);
@@ -294,7 +294,7 @@ class TipsoiService
             }
         }
 
-        $message = "Tipsoi employee batch push complete: {$success} successful, {$failed} failed.";
+        $message = "Device employee batch push complete: {$success} successful, {$failed} failed.";
         $this->rememberSyncResult($failed ? 'partial' : 'success', $message);
 
         return compact('success', 'failed', 'errors', 'message');
@@ -376,7 +376,7 @@ class TipsoiService
                             continue;
                         }
 
-                        // TIPSOI attendance_logs is calendar-day based. Keep it as a
+                        // Device attendance_logs is calendar-day based. Keep it as a
                         // fallback, but normalize full datetimes and API hours instead of
                         // turning equal/single punches into a fake 24-hour checkout. Raw
                         // punches are rebuilt into schedule-day attendance just below.
@@ -388,7 +388,7 @@ class TipsoiService
                             ->whereDate('attendance_date', $date)
                             ->first();
 
-                        // Once HR edits a TIPSOI row manually, background sync must not
+                        // Once HR edits a Device row manually, background sync must not
                         // silently overwrite that deliberate correction.
                         if (!$existing || $existing->source !== 'manual') {
                             Attendance::updateOrCreate(
@@ -427,7 +427,7 @@ class TipsoiService
                 ? Carbon::parse($toDate)->addDay()->toDateString()
                 : $toDate;
             $raw = $this->syncRawLogs($fromDate, $rawToDate, false);
-            $message = "Tipsoi attendance pull complete: {$saved} summary record(s), {$raw['saved']} raw punch(es), {$raw['rebuilt']} normalized attendance day(s), {$skipped} skipped.";
+            $message = "Device attendance pull complete: {$saved} summary record(s), {$raw['saved']} raw punch(es), {$raw['rebuilt']} normalized attendance day(s), {$skipped} skipped.";
             $this->rememberSyncResult('success', $message);
             $history->update([
                 'summary_records' => $saved,
@@ -452,7 +452,7 @@ class TipsoiService
                 'status' => 'failed',
                 'message' => mb_substr($e->getMessage(), 0, 5000),
             ]);
-            $this->rememberSyncResult('failed', 'Tipsoi attendance pull failed: ' . $e->getMessage());
+            $this->rememberSyncResult('failed', 'Device attendance pull failed: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -541,7 +541,7 @@ class TipsoiService
                     continue;
                 }
 
-                // Use the literal TIPSOI logged_time string from raw_payload. The
+                // Use the literal Device logged_time string from raw_payload. The
                 // database column is TIMESTAMP and may be timezone-converted by
                 // MySQL; the vendor string is the correct wall-clock punch time.
                 $localLoggedAt = $this->parseTipsoiLocalDateTime($row['logged_time'] ?? null);
@@ -571,7 +571,7 @@ class TipsoiService
 
         // attendance_logs groups by calendar date, which creates false rows for
         // overnight-shift checkout punches (e.g. 02:23 AM becoming a new day).
-        // Remove only system/TIPSOI fallback rows for a touched calendar day when
+        // Remove only system/Device fallback rows for a touched calendar day when
         // raw-punch normalization assigned every punch to another business day.
         foreach ($touchedCalendarDays as $calendarKey => [$employeeId, $calendarDate]) {
             if (isset($rebuiltKeys[$calendarKey])) {
@@ -590,7 +590,7 @@ class TipsoiService
                 ->delete();
         }
 
-        $message = "Tipsoi raw punch sync complete: {$saved} saved/updated, {$rebuilt} normalized attendance day(s), {$skipped} skipped.";
+        $message = "Device raw punch sync complete: {$saved} saved/updated, {$rebuilt} normalized attendance day(s), {$skipped} skipped.";
         if ($remember) {
             $this->rememberSyncResult('success', $message);
         }
@@ -621,7 +621,7 @@ class TipsoiService
             }
         }
 
-        $message = "Tipsoi people refreshed: " . count($people) . " remote, {$matched} matched, {$unmatched} unmatched.";
+        $message = "Device people refreshed: " . count($people) . " remote, {$matched} matched, {$unmatched} unmatched.";
         $this->rememberSyncResult('success', $message);
 
         return [
@@ -718,7 +718,7 @@ class TipsoiService
             $saved++;
         }
 
-        $message = "Tipsoi device refresh complete: {$saved} device(s) cached.";
+        $message = "Device refresh complete: {$saved} device(s) cached.";
         $this->rememberSyncResult('success', $message);
 
         return ['saved' => $saved, 'devices' => $rows, 'message' => $message];
@@ -809,7 +809,7 @@ class TipsoiService
         $checkOutAt = $checkOut ? Carbon::parse("{$date} {$checkOut}") : null;
 
         // Manual/time-only input may represent an overnight checkout. Full
-        // TIPSOI datetimes use calculateAttendanceAt() directly and never need
+        // Device datetimes use calculateAttendanceAt() directly and never need
         // this guess.
         if ($checkOutAt && $checkInAt && $checkOutAt->lessThanOrEqualTo($checkInAt)) {
             $checkOutAt->addDay();
@@ -846,7 +846,7 @@ class TipsoiService
             $scheduledEnd->addDay();
         }
 
-        // A single TIPSOI event is a valid attendance punch but not a checkout.
+        // A single Device event is a valid attendance punch but not a checkout.
         // Never manufacture an end time or a 24-hour work duration.
         if ($checkInAt && $checkOutAt && $checkOutAt->lessThan($checkInAt)) {
             $checkOutAt = null;
@@ -889,6 +889,7 @@ class TipsoiService
 
     public function resolveSchedule(Employee $employee, string $date): array
     {
+        app(RecurringRosterService::class)->materialize($date, $date, [$employee->id]);
         $setting = AttendanceSetting::first() ?? new AttendanceSetting([
             'grace_minutes' => 10,
             'global_start_time' => '09:00:00',
@@ -1086,7 +1087,7 @@ class TipsoiService
         $size = @filesize($photoPath);
         // V2.4 documentation allows up to 3 MB for Person image uploads.
         if ($size !== false && $size > 3 * 1024 * 1024) {
-            Log::warning('[TIPSOI][KARACHI] Employee photo skipped because it exceeds 3 MB', [
+            Log::warning('[Device][KARACHI] Employee photo skipped because it exceeds 3 MB', [
                 'employee_id' => $employee->id,
                 'size_bytes' => $size,
             ]);
@@ -1104,7 +1105,7 @@ class TipsoiService
             $response = $this->postMultipart($config, self::PATH_PEOPLE, $payload, false);
             $response->throw();
         } catch (Throwable $e) {
-            Log::warning('[TIPSOI][KARACHI] Base person synced but optional employee photo update failed', [
+            Log::warning('[Device][KARACHI] Base person synced but optional employee photo update failed', [
                 'employee_id' => $employee->id,
                 'identifier' => $basePayload['identifier'] ?? null,
                 'error' => $e->getMessage(),
@@ -1133,7 +1134,7 @@ class TipsoiService
             if ($rawMinutes < 0) {
                 $checkOutAt = null;
             } elseif ($apiMinutes === 0 && $rawMinutes <= 5) {
-                // TIPSOI commonly returns start=end (or repeated face scans only)
+                // Device commonly returns start=end (or repeated face scans only)
                 // for a one-punch day. This is not a 24-hour attendance.
                 $checkOutAt = null;
             }
@@ -1360,7 +1361,7 @@ class TipsoiService
         $joinDate = Carbon::parse($employee->join_date)->toDateString();
         if ($joinDate > $attendanceDate) {
             // The remote People API has no joining-date field. Auto-created
-            // employees initially use today, but an older TIPSOI punch proves
+            // employees initially use today, but an older Device punch proves
             // the person was already employed. Move only backward, never forward.
             $employee->forceFill(['join_date' => $attendanceDate])->save();
         }

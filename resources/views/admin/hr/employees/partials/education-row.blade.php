@@ -11,5 +11,13 @@
         <div class="col-md-4"><label class="progga-form-label">Subject / Group</label><input class="progga-form-control" name="educations[{{ $rowIndex }}][field_of_study]" maxlength="180" value="{{ $row['field_of_study'] ?? '' }}"></div>
         <div class="col-md-3"><label class="progga-form-label">Passing Year</label><input type="number" min="1950" max="2100" step="1" class="progga-form-control" name="educations[{{ $rowIndex }}][passing_year]" value="{{ $row['passing_year'] ?? '' }}" placeholder="2024"></div>
         <div class="col-md-4"><label class="progga-form-label">Result / Grade</label><input class="progga-form-control" name="educations[{{ $rowIndex }}][result]" maxlength="100" value="{{ $row['result'] ?? '' }}" placeholder="CGPA / Grade"></div>
+        <div class="col-md-5">
+            <label class="progga-form-label">Certificate File <span class="hr-muted">(optional)</span></label>
+            <input type="file" class="progga-form-control" name="educations[{{ $rowIndex }}][certificate_file]" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx">
+            @if(!empty($row['certificate_file_path']))
+                <a class="small d-inline-block mt-1" target="_blank" rel="noopener noreferrer" href="{{ asset('public/' . ltrim($row['certificate_file_path'], '/')) }}"><i class="bi bi-file-earmark-arrow-down"></i> View current certificate</a>
+            @endif
+            <div class="hr-muted mt-1">PDF, image, DOC or DOCX · Maximum 5 MB.</div>
+        </div>
     </div>
 </div>

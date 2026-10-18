@@ -62,7 +62,7 @@
             <div class="hr-card mb-3">
                 <div class="hr-card-header">
                     <div>
-                        <div class="hr-card-title">TIPSOI Attendance Sync</div>
+                        <div class="hr-card-title">Device Attendance Sync</div>
                         <div class="hr-card-subtitle">Sync one selected day or pull attendance for a custom date range.</div>
                     </div>
                 </div>
@@ -160,7 +160,7 @@
         function showAttendanceSyncLoader(title, text) {
             Swal.fire({
                 title: title || 'Attendance syncing...',
-                text: text || 'Please wait while TIPSOI attendance is being updated.',
+                text: text || 'Please wait while Device attendance is being updated.',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
@@ -222,7 +222,7 @@
         // the same login session does not show this popup again.
         if (shouldRunAttendancePageSync) {
             window.setTimeout(function () {
-                showAttendanceSyncLoader('Attendance syncing...', 'TIPSOI attendance is syncing. The list will refresh automatically.');
+                showAttendanceSyncLoader('Attendance syncing...', 'Device attendance is syncing. The list will refresh automatically.');
                 $.ajax({
                     url: attendanceAutoSyncUrl,
                     type: 'POST',

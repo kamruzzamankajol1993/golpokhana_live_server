@@ -96,7 +96,7 @@
                         <div class="hr-stat-value" style="font-size:18px">
                             {{ $salary ? '৳' . number_format((float) $salary->basic_salary, 2) : 'Not Set' }}
                         </div>
-                        <div class="hr-stat-label">Basic Salary</div>
+                        <div class="hr-stat-label">{{ ($salary?->salary_basis ?? 'period_rate') === 'per_day' ? 'Daily Rate' : 'Basic Salary' }}</div>
                     </div>
                 </div>
             </div>
@@ -112,6 +112,9 @@
                                 <strong>{{ $education->qualification }}</strong>
                                 @if($education->institution)<div>{{ $education->institution }}</div>@endif
                                 <div class="hr-muted">{{ collect([$education->field_of_study, $education->passing_year, $education->result])->filter()->join(' · ') }}</div>
+                                @if($education->certificate_file_path)
+                                    <a href="{{ asset('public/' . ltrim($education->certificate_file_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="small d-inline-block mt-1"><i class="bi bi-file-earmark-arrow-down"></i> View Education Certificate</a>
+                                @endif
                             </div>
                         @empty
                             <div class="hr-muted">No education information added.</div>
@@ -121,12 +124,13 @@
             </div>
             <div class="col-xl-6">
                 <div class="hr-card h-100">
-                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-award me-2"></i>All Certificate</div></div>
+                    <div class="hr-card-header"><div class="hr-card-title"><i class="bi bi-award me-2"></i>Experience Certificate</div></div>
                     <div class="hr-card-body">
                         @forelse($employee->certificates as $certificate)
                             <div class="d-flex justify-content-between align-items-start border-bottom pb-2 mb-2 gap-2">
                                 <div>
                                     <strong>{{ $certificate->title }}</strong>
+                                    @if($certificate->duration)<div class="hr-muted">Duration: {{ $certificate->duration }}</div>@endif
                                     @if($certificate->description)
                                         <div class="hr-muted mt-1" style="white-space: pre-line; overflow-wrap: anywhere;">{{ $certificate->description }}</div>
                                     @endif
@@ -134,7 +138,7 @@
                                 <a href="{{ asset('public/' . ltrim($certificate->file_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline progga-btn-sm flex-shrink-0"><i class="bi bi-file-earmark-arrow-down"></i> View File</a>
                             </div>
                         @empty
-                            <div class="hr-muted">No certificates uploaded.</div>
+                            <div class="hr-muted">No experience certificates uploaded.</div>
                         @endforelse
                     </div>
                 </div>
@@ -177,9 +181,18 @@
                             <div><span>Gender</span><strong>{{ ucfirst($employee->gender ?: 'N/A') }}</strong></div>
                             <div><span>Date of Birth</span><strong>{{ optional($employee->date_of_birth)->format('d-m-Y') ?: 'N/A' }}</strong></div>
                             <div><span>NID Number</span><strong>{{ $employee->nid ?: 'N/A' }}</strong></div>
-                            <div><span>Emergency Contact</span><strong>{{ $employee->emergency_contact_name ?: 'N/A' }}</strong></div>
-                            <div><span>Emergency Phone</span><strong>{{ $employee->emergency_contact_phone ?: 'N/A' }}</strong></div>
+                            <div><span>Emergency Contacts</span><strong>{{ $employee->emergencyContacts->count() ?: 'N/A' }}</strong></div>
                         </div>
+                        @if($employee->emergencyContacts->isNotEmpty())
+                            <div class="mt-3">
+                                <div class="hr-muted mb-1">Emergency Contact Details</div>
+                                @foreach($employee->emergencyContacts as $contact)
+                                    <div class="border rounded-2 p-2 mb-2"><strong>{{ $contact->name }}</strong><div>{{ $contact->phone }}</div></div>
+                                @endforeach
+                            </div>
+                        @elseif($employee->emergency_contact_name || $employee->emergency_contact_phone)
+                            <div class="mt-3"><strong>{{ $employee->emergency_contact_name }}</strong><div>{{ $employee->emergency_contact_phone }}</div></div>
+                        @endif
                         @if($employee->address)
                             <div class="mt-3"><div class="hr-muted mb-1">Address</div><div>{{ $employee->address }}</div></div>
                         @endif
@@ -190,6 +203,9 @@
                                     <img src="{{ asset('public/' . ltrim($employee->nid_image, '/')) }}" alt="NID of {{ $employee->name }}" style="width:100%;max-width:280px;height:170px;object-fit:contain;border:1px solid var(--progga-border-light);border-radius:10px;background:#fff;">
                                 </a>
                             </div>
+                        @endif
+                        @if($employee->cv_path)
+                            <div class="mt-3"><div class="hr-muted mb-1">CV</div><a href="{{ asset('public/' . ltrim($employee->cv_path, '/')) }}" target="_blank" rel="noopener noreferrer" class="progga-btn progga-btn-outline progga-btn-sm"><i class="bi bi-file-earmark-person"></i> View CV</a></div>
                         @endif
                         @if($employee->notes)
                             <div class="mt-3"><div class="hr-muted mb-1">Notes</div><div>{{ $employee->notes }}</div></div>
@@ -203,7 +219,7 @@
                     <div class="hr-card-header">
                         <div>
                             <div class="hr-card-title">Salary Structure</div>
-                            <div class="hr-card-subtitle">Employee-wise salary setup. Payroll calculation will use this later.</div>
+                            <div class="hr-card-subtitle">Employee-wise salary setup. Monthly or weekly payroll is calculated using the selected salary frequency.</div>
                         </div>
                         @can('employee-salary-view')
                             <a href="{{ route('hr.employees.edit', $employee) . '#employeePayrollSetupCard' }}" class="progga-btn progga-btn-outline progga-btn-sm">
@@ -214,8 +230,8 @@
                     <div class="hr-card-body">
                         @if($salary)
                             <div class="row g-3">
-                                <div class="col-md-4"><div class="hr-money-box"><span>Basic Salary</span><strong>৳{{ number_format((float) $salary->basic_salary, 2) }}</strong></div></div>
-                                <div class="col-md-4"><div class="hr-money-box"><span>Estimated Gross</span><strong>৳{{ number_format((float) $salary->estimated_gross, 2) }}</strong></div></div>
+                                <div class="col-md-4"><div class="hr-money-box"><span>{{ ($salary->salary_basis ?? 'period_rate') === 'per_day' ? 'Daily Rate' : 'Basic Salary' }}</span><strong>৳{{ number_format((float) $salary->basic_salary, 2) }}</strong><small>{{ ($salary->salary_basis ?? 'period_rate') === 'per_day' ? 'per payable day' : ucfirst($salary->pay_frequency ?? 'monthly') . ' salary' }}</small></div></div>
+                                <div class="col-md-4"><div class="hr-money-box"><span>{{ ($salary->salary_basis ?? 'period_rate') === 'per_day' ? 'Estimated Gross per Day' : 'Estimated Gross' }}</span><strong>৳{{ number_format((float) $salary->estimated_gross, 2) }}</strong></div></div>
                                 <div class="col-md-4"><div class="hr-money-box"><span>Effective From</span><strong>{{ $salary->effective_from->format('d-m-Y') }}</strong></div></div>
                             </div>
                             <div class="mt-3 d-flex gap-2 flex-wrap">

@@ -35,7 +35,7 @@
         <div class="alert {{ $allowNonCurrentMonth ? 'alert-success' : 'alert-secondary' }} d-flex align-items-start gap-2 mb-3">
             <i class="bi {{ $allowNonCurrentMonth ? 'bi-calendar2-check' : 'bi-calendar2-lock' }} mt-1"></i>
             <div>
-                <strong>Payroll Month Policy:</strong>
+                <strong>Payroll Period Policy:</strong>
                 {{ $allowNonCurrentMonth ? 'Previous and next month payroll is allowed.' : 'Only current month payroll is allowed.' }}
                 @can('hr-setting-update')
                     <a href="{{ route('hr.settings.index', ['tab' => 'payroll']) }}" class="ms-1">Change setting</a>

@@ -66,7 +66,7 @@
                                         {{ $employee->employee_code }} · {{ $employee->department->name ?? 'No department' }}
                                     </div>
                                     @if($attendance?->tipsoi_synced_at)
-                                        <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Tipsoi</span></div>
+                                        <div class="hr-person-meta mt-1"><span class="hr-badge hr-badge-info"><i class="bi bi-fingerprint"></i> Device</span></div>
                                     @endif
                                 </div>
                             </div>

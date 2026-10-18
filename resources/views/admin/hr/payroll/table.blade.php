@@ -3,7 +3,7 @@
         <thead>
             <tr>
                 <th>#</th>
-                <th>Payroll Month</th>
+                <th>Payroll Period</th>
                 <th>Employees</th>
                 <th>Gross Salary</th>
                 <th>Deduction</th>
@@ -19,6 +19,7 @@
                     <td>{{ $runs->firstItem() + $index }}</td>
                     <td>
                         <a href="{{ route('hr.payroll.show', $run) }}" class="hr-person-name text-decoration-none">{{ $run->month_label }}</a>
+                        <div class="mt-1"><span class="hr-badge hr-badge-neutral">{{ ucfirst($run->period_type ?? 'monthly') }}</span></div>
                         <div class="hr-person-meta">{{ $run->payroll_code }} · {{ $run->period_start->format('d-m-Y') }} to {{ $run->period_end->format('d-m-Y') }}</div>
                     </td>
                     <td><strong>{{ $run->items_count }}</strong></td>

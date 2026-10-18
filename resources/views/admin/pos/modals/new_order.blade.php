@@ -104,6 +104,8 @@
                     <div class="row g-2">
                         <div class="col-12"><input type="text" id="new_cus_name" name="customer_name" class="progga-form-control" placeholder="Full Name"></div>
                         <div class="col-12"><input type="tel" id="new_cus_phone" name="customer_phone" class="progga-form-control" placeholder="Phone Number"></div>
+                        <div class="col-12"><input type="text" id="new_cus_primary_id" name="customer_primary_id" class="progga-form-control" placeholder="Primary ID (optional)"></div>
+                        <div class="col-12"><textarea id="new_cus_address" name="customer_address" class="progga-form-control" rows="2" placeholder="Address (optional)"></textarea></div>
                     </div>
                 </div>
               </div>

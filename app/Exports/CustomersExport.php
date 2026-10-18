@@ -10,11 +10,11 @@ class CustomersExport implements FromCollection, WithHeadings
 {
     public function collection()
     {
-        return Customer::select('id', 'name', 'phone', 'email', 'points')->get();
+        return Customer::select('id', 'name', 'primary_id', 'phone', 'email', 'points')->get();
     }
 
     public function headings(): array
     {
-        return ["ID", "Name", "Phone", "Email", "Points"];
+        return ["ID", "Name", "Primary ID", "Phone", "Email", "Points"];
     }
 }

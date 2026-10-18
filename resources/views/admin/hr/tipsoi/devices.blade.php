@@ -1,6 +1,6 @@
 @extends('admin.master.master')
 
-@section('title', 'TIPSOI Device List — ' . $restaurantSettingName)
+@section('title', 'Device List — ' . $restaurantSettingName)
 
 @section('css')
     @include('admin.hr.shared.styles')
@@ -18,23 +18,23 @@
     <div class="hr-shell">
         <div class="progga-page-header">
             <div>
-                <h1 class="progga-page-title">TIPSOI Device List</h1>
+                <h1 class="progga-page-title">Device List</h1>
                 <div class="progga-breadcrumb">
                     <a href="{{ route('home') }}" class="progga-breadcrumb-item">Dashboard</a>
                     <span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item">Human Resources</span>
-                    <span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item">TIPSOI</span><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item active">Device List</span>
+                    <span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item">Device</span><span class="progga-breadcrumb-sep">/</span><span class="progga-breadcrumb-item active">Device List</span>
                 </div>
             </div>
             <div class="d-flex gap-2 flex-wrap tipsoi-device-actions">
                 <a href="{{ route('hr.attendance.index') }}" class="progga-btn progga-btn-outline"><i class="bi bi-calendar-check"></i> Attendance</a>
                 @canany(['attendance-edit','attendance-create','hr-setting-update'])
-                    <button type="button" class="progga-btn progga-btn-primary" id="tipsoiRefreshDevices"><i class="bi bi-arrow-repeat"></i> Refresh from Tipsoi</button>
+                    <button type="button" class="progga-btn progga-btn-primary" id="tipsoiRefreshDevices"><i class="bi bi-arrow-repeat"></i> Refresh from Device</button>
                 @endcanany
             </div>
         </div>
 
         @if(!$attendanceSetting?->tipsoi_enabled)
-            <div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle me-1"></i> Tipsoi is disabled. Enable it from <a href="{{ route('hr.settings.index', ['tab' => 'attendance']) }}">HR Settings → Attendance</a>.</div>
+            <div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle me-1"></i> Device integration is disabled. Enable it from <a href="{{ route('hr.settings.index', ['tab' => 'attendance']) }}">HR Settings → Attendance</a>.</div>
         @endif
 
         <div class="hr-stat-grid">
@@ -50,7 +50,7 @@
                     <div class="hr-card-title">Attendance Devices</div>
                     <div class="tipsoi-device-meta mt-1">
                         <span>Mode: <strong>{{ strtoupper((string) ($attendanceSetting?->tipsoi_mode ?: 'live')) }}</strong></span>
-                        <span>Refresh the list to get the latest device connection and enrollment status from Tipsoi.</span>
+                        <span>Refresh the list to get the latest device connection and enrollment status from Device.</span>
                     </div>
                 </div>
             </div>
@@ -115,13 +115,13 @@
 
         $('#tipsoiRefreshDevices').on('click', function () {
             const button = $(this).prop('disabled', true);
-            Swal.fire({title:'Refreshing Tipsoi devices...',allowOutsideClick:false,showConfirmButton:false,didOpen:function(){Swal.showLoading();}});
+            Swal.fire({title:'Refreshing device list...',allowOutsideClick:false,showConfirmButton:false,didOpen:function(){Swal.showLoading();}});
             $.post("{{ route('hr.tipsoi.devices.refresh') }}", {_token:"{{ csrf_token() }}"})
                 .done(function (response) {
-                    Swal.fire('Device Refresh Complete', response.message || 'Tipsoi devices refreshed.', 'success').then(function(){ window.location.reload(); });
+                    Swal.fire('Device Refresh Complete', response.message || 'Device list refreshed.', 'success').then(function(){ window.location.reload(); });
                 })
                 .fail(function (xhr) {
-                    Swal.fire('Device Refresh Failed', xhr.responseJSON?.message || 'Unable to refresh Tipsoi devices.', 'error');
+                    Swal.fire('Device Refresh Failed', xhr.responseJSON?.message || 'Unable to refresh the device list.', 'error');
                 })
                 .always(function () { button.prop('disabled', false); });
         });

@@ -21,7 +21,7 @@
                 </div>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-                <a href="{{ route('hr.payroll.single.create', ['month' => $month]) }}" class="progga-btn progga-btn-outline"><i class="bi bi-person-plus"></i> Single Employee</a>
+                <a href="{{ route('hr.payroll.single.create', ['period_type' => $periodType, 'month' => $month, 'week_start' => $weekStart]) }}" class="progga-btn progga-btn-outline"><i class="bi bi-person-plus"></i> Single Employee</a>
                 <a href="{{ route('hr.payroll.index') }}" class="progga-btn progga-btn-outline"><i class="bi bi-arrow-left"></i> Payroll List</a>
             </div>
         </div>
@@ -30,23 +30,38 @@
             <div class="col-xl-4">
                 <div class="hr-card mb-3">
                     <div class="hr-card-header">
-                        <div><div class="hr-card-title">Payroll Period</div><div class="hr-card-subtitle">One payroll run is maintained for each month.</div></div>
+                        <div><div class="hr-card-title">Payroll Period</div><div class="hr-card-subtitle">Choose monthly payroll or a 7-day weekly period. Weekly employees are paid from attendance recorded in that period.</div></div>
                     </div>
                     <div class="hr-card-body">
-                        <label class="progga-form-label">Payroll Month</label>
-                        <input type="month" id="generatePayrollMonth" class="progga-form-control" value="{{ $month }}"
-                               @unless($allowNonCurrentMonth) min="{{ now()->format('Y-m') }}" max="{{ now()->format('Y-m') }}" @endunless>
+                        <label class="progga-form-label">Payroll Frequency</label>
+                        <select id="generatePayrollPeriodType" class="progga-form-control">
+                            <option value="monthly" {{ $periodType === 'monthly' ? 'selected' : '' }}>Monthly Employees</option>
+                            <option value="weekly" {{ $periodType === 'weekly' ? 'selected' : '' }}>Weekly Employees</option>
+                        </select>
 
-                        <div class="payroll-month-shortcuts mt-3">
-                            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm payroll-month-move" data-offset="-1" {{ $allowNonCurrentMonth ? '' : 'disabled' }}><i class="bi bi-chevron-left"></i> Previous</button>
-                            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="payrollCurrentMonth">Current</button>
-                            <button type="button" class="progga-btn progga-btn-outline progga-btn-sm payroll-month-move" data-offset="1" {{ $allowNonCurrentMonth ? '' : 'disabled' }}>Next <i class="bi bi-chevron-right"></i></button>
+                        <div id="monthlyPeriodFields" class="mt-3" style="{{ $periodType === 'weekly' ? 'display:none;' : '' }}">
+                            <label class="progga-form-label">Payroll Month</label>
+                            <input type="month" id="generatePayrollMonth" class="progga-form-control" value="{{ $month }}"
+                                   @unless($allowNonCurrentMonth) min="{{ now()->format('Y-m') }}" max="{{ now()->format('Y-m') }}" @endunless>
+                            <div class="payroll-month-shortcuts mt-3">
+                                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm payroll-month-move" data-offset="-1" {{ $allowNonCurrentMonth ? '' : 'disabled' }}><i class="bi bi-chevron-left"></i> Previous</button>
+                                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm" id="payrollCurrentMonth">Current</button>
+                                <button type="button" class="progga-btn progga-btn-outline progga-btn-sm payroll-month-move" data-offset="1" {{ $allowNonCurrentMonth ? '' : 'disabled' }}>Next <i class="bi bi-chevron-right"></i></button>
+                            </div>
+                        </div>
+
+                        <div id="weeklyPeriodFields" class="mt-3" style="{{ $periodType === 'weekly' ? '' : 'display:none;' }}">
+                            <label class="progga-form-label">Week Start Date</label>
+                            <input type="date" id="generatePayrollWeekStart" class="progga-form-control" value="{{ $weekStart }}"
+                                   @unless($allowNonCurrentMonth) min="{{ now()->startOfMonth()->format('Y-m-d') }}" max="{{ now()->endOfMonth()->format('Y-m-d') }}" @endunless>
+                            <div class="hr-muted mt-2">7-day period: <strong id="weeklyPeriodRange">{{ $weekStart }} to {{ $weekEnd }}</strong></div>
+                            <div class="hr-muted mt-1">Only employees configured with Weekly salary frequency are included.</div>
                         </div>
 
                         <div class="alert {{ $allowNonCurrentMonth ? 'alert-success' : 'alert-secondary' }} mt-3 mb-0 py-2 px-3">
                             <small>
                                 <i class="bi {{ $allowNonCurrentMonth ? 'bi-unlock' : 'bi-lock' }} me-1"></i>
-                                {{ $allowNonCurrentMonth ? 'Previous and future months are enabled.' : 'Only current month is enabled by Payroll Settings.' }}
+                                {{ $allowNonCurrentMonth ? 'Previous and future months are enabled.' : 'Only current-month payroll periods are enabled by Payroll Settings.' }}
                             </small>
                         </div>
                     </div>
@@ -81,7 +96,7 @@
                         </div>
 
                         <div id="futureMonthAlert" class="alert alert-warning mt-3 d-none">
-                            This is a future payroll month. Attendance-based deductions will only use attendance data currently available.
+                            This is a future payroll period. Attendance-based values will only use data currently available.
                         </div>
 
                         <div id="existingPayrollAlert" class="alert alert-info mt-3 {{ $existingRun ? '' : 'd-none' }}">
@@ -114,14 +129,16 @@
 
                 <form action="{{ route('hr.payroll.store') }}" method="POST" id="generatePayrollForm">
                     @csrf
+                    <input type="hidden" name="period_type" id="payrollPeriodTypeInput" value="{{ $periodType }}">
                     <input type="hidden" name="month" id="payrollMonthInput" value="{{ $month }}">
+                    <input type="hidden" name="week_start" id="payrollWeekStartInput" value="{{ $weekStart }}">
 
                     @if($manualComponents->isNotEmpty())
                         <div class="hr-card mb-3">
                             <div class="hr-card-header">
                                 <div>
-                                    <div class="hr-card-title">Monthly Manual Values</div>
-                                    <div class="hr-card-subtitle">Enter only values that belong to this payroll month. Blank = 0. These values are not saved in the employee master.</div>
+                                    <div class="hr-card-title">Manual Values for this Period</div>
+                                    <div class="hr-card-subtitle">Enter only values that belong to this payroll period. Blank = 0. These values are not saved in the employee master.</div>
                                 </div>
                                 <span class="hr-badge hr-badge-neutral">Employee-wise</span>
                             </div>
@@ -147,7 +164,7 @@
                                                 @endforeach
                                             </tr>
                                         @empty
-                                            <tr><td colspan="{{ 1 + $manualComponents->count() }}"><div class="hr-empty py-3">No eligible employee found for this month.</div></td></tr>
+                                            <tr><td colspan="{{ 1 + $manualComponents->count() }}"><div class="hr-empty py-3">No eligible employee found for this period.</div></td></tr>
                                         @endforelse
                                     </tbody>
                                 </table>
@@ -179,8 +196,8 @@
                         <div class="hr-card-footer d-flex justify-content-end gap-2">
                             <a href="{{ route('hr.payroll.index') }}" class="progga-btn progga-btn-outline">Cancel</a>
                             @can('payroll-create')
-                                <button type="submit" class="progga-btn progga-btn-primary" id="generatePayrollBtn" {{ $existingRun || $precheck['missing_salary_count'] || ($precheck['missing_rule_count'] ?? 0) ? 'disabled' : '' }}>
-                                    <i class="bi bi-people"></i> Generate All as Draft
+                                <button type="submit" class="progga-btn progga-btn-primary" id="generatePayrollBtn" {{ $existingRun || $precheck['missing_salary_count'] || ($precheck['missing_rule_count'] ?? 0) || $precheck['eligible_employees'] < 1 ? 'disabled' : '' }}>
+                                    <i class="bi bi-people"></i> <span id="generatePayrollButtonText">Generate {{ ucfirst($periodType) }} Payroll as Draft</span>
                                 </button>
                             @endcan
                         </div>
@@ -197,6 +214,8 @@
 <script>
 $(function () {
     const monthInput = $('#generatePayrollMonth');
+    const periodTypeSelect = $('#generatePayrollPeriodType');
+    const weekStartInput = $('#generatePayrollWeekStart');
     const submitBtn = $('#generatePayrollBtn');
     const currentMonth = @json(now()->format('Y-m'));
     const manualComponents = @json($manualComponents->map(fn($component) => ['id'=>$component->id,'label'=>$component->display_label,'group'=>ucfirst($component->display_group)])->values());
@@ -210,7 +229,7 @@ $(function () {
         if (!body.length) return;
         body.empty();
         if (!employees || !employees.length) {
-            body.append('<tr><td colspan="' + (1 + manualComponents.length) + '"><div class="hr-empty py-3">No eligible employee found for this month.</div></td></tr>');
+            body.append('<tr><td colspan="' + (1 + manualComponents.length) + '"><div class="hr-empty py-3">No eligible employee found for this period.</div></td></tr>');
             return;
         }
         employees.forEach(function (employee) {
@@ -237,6 +256,9 @@ $(function () {
         $('#checkMissingAttendance').text(data.missing_attendance_count);
         $('#checkPendingLeave').text(data.pending_leave_count);
         $('#payrollMonthInput').val(data.month);
+        $('#payrollPeriodTypeInput').val(data.period_type || periodTypeSelect.val());
+        $('#payrollWeekStartInput').val(data.period_type === 'weekly' ? data.period_start : (weekStartInput.val() || ''));
+        $('#generatePayrollButtonText').text('Generate ' + ((data.period_type || 'monthly') === 'weekly' ? 'Weekly' : 'Monthly') + ' Payroll as Draft');
         $('#futureMonthAlert').toggleClass('d-none', !data.is_future_month);
         renderManualRows(data.eligible_employee_rows || []);
 
@@ -278,10 +300,39 @@ $(function () {
         submitBtn.prop('disabled', !!data.existing_run || data.missing_salary_count > 0 || (data.missing_rule_count || 0) > 0 || data.eligible_employees < 1);
     }
 
+    function updatePeriodFields() {
+        const weekly = periodTypeSelect.val() === 'weekly';
+        $('#payrollPeriodTypeInput').val(weekly ? 'weekly' : 'monthly');
+        $('#payrollMonthInput').val(monthInput.val() || '');
+        $('#payrollWeekStartInput').val(weekStartInput.val() || '');
+        $('#monthlyPeriodFields').toggle(!weekly);
+        $('#weeklyPeriodFields').toggle(weekly);
+        $('#generatePayrollButtonText').text('Generate ' + (weekly ? 'Weekly' : 'Monthly') + ' Payroll as Draft');
+        updateWeeklyRange();
+    }
+
+    function updateWeeklyRange() {
+        const value = weekStartInput.val();
+        if (!value) return;
+        const date = new Date(value + 'T00:00:00');
+        date.setDate(date.getDate() + 6);
+        const end = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        $('#weeklyPeriodRange').text(value + ' to ' + end);
+    }
+
     function refreshPrecheck() {
-        if (!monthInput.val()) return;
+        const periodType = periodTypeSelect.val() || 'monthly';
+        const params = periodType === 'weekly'
+            ? { period_type: periodType, week_start: weekStartInput.val() }
+            : { period_type: periodType, month: monthInput.val() };
+        if (periodType === 'weekly' && !weekStartInput.val()) return;
+        if (periodType === 'monthly' && !monthInput.val()) return;
+        $('#payrollPeriodTypeInput').val(periodType);
+        $('#payrollMonthInput').val(monthInput.val() || '');
+        $('#payrollWeekStartInput').val(weekStartInput.val() || '');
+        submitBtn.prop('disabled', true);
         $('#precheckLoader').removeClass('d-none');
-        $.get(@json(route('hr.payroll.precheck')), { month: monthInput.val() })
+        $.get(@json(route('hr.payroll.precheck')), params)
             .done(renderPrecheck)
             .fail(function (xhr) {
                 submitBtn.prop('disabled', true);
@@ -291,6 +342,8 @@ $(function () {
     }
 
     monthInput.on('change', refreshPrecheck);
+    periodTypeSelect.on('change', function () { updatePeriodFields(); refreshPrecheck(); });
+    weekStartInput.on('change', function () { updateWeeklyRange(); refreshPrecheck(); });
     $('.payroll-month-move').on('click', function () {
         monthInput.val(moveMonth(monthInput.val() || currentMonth, Number(this.dataset.offset))).trigger('change');
     });
@@ -306,6 +359,7 @@ $(function () {
         submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Generating...');
     });
 
+    updatePeriodFields();
     @if(session('error'))
         Swal.fire('Cannot Generate', @json(session('error')), 'error');
     @endif

@@ -501,6 +501,12 @@
                         <div class="col-6">
                             <input type="tel" name="customer_phone" class="form-control form-control-sm" placeholder="Phone number">
                         </div>
+                        <div class="col-12">
+                            <input type="text" name="customer_primary_id" class="form-control form-control-sm" placeholder="Primary ID (optional)">
+                        </div>
+                        <div class="col-12">
+                            <textarea name="customer_address" class="form-control form-control-sm" rows="2" placeholder="Address (optional)"></textarea>
+                        </div>
                     </div>
                 </div>
 

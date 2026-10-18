@@ -16,6 +16,7 @@
             <tr>
                 <th>#</th>
                 <th>Name</th>
+                <th>Primary ID</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>Points</th>
@@ -26,6 +27,7 @@
             <tr>
                 <td>{{ $key + 1 }}</td>
                 <td>{{ $customer->name }}</td>
+                <td>{{ $customer->primary_id }}</td>
                 <td>{{ $customer->phone }}</td>
                 <td>{{ $customer->email }}</td>
                 <td>{{ $customer->points }}</td>

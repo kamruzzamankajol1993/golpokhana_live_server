@@ -13,6 +13,7 @@ class ShiftRoster extends Model
 
     protected $casts = [
         'roster_date' => 'date',
+        'is_recurring_generated' => 'boolean',
     ];
 
     public function employee()

@@ -81,7 +81,7 @@
         <div class="progga-filters-bar">
             <div class="progga-search" style="flex:1;min-width:200px;max-width:320px;">
                 <i class="bi bi-search progga-search-icon"></i>
-                <input type="text" id="customerSearch" class="progga-form-control" placeholder="Search by name, phone, email...">
+                <input type="text" id="customerSearch" class="progga-form-control" placeholder="Search by name, primary ID, phone, email...">
             </div>
             <div style="min-width:160px;">
                 <select class="progga-select" id="customerFilter" data-placeholder="Filter">
@@ -147,15 +147,16 @@ $(document).ready(function() {
 
 // Edit Button Logic
 // Edit Button Logic
-window.editCustomerData = function(id, name, phone, email, dob, address, points) {
+window.editCustomerData = function(id, name, phone, primaryId, email, dob, address, points) {
     let formAction = "{{ route('customer.update', ':id') }}".replace(':id', id);
     $('#editCustomerForm').attr('action', formAction);
 
-    $('#edit_c_name').val(name);
-    $('#edit_c_phone').val(phone);
-    $('#edit_c_email').val(email);
-    $('#edit_c_dob').val(dob);
-    $('#edit_c_address').val(address);
+    $('#edit_c_name').val(name || '');
+    $('#edit_c_phone').val(phone || '');
+    $('#edit_c_primary_id').val(primaryId || '');
+    $('#edit_c_email').val(email || '');
+    $('#edit_c_dob').val(dob || '');
+    $('#edit_c_address').val(address || '');
 
     // বর্তমান পয়েন্ট শো করা
     $('#current_points_display').text(points);
@@ -166,6 +167,20 @@ window.editCustomerData = function(id, name, phone, email, dob, address, points)
 
     $('#editCustomerModal').modal('show');
 }
+
+$(document).on('click', '.js-edit-customer', function() {
+    const $button = $(this);
+    window.editCustomerData(
+        $button.attr('data-id'),
+        $button.attr('data-name'),
+        $button.attr('data-phone'),
+        $button.attr('data-primary-id'),
+        $button.attr('data-email'),
+        $button.attr('data-dob'),
+        $button.attr('data-address'),
+        $button.attr('data-points')
+    );
+});
 
 // History Modal Logic
 window.viewCustomerHistory = function(id) {

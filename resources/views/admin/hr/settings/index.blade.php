@@ -801,7 +801,7 @@ $(function () {
     $('#tipsoiTestConnectionBtn').on('click', function () {
         const button = $(this).prop('disabled', true);
         Swal.fire({
-            title: 'Testing Tipsoi connection...',
+            title: 'Testing Device connection...',
             text: 'The currently saved active Demo/Live credential will be used.',
             allowOutsideClick: false,
             allowEscapeKey: false,
@@ -813,12 +813,12 @@ $(function () {
             .done(function (response) {
                 Swal.fire({
                     icon: 'success',
-                    title: 'Tipsoi Connected',
+                    title: 'Device Connected',
                     text: (response.message || 'Connection successful.') + ' Remote people: ' + (response.remote_people ?? 0) + ' · Devices: ' + (response.remote_devices ?? 0)
                 });
             })
             .fail(function (xhr) {
-                Swal.fire('Tipsoi Connection Failed', xhr.responseJSON?.message || 'Unable to connect to Tipsoi.', 'error');
+                Swal.fire('Device Connection Failed', xhr.responseJSON?.message || 'Unable to connect to Device.', 'error');
             })
             .always(function () { button.prop('disabled', false); });
     });

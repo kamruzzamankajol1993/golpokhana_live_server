@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\EmployeeLoan;
 use App\Models\LoanRepayment;
 use App\Models\PayrollItem;
+use App\Models\PayrollRecoveryAllocation;
 use App\Models\SalaryAdvance;
 use App\Models\SalaryAdvanceRepayment;
 use Carbon\Carbon;
@@ -14,7 +15,7 @@ use RuntimeException;
 
 class PayrollRecoveryService
 {
-    public function preview(Employee $employee, Carbon $payrollMonth): array
+    public function preview(Employee $employee, Carbon $payrollMonth, bool $weekly = false): array
     {
         $month = $payrollMonth->copy()->startOfMonth();
         $allocations = collect();
@@ -27,6 +28,7 @@ class PayrollRecoveryService
             ->orderBy('recovery_start_month')->orderBy('id')->get();
 
         foreach ($advances as $advance) {
+            if ($weekly && $this->hasWeeklyRecoveryAllocationInMonth($employee, 'salary_advance', $advance->id, $month)) continue;
             $outstanding = max(0, round((float) $advance->amount - (float) ($advance->repayments_sum_amount ?? 0), 2));
             if ($outstanding <= 0) continue;
             $installment = (float) $advance->installment_amount;
@@ -47,6 +49,7 @@ class PayrollRecoveryService
             ->orderBy('repayment_start_month')->orderBy('id')->get();
 
         foreach ($loans as $loan) {
+            if ($weekly && $this->hasWeeklyRecoveryAllocationInMonth($employee, 'loan', $loan->id, $month)) continue;
             $outstanding = max(0, round((float) $loan->total_payable - (float) ($loan->repayments_sum_amount ?? 0), 2));
             if ($outstanding <= 0) continue;
             $installment = (float) $loan->installment_amount;
@@ -64,6 +67,25 @@ class PayrollRecoveryService
             'salary_advance' => round((float) $allocations->where('source_type', 'salary_advance')->sum('amount'), 2),
             'loan' => round((float) $allocations->where('source_type', 'loan')->sum('amount'), 2),
         ];
+    }
+
+    private function hasWeeklyRecoveryAllocationInMonth(Employee $employee, string $sourceType, int $sourceId, Carbon $monthStart): bool
+    {
+        $monthEnd = $monthStart->copy()->endOfMonth();
+
+        return PayrollRecoveryAllocation::query()
+            ->where('source_type', $sourceType)
+            ->where('source_id', $sourceId)
+            ->whereHas('payrollItem', function ($itemQuery) use ($employee, $monthStart, $monthEnd) {
+                $itemQuery->where('employee_id', $employee->id)
+                    ->whereHas('payrollRun', function ($runQuery) use ($monthStart, $monthEnd) {
+                        $runQuery->where('period_type', 'weekly')
+                            ->where('status', '!=', 'cancelled')
+                            ->whereDate('period_start', '>=', $monthStart->toDateString())
+                            ->whereDate('period_start', '<=', $monthEnd->toDateString());
+                    });
+            })
+            ->exists();
     }
 
     public function post(PayrollItem $item, Carbon $paymentDate, ?int $userId): void

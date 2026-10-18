@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Models\Waiter;
 use App\Models\FloorZone;
 use App\Services\Hr\TipsoiService;
+use App\Services\Hr\RecurringRosterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -148,6 +149,7 @@ class EmployeeController extends Controller
             'currentSalaryStructure.components.salaryComponent',
             'educations',
             'certificates',
+            'emergencyContacts',
         ]);
 
         $monthStart = now()->startOfMonth()->toDateString();
@@ -181,6 +183,7 @@ class EmployeeController extends Controller
             ->where('year', now()->year)
             ->get();
 
+        app(RecurringRosterService::class)->materialize(now()->toDateString(), now()->addDays(6)->toDateString(), [$employee->id]);
         $upcomingRoster = $employee->shiftRosters()
             ->with('shift')
             ->whereBetween('roster_date', [now()->toDateString(), now()->addDays(6)->toDateString()])
@@ -205,6 +208,7 @@ class EmployeeController extends Controller
             'currentSalaryStructure.components.salaryComponent',
             'educations',
             'certificates',
+            'emergencyContacts',
             'leaveBalances' => fn ($query) => $query->where('year', now()->year),
         ]);
 
@@ -231,6 +235,10 @@ class EmployeeController extends Controller
             $nidImagePath = $request->hasFile('nid_image')
                 ? $this->uploadNidImage($request->file('nid_image'))
                 : null;
+            $cvPath = $request->hasFile('cv_file')
+                ? $this->uploadEmployeeDocument($request->file('cv_file'), 'cv', 'cv')
+                : null;
+            if ($cvPath) $uploadedCertificateFiles[] = $cvPath;
 
             // Login access may be enabled during employee creation without
             // forcing credentials immediately. A system user is created only when
@@ -263,6 +271,7 @@ class EmployeeController extends Controller
                 'can_login' => $canLogin,
                 'image' => $imagePath,
                 'nid_image' => $nidImagePath,
+                'cv_path' => $cvPath,
                 'address' => $validated['address'] ?? null,
                 'emergency_contact_name' => $validated['emergency_contact_name'] ?? null,
                 'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? null,
@@ -290,10 +299,13 @@ class EmployeeController extends Controller
             $this->syncSalarySetup($request, $employee);
             $this->syncLeaveBalanceSetup($request, $employee);
             if ($request->has('educations') || $request->boolean('sync_educations')) {
-                $this->syncEmployeeEducations($employee, $validated);
+                $this->syncEmployeeEducations($employee, $request, $validated, $uploadedCertificateFiles);
             }
             if ($request->has('certificates') || $request->boolean('sync_certificates')) {
                 $this->syncEmployeeCertificates($employee, $request, $validated, $uploadedCertificateFiles);
+            }
+            if ($request->has('emergency_contacts') || $request->boolean('sync_emergency_contacts')) {
+                $this->syncEmployeeEmergencyContacts($employee, $validated);
             }
 
             DB::commit();
@@ -367,6 +379,14 @@ class EmployeeController extends Controller
                 $oldNidImage = $employee->nid_image;
                 $employee->nid_image = $this->uploadNidImage($request->file('nid_image'));
                 $this->deleteImage($oldNidImage);
+            }
+
+            $step = 'cv_upload';
+            if ($request->hasFile('cv_file')) {
+                $oldCvPath = $employee->cv_path;
+                $employee->cv_path = $this->uploadEmployeeDocument($request->file('cv_file'), 'cv', 'cv');
+                $uploadedCertificateFiles[] = $employee->cv_path;
+                if ($oldCvPath) $obsoleteCertificateFiles[] = $oldCvPath;
             }
 
             $step = 'login_user_sync';
@@ -443,10 +463,13 @@ class EmployeeController extends Controller
             $this->syncLeaveBalanceSetup($request, $employee->fresh());
             $step = 'education_and_certificates';
             if ($request->has('educations') || $request->boolean('sync_educations')) {
-                $this->syncEmployeeEducations($employee, $validated);
+                $this->syncEmployeeEducations($employee, $request, $validated, $uploadedCertificateFiles, $obsoleteCertificateFiles);
             }
             if ($request->has('certificates') || $request->boolean('sync_certificates')) {
                 $this->syncEmployeeCertificates($employee, $request, $validated, $uploadedCertificateFiles, $obsoleteCertificateFiles);
+            }
+            if ($request->has('emergency_contacts') || $request->boolean('sync_emergency_contacts')) {
+                $this->syncEmployeeEmergencyContacts($employee, $validated);
             }
 
             $step = 'commit';
@@ -582,8 +605,9 @@ class EmployeeController extends Controller
             }
 
             $pathsToDelete = array_merge(
-                [$employee->image, $employee->nid_image],
-                $employee->certificates()->pluck('file_path')->all()
+                [$employee->image, $employee->nid_image, $employee->cv_path],
+                $employee->certificates()->pluck('file_path')->all(),
+                $employee->educations()->pluck('certificate_file_path')->all()
             );
             $employee->delete();
 
@@ -638,6 +662,12 @@ class EmployeeController extends Controller
                 }
                 if ($employee->nid_image) {
                     $imagesToDelete[] = $employee->nid_image;
+                }
+                if ($employee->cv_path) {
+                    $imagesToDelete[] = $employee->cv_path;
+                }
+                foreach ($employee->educations()->pluck('certificate_file_path') as $filePath) {
+                    $imagesToDelete[] = $filePath;
                 }
 
                 foreach ($employee->certificates()->pluck('file_path') as $filePath) {
@@ -776,10 +806,15 @@ class EmployeeController extends Controller
             ],
             'image' => ['nullable', 'image', 'max:2048'],
             'nid_image' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:4096'],
+            'cv_file' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:10240'],
             'address' => ['nullable', 'string', 'max:1000'],
             'emergency_contact_name' => ['nullable', 'string', 'max:180'],
             'emergency_contact_phone' => ['nullable', 'string', 'max:40'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'emergency_contacts' => ['nullable', 'array', 'max:20'],
+            'emergency_contacts.*.id' => ['nullable', 'integer'],
+            'emergency_contacts.*.name' => ['required', 'string', 'max:180'],
+            'emergency_contacts.*.phone' => ['required', 'string', 'max:40'],
             'educations' => ['nullable', 'array', 'max:30'],
             'educations.*.id' => ['nullable', 'integer'],
             'educations.*.qualification' => ['required', 'string', 'max:180'],
@@ -787,9 +822,11 @@ class EmployeeController extends Controller
             'educations.*.field_of_study' => ['nullable', 'string', 'max:180'],
             'educations.*.passing_year' => ['nullable', 'integer', 'between:1950,2100'],
             'educations.*.result' => ['nullable', 'string', 'max:100'],
+            'educations.*.certificate_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx', 'max:5120'],
             'certificates' => ['nullable', 'array', 'max:30'],
             'certificates.*.id' => ['nullable', 'integer'],
             'certificates.*.title' => ['required', 'string', 'max:255'],
+            'certificates.*.duration' => ['nullable', 'string', 'max:180'],
             'certificates.*.description' => ['nullable', 'string', 'max:2000'],
             'certificates.*.file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx', 'max:5120'],
             'tipsoi_remote_person_id' => ['nullable', 'integer', 'exists:tipsoi_remote_people,id'],
@@ -810,6 +847,8 @@ class EmployeeController extends Controller
             'salary_enabled' => ['nullable', 'boolean'],
             'salary_effective_from' => [Rule::requiredIf($request->boolean('salary_enabled')), 'nullable', 'date', 'after_or_equal:join_date'],
             'basic_salary' => [Rule::requiredIf($request->boolean('salary_enabled')), 'nullable', 'numeric', 'min:0'],
+            'salary_frequency' => ['nullable', Rule::in(['monthly', 'weekly'])],
+            'salary_basis' => ['nullable', Rule::in(['period_rate', 'per_day'])],
             'salary_payment_method' => ['nullable', Rule::in(['cash', 'bank', 'mobile_banking'])],
             'salary_account_name' => ['nullable', 'string', 'max:180'],
             'salary_account_number' => ['nullable', 'string', 'max:120'],
@@ -838,6 +877,13 @@ class EmployeeController extends Controller
                 ]);
             }
         }
+        foreach ($validated['emergency_contacts'] ?? [] as $key => $row) {
+            if (!empty($row['id']) && (!$employee || !$employee->emergencyContacts()->whereKey($row['id'])->exists())) {
+                throw ValidationException::withMessages([
+                    "emergency_contacts.{$key}.id" => 'This emergency contact does not belong to the employee.',
+                ]);
+            }
+        }
         foreach ($validated['certificates'] ?? [] as $key => $row) {
             if (!empty($row['id']) && (!$employee || !$employee->certificates()->whereKey($row['id'])->exists())) {
                 throw ValidationException::withMessages([
@@ -854,17 +900,32 @@ class EmployeeController extends Controller
         return $validated;
     }
 
-    /** Sync education rows; missing rows on an edit are explicitly removed. */
-    private function syncEmployeeEducations(Employee $employee, array $validated): void
-    {
+    /** Sync education rows and retain uploaded certificate files unless replaced or removed. */
+    private function syncEmployeeEducations(
+        Employee $employee,
+        Request $request,
+        array $validated,
+        array &$uploadedFiles,
+        array &$obsoleteFiles = []
+    ): void {
         $keptIds = [];
-        foreach ($validated['educations'] ?? [] as $row) {
+        foreach ($validated['educations'] ?? [] as $key => $row) {
             if (!empty($row['id'])) {
-                // Scope by employee: never modify another employee's record.
                 $education = $employee->educations()->findOrFail((int) $row['id']);
             } else {
                 $education = new EmployeeEducation(['employee_id' => $employee->id]);
             }
+
+            $file = $request->file("educations.{$key}.certificate_file");
+            if ($file) {
+                $path = $this->uploadEmployeeDocument($file, 'education-certificates', 'education_certificate');
+                $uploadedFiles[] = $path;
+                if ($education->exists && $education->certificate_file_path) {
+                    $obsoleteFiles[] = $education->certificate_file_path;
+                }
+                $education->certificate_file_path = $path;
+            }
+
             $education->fill([
                 'qualification' => trim($row['qualification']),
                 'institution' => $row['institution'] ?? null,
@@ -876,9 +937,50 @@ class EmployeeController extends Controller
             $education->save();
             $keptIds[] = $education->id;
         }
+
         $query = $employee->educations();
         if ($keptIds) $query->whereNotIn('id', $keptIds);
+        foreach ($query->get() as $outdated) {
+            if ($outdated->certificate_file_path) $obsoleteFiles[] = $outdated->certificate_file_path;
+            $outdated->delete();
+        }
+    }
+
+    private function syncEmployeeEmergencyContacts(Employee $employee, array $validated): void
+    {
+        $keptIds = [];
+        $firstContact = null;
+
+        foreach ($validated['emergency_contacts'] ?? [] as $row) {
+            $name = trim((string) ($row['name'] ?? ''));
+            $phone = trim((string) ($row['phone'] ?? ''));
+            if ($name === '' && $phone === '') continue;
+            if ($name === '' || $phone === '') {
+                throw ValidationException::withMessages([
+                    'emergency_contacts' => 'Enter both a name and phone number for each emergency contact.',
+                ]);
+            }
+
+            $contact = !empty($row['id'])
+                ? $employee->emergencyContacts()->findOrFail((int) $row['id'])
+                : new \App\Models\EmployeeEmergencyContact(['employee_id' => $employee->id]);
+            $contact->name = $name;
+            $contact->phone = $phone;
+            $contact->employee_id = $employee->id;
+            $contact->save();
+            $keptIds[] = $contact->id;
+            $firstContact ??= $contact;
+        }
+
+        $query = $employee->emergencyContacts();
+        if ($keptIds) $query->whereNotIn('id', $keptIds);
         $query->delete();
+
+        // Keep the legacy single-contact columns populated for older screens/integrations.
+        $employee->forceFill([
+            'emergency_contact_name' => $firstContact?->name,
+            'emergency_contact_phone' => $firstContact?->phone,
+        ])->save();
     }
 
     /** Retain old certificate files unless explicitly replaced or the row is removed. */
@@ -909,6 +1011,8 @@ class EmployeeController extends Controller
                 $certificate->file_path = $path;
             }
             $certificate->title = trim($row['title']);
+            $duration = trim((string) ($row['duration'] ?? ''));
+            $certificate->duration = $duration !== '' ? $duration : null;
             $description = trim((string) ($row['description'] ?? ''));
             $certificate->description = $description !== '' ? $description : null;
             $certificate->employee_id = $employee->id;
@@ -925,11 +1029,16 @@ class EmployeeController extends Controller
 
     private function uploadEmployeeCertificate($file): string
     {
-        $directory = public_path('uploads/employees/certificates');
+        return $this->uploadEmployeeDocument($file, 'certificates', 'experience_certificate');
+    }
+
+    private function uploadEmployeeDocument($file, string $folder, string $prefix): string
+    {
+        $directory = public_path('uploads/employees/' . trim($folder, '/'));
         if (!File::isDirectory($directory)) File::makeDirectory($directory, 0755, true);
-        $name = 'certificate_' . Str::uuid() . '.' . $file->extension();
+        $name = $prefix . '_' . Str::uuid() . '.' . $file->extension();
         $file->move($directory, $name);
-        return 'uploads/employees/certificates/' . $name;
+        return 'uploads/employees/' . trim($folder, '/') . '/' . $name;
     }
 
     private function syncSalarySetup(Request $request, Employee $employee): void
@@ -957,6 +1066,8 @@ class EmployeeController extends Controller
             'employee_id' => $employee->id,
             'effective_from' => $effectiveFrom,
             'basic_salary' => (float) $request->input('basic_salary', 0),
+            'pay_frequency' => $request->input('salary_frequency', $structure->pay_frequency ?: 'monthly'),
+            'salary_basis' => $request->input('salary_basis', $structure->salary_basis ?: 'period_rate'),
             'overtime_rate' => null,
             'payment_method' => $request->input('salary_payment_method', 'bank'),
             'account_name' => $request->input('salary_account_name'),

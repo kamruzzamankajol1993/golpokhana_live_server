@@ -22,7 +22,7 @@
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 @can('payroll-create')
-                    <a href="{{ route('hr.payroll.single.create', ['month' => $run->payroll_month->format('Y-m')]) }}" class="progga-btn progga-btn-primary"><i class="bi bi-person-plus"></i> Add Employee Payroll</a>
+                    <a href="{{ route('hr.payroll.single.create', ['period_type' => $run->period_type ?? 'monthly', 'month' => $run->payroll_month->format('Y-m'), 'week_start' => $run->period_start->toDateString()]) }}" class="progga-btn progga-btn-primary"><i class="bi bi-person-plus"></i> Add Employee Payroll</a>
                 @endcan
                 <a href="{{ route('hr.payroll.summary-pdf', $run) }}" target="_blank" class="progga-btn progga-btn-outline"><i class="bi bi-file-earmark-pdf"></i> Summary PDF</a>
                 <a href="{{ route('hr.payroll.index') }}" class="progga-btn progga-btn-outline"><i class="bi bi-arrow-left"></i> Payroll List</a>

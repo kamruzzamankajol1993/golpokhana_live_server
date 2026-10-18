@@ -5,6 +5,7 @@ namespace App\Services\Hr;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\EmployeeBranchTransfer;
+use App\Models\EmployeeWeeklyRosterPattern;
 use App\Models\HrSetting;
 use App\Models\LeaveRequest;
 use App\Models\PayrollItem;
@@ -91,6 +92,17 @@ class EmployeeBranchTransferService
                 ->where('employee_id', $locked->id)
                 ->where('branch_id', $fromBranchId)
                 ->whereDate('roster_date', '>=', $effectiveDate)
+                ->delete();
+            EmployeeWeeklyRosterPattern::query()->withoutGlobalScopes()
+                ->where('employee_id', $locked->id)
+                ->whereDate('effective_from', '<', $effective->toDateString())
+                ->where(function ($query) use ($effective) {
+                    $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $effective->toDateString());
+                })
+                ->update(['effective_until' => $effective->copy()->subDay()->toDateString(), 'updated_at' => now()]);
+            EmployeeWeeklyRosterPattern::query()->withoutGlobalScopes()
+                ->where('employee_id', $locked->id)
+                ->whereDate('effective_from', '>=', $effective->toDateString())
                 ->delete();
 
             // Preserve the old waiter as historical identity but detach it from the HR employee.

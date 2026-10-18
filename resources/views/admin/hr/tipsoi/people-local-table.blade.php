@@ -1,6 +1,6 @@
 <div class="table-responsive">
 <table class="table progga-table mb-0">
-<thead><tr><th style="width:38px"></th><th>SL</th><th>Employee</th><th>TIPSOI Identifier</th><th>RFID</th><th>Person ID</th><th>Fingerprints</th><th>Status</th><th>Last Sync</th><th>Action</th></tr></thead>
+<thead><tr><th style="width:38px"></th><th>SL</th><th>Employee</th><th>Device Identifier</th><th>RFID</th><th>Person ID</th><th>Fingerprints</th><th>Status</th><th>Last Sync</th><th>Action</th></tr></thead>
 <tbody>
 @forelse($employees as $employee)
 <tr>
