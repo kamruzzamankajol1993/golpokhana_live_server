@@ -231,7 +231,7 @@
             <button type="button" class="progga-btn progga-btn-secondary progga-btn-sm text-decoration-none" data-bs-toggle="modal" data-bs-target="#sessionHistoryModal">
                 <i class="bi bi-history"></i> Session History
             </button>
-            <a href="{{ route('order.index') }}" class="progga-pos-close m-0" title="Order List" aria-label="Order List"><i class="bi bi-house"></i></a>
+            <a href="{{ route('pos.kots.index') }}" class="progga-pos-close m-0" title="KOT List" aria-label="KOT List"><i class="bi bi-house"></i></a>
         @else
             <form action="{{ route('logout') }}" method="POST" class="m-0 p-0" data-pos-logout="1">
                 @csrf
@@ -242,9 +242,9 @@
         @endif
       </div>
 
-      <a href="{{ route('order.index') }}"
+      <a href="{{ route('pos.kots.index') }}"
          class="progga-pos-close pos-header-mobile-trigger m-0"
-         aria-label="Order List" title="Order List">
+         aria-label="KOT List" title="KOT List">
           <i class="bi bi-house"></i>
       </a>
       <button type="button"

@@ -332,15 +332,16 @@ public function kotList(Request $request)
             'order.waiter',
             'orderDetails',
         ])
-        ->whereBetween('created_at', [$startDate, $endDate])
-        ->where('kitchen_status', '!=', 'Hold')
-        ->whereHas('order', function ($query) {
-            $query->whereNotIn('status', [
-                'Completed', 'completed',
-                'Cancelled', 'cancelled',
-                'Delivered', 'delivered',
-            ]);
-        });
+        ->whereBetween('created_at', [$startDate, $endDate]);
+
+    // The default Business Day view is the live operational queue, so keep
+    // completed/cancelled/delivered and held KOTs out of that view. When a
+    // user selects Year Wise, Month Wise, Date Wise, or Date Range, show the
+    // historical KOT records for that period as well; otherwise the filters
+    // appear broken because completed orders are silently excluded.
+    if ($filterType === 'business_day') {
+        $this->applyOperationalKotScope($kotQuery);
+    }
 
     if ($search !== '') {
         $like = '%' . $search . '%';
@@ -385,6 +386,20 @@ public function kotList(Request $request)
 }
 
 
+    /** Restrict the default live KOT queue to active operational records. */
+    private function applyOperationalKotScope($query)
+    {
+        return $query
+            ->where('kitchen_status', '!=', 'Hold')
+            ->whereHas('order', function ($orderQuery) {
+                $orderQuery->whereNotIn('status', [
+                    'Completed', 'completed',
+                    'Cancelled', 'cancelled',
+                    'Delivered', 'delivered',
+                ]);
+            });
+    }
+
     /** Export the same filtered KOT rows shown in POS > KOT List. */
     public function kotListPdf(Request $request)
     {
@@ -426,11 +441,13 @@ public function kotList(Request $request)
         $filters = ReportTimeFilter::resolve($request, RestaurantSetting::first(), 'business_day', false);
         $search = trim((string) $request->query('search', ''));
         $query = OrderKot::with(['order.table', 'order.waiter', 'orderDetails'])
-            ->whereBetween('created_at', [$filters['startDate'], $filters['endDate']])
-            ->where('kitchen_status', '!=', 'Hold')
-            ->whereHas('order', function ($orderQuery) {
-                $orderQuery->whereNotIn('status', ['Completed', 'completed', 'Cancelled', 'cancelled', 'Delivered', 'delivered']);
-            });
+            ->whereBetween('created_at', [$filters['startDate'], $filters['endDate']]);
+
+        // Match the on-screen list: active-only for Business Day, full history
+        // for explicit date/year/month filters.
+        if ($filters['filterType'] === 'business_day') {
+            $this->applyOperationalKotScope($query);
+        }
 
         if ($search !== '') {
             $like = '%' . $search . '%';
