@@ -379,13 +379,19 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
     // ==========================================
     // Real-Time Notification Logic
     // ==========================================
-  public function checkNotifications()
+  public function checkNotifications(Request $request)
     {
-        // orderDetails সহ ডাটা আনা হচ্ছে যাতে মোডালে আইটেম দেখানো যায়
-        $newOrder = \App\Models\Order::with(['table', 'orderDetails'])
-            ->where('status', 'QR_Pending')
-            ->orderBy('id', 'asc')
-            ->first();
+        // orderDetails সহ ডাটা আনা হচ্ছে যাতে মোডালে আইটেম দেখানো যায়। A table-card
+        // click may request a specific QR order so the alert cannot open a different
+        // pending order when several web orders are waiting at once.
+        $newOrderQuery = \App\Models\Order::with(['table', 'orderDetails'])
+            ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) = ?", ['qr_pending']);
+
+        if ($request->filled('order_id')) {
+            $newOrderQuery->where('id', (int) $request->input('order_id'));
+        }
+
+        $newOrder = $newOrderQuery->orderBy('id', 'asc')->first();
 
         $waiterCall = \Illuminate\Support\Facades\DB::table('waiter_calls')
             ->join('tables', 'waiter_calls.table_id', '=', 'tables.id')
@@ -396,7 +402,9 @@ $mpdf->SetFooter('Generated: ' . now()->format('d M Y, h:i A') . '||Page {PAGENO
 
         $kitchenUnsentTableIds = \App\Models\Order::query()
             ->whereNotNull('table_id')
-            ->whereIn('status', ['QR_Pending', 'QR_Hold', 'Waiter_Hold'])
+            ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?)", [
+                'qr_pending', 'qr_hold', 'waiter_hold'
+            ])
             ->pluck('table_id')
             ->map(fn ($id) => (int) $id)
             ->values();

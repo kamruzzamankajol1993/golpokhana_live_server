@@ -11,6 +11,7 @@ use App\Models\PosSession;
 use App\Models\Table;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use App\Services\PosSessionManagerResolver;
 
@@ -42,6 +43,14 @@ class LoginController extends Controller
                 'email' => 'Login access for this employee is disabled or the employee is not active.',
             ]);
         }
+
+        // Save the timestamp only after the login has been accepted.
+        // Use the query builder so logging in does not change the user's updated_at.
+        $loginTime = now();
+        DB::table('users')
+            ->where('id', $user->getKey())
+            ->update(['last_login' => $loginTime]);
+        $user->setAttribute('last_login', $loginTime);
 
         // The POS work period is Manager-owned and shared. Login must never
         // auto-close an already running shared work period.

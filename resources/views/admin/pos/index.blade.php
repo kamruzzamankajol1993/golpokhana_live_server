@@ -1345,9 +1345,36 @@
                     return;
                 }
 
+                if(res.status === 'qr_pending') {
+                    // QR_Pending orders must use the Web Order Alert, not New Order.
+                    if (typeof window.checkLiveNotifications === 'function') {
+                        window.checkLiveNotifications(res.order_id || null);
+                    } else {
+                        Swal.fire('Web order awaiting acceptance', res.message || 'Please accept this order from the Web Order Alert.', 'info');
+                    }
+                    return;
+                }
+
                 if(res.status === 'error') {
-                    // Keep an active reservation visibly Reserved until an order is submitted.
-                    // Non-reserved stale cards can safely fall back to Available.
+                    const uiStatus = String($card.attr('data-status') || '').toLowerCase();
+                    const isKitchenUnsent = String($card.attr('data-kitchen-unsent') || '0') === '1'
+                        || $card.hasClass('kitchen-unsent');
+
+                    // A red/occupied card means an order is expected. Do not create a
+                    // duplicate order if the active-order lookup temporarily fails.
+                    if (isKitchenUnsent || uiStatus === 'occupied' || $card.hasClass('occupied')) {
+                        if (typeof refreshLiveTableReservationStatuses === 'function') {
+                            refreshLiveTableReservationStatuses();
+                        }
+                        Swal.fire(
+                            'Order status is updating',
+                            res.message || 'This table is marked as occupied or waiting for the kitchen, but its order could not be loaded. Please wait a moment and click the table again.',
+                            'info'
+                        );
+                        return;
+                    }
+
+                    // Available / reserved tables can still start a new dine-in order.
                     if (!reservedBookingId) {
                         setPosTableStatus(tId, 'available');
                     }
@@ -1367,8 +1394,10 @@
             $card.data('opening-order', false);
 
             const uiStatus = String($card.attr('data-status') || '').toLowerCase();
-            if(uiStatus === 'occupied' || $card.hasClass('occupied')) {
-                Swal.fire('Error', 'Could not load active table order. Please try again.', 'error');
+            const isKitchenUnsent = String($card.attr('data-kitchen-unsent') || '0') === '1'
+                || $card.hasClass('kitchen-unsent');
+            if(uiStatus === 'occupied' || $card.hasClass('occupied') || isKitchenUnsent) {
+                Swal.fire('Error', 'Could not load the existing order for this occupied / red table. Please check the connection and try again.', 'error');
                 return;
             }
 

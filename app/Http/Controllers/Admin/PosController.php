@@ -160,7 +160,9 @@ public function index(\Illuminate\Http\Request $request)
     // Visual-only flag: existing table/order workflow remains unchanged.
     $kitchenUnsentTableIds = Order::query()
         ->whereNotNull('table_id')
-        ->whereIn('status', ['QR_Pending', 'QR_Hold', 'Waiter_Hold'])
+        ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?)", [
+            'qr_pending', 'qr_hold', 'waiter_hold'
+        ])
         ->pluck('table_id')
         ->map(fn ($id) => (int) $id)
         ->flip();
@@ -878,13 +880,13 @@ public function sessionStatus(Request $request)
 
 private function getPosSessionCloseBlockers(PosSession $session, ?Carbon $checkTime = null): array
 {
-    $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
-
-    // Existing rule: ending/replacing/edit-closing a POS session is blocked while
-    // any dine-in table is occupied. Unpaid/due bills are intentionally ignored.
+    // Ending/replacing/edit-closing a POS session is blocked while a dine-in
+    // table has an active order, including QR orders not yet sent to the kitchen.
     $activeOrderTableIds = Order::query()
         ->whereNotNull('table_id')
-        ->whereIn('status', $activeStatuses)
+        ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?, ?, ?, ?)", [
+            'qr_pending', 'qr_hold', 'pending', 'waiter_hold', 'cooking', 'ready'
+        ])
         ->pluck('table_id');
 
     $persistedOccupiedTableIds = Table::query()
@@ -2420,58 +2422,89 @@ public function placeOrder(Request $request)
 
     public function getTableOrder($table_id)
     {
-        // Cooking এবং Ready স্টেটাস যুক্ত করা হলো যাতে সব ধরনের রানিং অর্ডার পাওয়া যায়
+        // Include orders that have arrived from QR/web but have not been sent to
+        // the kitchen yet. Otherwise their red table card is incorrectly treated
+        // as an empty table and opens the New Order modal.
         $order = Order::with(['kots.orderDetails', 'orderDetails', 'waiter', 'customer', 'table', 'tableBooking', 'deliveryPartner'])
-                      ->where('table_id', $table_id)
-                      ->whereIn('status', ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'])
-                      ->first();
+            ->where('table_id', $table_id)
+            ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?, ?, ?, ?)", [
+                'qr_pending', 'qr_hold', 'pending', 'waiter_hold', 'cooking', 'ready'
+            ])
+            ->orderByDesc('id')
+            ->first();
 
-        if(!$order) return response()->json(['status' => 'error', 'message' => 'No active order found.']);
+        if (!$order) {
+            return response()->json(['status' => 'error', 'message' => 'No active order found.']);
+        }
 
         $isWaiter = $this->userHasRoleCaseInsensitive(auth()->user(), 'waiter');
-
-        // চেক করা হচ্ছে অর্ডারে কোনো Hold KOT আছে কি না (অর্থাৎ ওয়েটার নতুন কিছু অ্যাড করেছে কি না)
+        $normalizedOrderStatus = str_replace(['-', ' '], '_', strtolower(trim((string) $order->status)));
+        $isHeldWebOrder = $normalizedOrderStatus === 'qr_hold';
         $holdKots = $order->kots->where('kitchen_status', 'Hold');
 
-        // ফ্রন্ট ডেস্ক যদি ক্লিক করে এবং কোনো Hold KOT থাকে, তবে সরাসরি কার্টে লোড হবে (অফক্যানভাস নয়)
-        if ($holdKots->count() > 0 && !$isWaiter) {
+        // QR_Pending orders must go through the existing Web Order Alert, where
+        // the front desk assigns a waiter and accepts/sends the order to kitchen.
+        // Do not mistake one for an empty table and open a duplicate New Order.
+        if ($normalizedOrderStatus === 'qr_pending') {
+            return response()->json([
+                'status' => 'qr_pending',
+                'order_id' => (int) $order->id,
+                'message' => 'This web order is waiting for front-desk acceptance.'
+            ]);
+        }
+
+        // QR_Hold orders and held waiter KOTs can be resumed in the existing cart.
+        // Waiter_Hold orders keep the existing rule: only front-desk users load
+        // held KOT items into the cart; waiters can still view their order.
+        if ($isHeldWebOrder || ($holdKots->count() > 0 && !$isWaiter)) {
             $cart = [];
+            $detailsToLoad = $isHeldWebOrder
+                ? $order->orderDetails
+                : $holdKots->flatMap(fn ($kot) => $kot->orderDetails);
 
-            // শুধুমাত্র Hold হওয়া আইটেমগুলো কার্টে নিয়ে আসা হচ্ছে
-            foreach ($holdKots as $kot) {
-                foreach ($kot->orderDetails as $detail) {
-                    if (!empty($detail->is_unavailable)) continue;
-
-                    $addons = json_decode($detail->addons ?? '[]', true);
-                    if (!is_array($addons)) $addons = [];
-
-                    $addonTotal = 0;
-                    foreach ($addons as $addon) {
-                        $addonTotal += (float) ($addon['price'] ?? 0);
-                    }
-
-                    $qty = (int) ($detail->quantity ?: 1);
-                    $price = (float) ($detail->price ?? 0);
-
-                    if ($price <= 0 && $qty > 0) {
-                        $price = round(((float) $detail->subtotal / $qty) - $addonTotal, 2);
-                    }
-
-                    if ($price < 0) {
-                        $price = 0;
-                    }
-
-                    $cart['wh_' . $detail->id] = [
-                        'food_id' => $detail->product_id,
-                        'name' => $detail->product_name,
-                        'qty' => $qty,
-                        'price' => $price,
-                        'addon_total' => $addonTotal,
-                        'addons' => $addons,
-                        'is_complimentary' => !empty($detail->is_complimentary),
-                        'note' => $detail->food_note ?? ''
-                    ];
+            foreach ($detailsToLoad as $detail) {
+                if (!empty($detail->is_unavailable)) {
+                    continue;
                 }
+
+                $addons = json_decode($detail->addons ?? '[]', true);
+                if (!is_array($addons)) {
+                    $addons = [];
+                }
+
+                $addonTotal = 0;
+                foreach ($addons as $addon) {
+                    $addonTotal += (float) ($addon['price'] ?? 0);
+                }
+
+                $qty = (int) ($detail->quantity ?: 1);
+                $price = (float) ($detail->price ?? 0);
+
+                if ($price <= 0 && $qty > 0) {
+                    $price = round(((float) $detail->subtotal / $qty) - $addonTotal, 2);
+                }
+
+                if ($price < 0) {
+                    $price = 0;
+                }
+
+                $cart['wh_' . $detail->id] = [
+                    'food_id' => $detail->product_id,
+                    'name' => $detail->product_name,
+                    'qty' => $qty,
+                    'price' => $price,
+                    'addon_total' => $addonTotal,
+                    'addons' => $addons,
+                    'is_complimentary' => !empty($detail->is_complimentary),
+                    'note' => $detail->food_note ?? ''
+                ];
+            }
+
+            if (empty($cart)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'This table has an active order, but no available items were found. Please refresh the POS and try again.'
+                ], 409);
             }
 
             Session::put($this->getExistingOrderCartKey($order), $cart);
@@ -2497,7 +2530,6 @@ public function placeOrder(Request $request)
             ]);
         }
 
-        // যদি কোনো Hold KOT না থাকে (সব কিচেনে চলে গেছে), বা ওয়েটার নিজে ক্লিক করে, তবে আগের মতোই অফক্যানভাস খুলবে
         $finalPaymentDependsOnKitchenStatus = (bool) (DB::table('pos_settings')->value('final_payment_depends_on_kitchen_status') ?? 0);
 
         // Setting YES হলে Ready না হওয়া পর্যন্ত Payment disabled থাকবে।
@@ -2505,13 +2537,14 @@ public function placeOrder(Request $request)
             ? $order->kots()->whereIn('kitchen_status', ['Pending', 'Cooking', 'Hold'])->exists()
             : false;
 
-        $activeStatuses = ['Pending', 'Waiter_Hold', 'Cooking', 'Ready'];
         $availableSwapTables = Table::with('zone')
             ->where('id', '!=', $order->table_id)
             ->whereRaw('LOWER(TRIM(initial_status)) = ?', ['available'])
             ->whereNotIn('id', Order::select('table_id')
                 ->whereNotNull('table_id')
-                ->whereIn('status', $activeStatuses)
+                ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?, ?, ?, ?)", [
+                    'qr_pending', 'qr_hold', 'pending', 'waiter_hold', 'cooking', 'ready'
+                ])
                 ->where('id', '!=', $order->id)
             )
             ->orderBy('table_number', 'asc')
@@ -2524,6 +2557,7 @@ public function placeOrder(Request $request)
         $deliveryPartners = DeliveryPartner::where('status', 1)->orderBy('name')->get(['id', 'name']);
         $mergedOrderItems = $this->mergeOrderDetailsForDisplay($order->orderDetails);
         $mergedOrderItemsByKot = $mergedOrderItems->groupBy('display_kot_id');
+
         $isWaiterUser = $isWaiter;
 
         return view('admin.pos.partials.offcanvas_order', compact('order', 'kitchenBusy', 'finalPaymentDependsOnKitchenStatus', 'availableSwapTables', 'customers', 'waiters', 'deliveryPartners', 'mergedOrderItems', 'mergedOrderItemsByKot', 'isWaiterUser'))->render();
@@ -2537,7 +2571,9 @@ public function tableReservationStatuses()
 
     $activeTableOrders = Order::query()
         ->whereNotNull('table_id')
-        ->whereIn('status', ['Pending', 'Waiter_Hold', 'QR_Pending', 'QR_Hold', 'Cooking', 'Ready'])
+        ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(status), '-', '_'), ' ', '_')) IN (?, ?, ?, ?, ?, ?)", [
+            'qr_pending', 'qr_hold', 'pending', 'waiter_hold', 'cooking', 'ready'
+        ])
         ->orderByDesc('id')
         ->get(Schema::hasColumn('orders', 'pre_invoice_printed_at')
             ? ['table_id', 'pre_invoice_printed_at']

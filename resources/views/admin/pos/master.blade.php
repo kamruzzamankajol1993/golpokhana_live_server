@@ -263,12 +263,13 @@ let isMasterWaiter = @json(auth()->check() && auth()->user()->getRoleNames()->co
         });
     }
 
-    function checkLiveNotifications() {
+    function checkLiveNotifications(orderId) {
         if ($('.modal.show').length > 0 || !isPolling) return;
 
         $.ajax({
             url: "{{ route('notifications.check') }}",
             type: "GET",
+            data: orderId ? { order_id: orderId } : {},
             success: function(res) {
                 if (res.status === 'success') {
                     syncKitchenUnsentTables(res.kitchen_unsent_table_ids || []);
@@ -327,6 +328,8 @@ let isMasterWaiter = @json(auth()->check() && auth()->user()->getRoleNames()->co
         });
     }
 
+    // Let the POS table-card click open the alert for that exact QR_Pending order.
+    window.checkLiveNotifications = checkLiveNotifications;
     setInterval(checkLiveNotifications, 3000);
 
     $('#btnAcceptQrOrder').on('click', function() {
